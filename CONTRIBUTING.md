@@ -74,7 +74,7 @@ Automated Tests: New features and bug fixes require corresponding automated test
 
 ## Code of Conduct
 
-The code of conduct can be found on the [Swift website](https://www.swift.org/code-of-conduct/)
+We've adopted the [Apple Open Source Code of Conduct](https://github.com/apple/.github/blob/main/CODE_OF_CONDUCT.md). All community members are expected to adhere to these guidelines.
 
 ## Legal
 
