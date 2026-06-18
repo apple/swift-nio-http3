@@ -18,11 +18,11 @@ import PackageDescription
 var swiftSettings: [PackageDescription.SwiftSetting] = [
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("InternalImportsByDefault"),
+    .enableExperimentalFeature("AnyAppleOSAvailability"),
 ]
 
 let package = Package(
     name: "swift-nio-http3",
-    platforms: [.macOS("26.0"), .iOS("26.0"), .tvOS("26.0"), .watchOS("26.0"), .visionOS("26.0")],
     products: [
         .library(name: "NIOHTTP3", targets: ["NIOHTTP3"])
     ],
@@ -35,7 +35,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-certificates.git", branch: "swift-crypto-5.x"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.22.0"),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", branch: "main"),
-        .package(url: "https://github.com/apple/swift-nio-quic.git", branch: "main"),
+        // TODO: Update once changes are merged.
+        .package(url: "https://github.com/rnro/swift-nio-quic.git", branch: "availability"),
     ],
     targets: [
         .target(
