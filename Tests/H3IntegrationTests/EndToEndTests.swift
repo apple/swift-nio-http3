@@ -1548,7 +1548,6 @@ struct EndToEndTests {
                         configuration: config,
                         settings: settings,
                         quicConfiguration: quicConfiguration,
-                        maximumTokenLength: 100,
                         logger: logger,
                         internalInboundStreamInitializer: internalInboundStreamInitializer
                     )
