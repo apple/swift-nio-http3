@@ -306,17 +306,56 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
-    func testDoubleResponse() {
+    func testInboundInterimResponse() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
+        validator.assertOutboundFramePassesThrough(Self.validRequestHeaders())
+
+        validator.assertInboundFramePassesThrough(.headers([.init(name: .status, value: "103")]))
+        validator.assertInboundFramePassesThrough(.headers([.init(name: .status, value: "200")]))
+        validator.assertInboundFramePassesThrough(.data(.init(bytes: [1, 2, 3])))
+        validator.assertInboundFramePassesThrough(Self.validTrailers())
+    }
+
+    @Test
+    func testInboundMultipleInterimResponse() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
         validator.assertOutboundFramePassesThrough(Self.validRequestHeaders())  // write req headers
 
         // Some informational responses
         validator.assertInboundFramePassesThrough(.headers([.init(name: .status, value: "100")]))
         validator.assertInboundFramePassesThrough(.headers([.init(name: .status, value: "100")]))
+        validator.assertInboundFramePassesThrough(.headers([.init(name: .status, value: "102")]))
+        validator.assertInboundFramePassesThrough(.headers([.init(name: .status, value: "103")]))
         // Final response
         validator.assertInboundFramePassesThrough(.headers([.init(name: .status, value: "200")]))
         validator.assertInboundFramePassesThrough(.data(.init(bytes: [1, 2, 3])))
         validator.assertInboundFramePassesThrough(.headers([.init(name: .cookie, value: "test")]))
+    }
+
+    @Test
+    func testOutboundInterimResponse() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        validator.assertInboundFramePassesThrough(Self.validRequestHeaders())
+
+        validator.assertOutboundFramePassesThrough(.headers([.init(name: .status, value: "103")]))
+        validator.assertOutboundFramePassesThrough(.headers([.init(name: .status, value: "200")]))
+        validator.assertOutboundFramePassesThrough(.data(.init(bytes: [1, 2, 3])))
+    }
+
+    @Test
+    func testOutboundMultipleInterimResponses() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        validator.assertInboundFramePassesThrough(Self.validRequestHeaders())
+
+        // Some informational responses
+        validator.assertOutboundFramePassesThrough(.headers([.init(name: .status, value: "100")]))
+        validator.assertOutboundFramePassesThrough(.headers([.init(name: .status, value: "100")]))
+        validator.assertOutboundFramePassesThrough(.headers([.init(name: .status, value: "102")]))
+        validator.assertOutboundFramePassesThrough(.headers([.init(name: .status, value: "103")]))
+        // Final response
+        validator.assertOutboundFramePassesThrough(.headers([.init(name: .status, value: "200")]))
+        validator.assertOutboundFramePassesThrough(.data(.init(bytes: [1, 2, 3])))
+        validator.assertOutboundFramePassesThrough(.headers([.init(name: .cookie, value: "test")]))
     }
 
     // MARK: Control stream

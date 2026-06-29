@@ -153,6 +153,70 @@ struct HTTPMessageParsingTests {
         #expect(action3 == nil)
     }
 
+    let informationalEarlyHintsHead = HTTP3Frame.headers([.init(name: .status, value: "103")])
+
+    @Test
+    func testSingleInterimThenFinal() throws {
+        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+
+        let action1 = machine.processFrame(frame: self.informationalEarlyHintsHead)
+        #expect(action1?.returnPart == .head(.init(status: .init(code: 103))))
+
+        let action2 = machine.processFrame(frame: self.validResponseHead)
+        #expect(action2?.returnPart == .head(.init(status: .ok)))
+
+        let action3 = machine.processFrame(frame: .data(.init()))
+        #expect(action3?.returnPart == .body(.init()))
+
+        let action4 = machine.processFrame(frame: self.validTrailers)
+        #expect(action4?.returnPart == .end([.init("test")!: "hello"]))
+    }
+
+    @Test
+    func testMultipleInterimThenFinal() throws {
+        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+
+        let action1 = machine.processFrame(frame: self.informationalEarlyHintsHead)
+        #expect(action1?.returnPart == .head(.init(status: .init(code: 103))))
+
+        let action2 = machine.processFrame(frame: self.informationalEarlyHintsHead)
+        #expect(action2?.returnPart == .head(.init(status: .init(code: 103))))
+
+        let action3 = machine.processFrame(frame: self.validResponseHead)
+        #expect(action3?.returnPart == .head(.init(status: .ok)))
+
+        let action4 = machine.processFrame(frame: .data(.init()))
+        #expect(action4?.returnPart == .body(.init()))
+
+        let action5 = machine.processFrame(frame: self.validTrailers)
+        #expect(action5?.returnPart == .end([.init("test")!: "hello"]))
+    }
+
+    @Test
+    func testInvalidInterimHeaders() throws {
+        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+
+        // 1xx response with a forbidden transfer-encoding field.
+        let action1 = machine.processFrame(
+            frame: .headers([
+                .init(name: .status, value: "103"),
+                .init(name: .transferEncoding, value: "chunked"),
+            ])
+        )
+        action1.assertError { error in
+            expectH3ErrorEqual(
+                error: error,
+                expectedCode: .malformedMessage,
+                expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+                expectedMessage: "Invalid headers"
+            )
+        }
+
+        // After error, even valid final headers are ignored.
+        let action2 = machine.processFrame(frame: self.validResponseHead)
+        #expect(action2 == nil)
+    }
+
     // MARK: General request and response header validation
 
     @Test
@@ -623,6 +687,34 @@ extension HTTPMessageParsingStateMachine<HTTPResponsePart>.ProcessFrameAction? {
         switch self {
         case .some(let action): action.assertError(verifier, sourceLocation: sourceLocation)
         case .none: Issue.record("Expected error, got no action", sourceLocation: sourceLocation)
+        }
+    }
+}
+
+extension HTTPMessageParsingStateMachine.InputClosedAction {
+    fileprivate func assertIncomplete(sourceLocation: SourceLocation = #_sourceLocation) {
+        switch self {
+        case .messageIncomplete:
+            break
+        default: Issue.record("Expected .messageIncomplete, got \(self)", sourceLocation: sourceLocation)
+        }
+    }
+}
+
+extension HTTPMessageParsingStateMachine<HTTPRequestPart>.InputClosedAction? {
+    fileprivate func assertIncomplete(sourceLocation: SourceLocation = #_sourceLocation) {
+        switch self {
+        case .some(let action): action.assertIncomplete(sourceLocation: sourceLocation)
+        case .none: Issue.record("Expected .messageIncomplete, got no action", sourceLocation: sourceLocation)
+        }
+    }
+}
+
+extension HTTPMessageParsingStateMachine<HTTPResponsePart>.InputClosedAction? {
+    fileprivate func assertIncomplete(sourceLocation: SourceLocation = #_sourceLocation) {
+        switch self {
+        case .some(let action): action.assertIncomplete(sourceLocation: sourceLocation)
+        case .none: Issue.record("Expected .messageIncomplete, got no action", sourceLocation: sourceLocation)
         }
     }
 }

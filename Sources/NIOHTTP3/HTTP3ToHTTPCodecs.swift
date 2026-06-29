@@ -196,13 +196,13 @@ extension HTTPResponsePart: HTTPMessagePart {
 /// Use this to convert incoming frames into message parts.
 package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
     enum State {
-        case idle
+        case awaitingFinalHead
         case processedHeaders
         case processedTrailers
         case previousError
     }
 
-    private var state = State.idle
+    private var state = State.awaitingFinalHead
 
     package init() {}
 
@@ -215,12 +215,19 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
         switch self.state {
         case .previousError:
             return .none
-        case .idle:
+        case .awaitingFinalHead:
             switch frame {
             case .headers(let headers):
                 do {
                     let part = try Part.head(fields: headers.fields)
-                    self.state = .processedHeaders
+                    if headers.representsInterimResponse {
+                        // Multiple interim (1xx) responses can precede the final response; remain in the same state to
+                        // accept further interim responses or the final response. We can only reach this branch on the
+                        // response parsing side.
+                        self.state = .awaitingFinalHead
+                    } else {
+                        self.state = .processedHeaders
+                    }
                     return .returnPart(part)
                 } catch {
                     self.state = .previousError
@@ -261,7 +268,7 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
 
     package mutating func inputClosed() -> InputClosedAction? {
         switch self.state {
-        case .idle:
+        case .awaitingFinalHead:
             self.state = .processedTrailers
             return .returnPart(.end())
         case .processedHeaders:

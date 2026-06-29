@@ -228,8 +228,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                 case .headers(let headers):
                     // A response MAY consist of multiple messages when and only when one or more interim responses (1xx; see Section 15.2 of [HTTP]) precede a final response to the same request.
                     // Interim responses do not contain content or trailer sections.
-                    let status = headers.fields.first(where: { $0.name == .status })?.value
-                    if status == "100" {
+                    if headers.representsInterimResponse {
                         // This header doesn't affect our state because it's interim. We just pass it through
                         self = .init(requestState: existingRequestState, responseState: existingResponseState)
                         return .forwardFrame(frame)

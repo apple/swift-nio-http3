@@ -302,6 +302,21 @@ extension HTTP3PartialFrame {
     }
 }
 
+extension HTTP3Frame.Headers {
+    /// Whether these headers contain a `:status` pseudo-header field whose value is an informational 1xx status code.
+    ///
+    /// Returns `false` if the `:status` pseudo-header field is not present or if its value does not represent a 1xx
+    /// status code.
+    ///
+    /// - SeeAlso: https://www.rfc-editor.org/rfc/rfc9110.html#section-15.2.
+    package var representsInterimResponse: Bool {
+        guard let status = self.fields.first(where: { $0.name == .status })?.value, let code = Int(status) else {
+            return false
+        }
+        return (100..<200).contains(code)
+    }
+}
+
 extension HTTP3Frame {
     package static func data(_ payload: ByteBuffer) -> Self {
         .data(.init(payload: payload))
