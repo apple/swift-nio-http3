@@ -690,31 +690,3 @@ extension HTTPMessageParsingStateMachine<HTTPResponsePart>.ProcessFrameAction? {
         }
     }
 }
-
-extension HTTPMessageParsingStateMachine.InputClosedAction {
-    fileprivate func assertIncomplete(sourceLocation: SourceLocation = #_sourceLocation) {
-        switch self {
-        case .messageIncomplete:
-            break
-        default: Issue.record("Expected .messageIncomplete, got \(self)", sourceLocation: sourceLocation)
-        }
-    }
-}
-
-extension HTTPMessageParsingStateMachine<HTTPRequestPart>.InputClosedAction? {
-    fileprivate func assertIncomplete(sourceLocation: SourceLocation = #_sourceLocation) {
-        switch self {
-        case .some(let action): action.assertIncomplete(sourceLocation: sourceLocation)
-        case .none: Issue.record("Expected .messageIncomplete, got no action", sourceLocation: sourceLocation)
-        }
-    }
-}
-
-extension HTTPMessageParsingStateMachine<HTTPResponsePart>.InputClosedAction? {
-    fileprivate func assertIncomplete(sourceLocation: SourceLocation = #_sourceLocation) {
-        switch self {
-        case .some(let action): action.assertIncomplete(sourceLocation: sourceLocation)
-        case .none: Issue.record("Expected .messageIncomplete, got no action", sourceLocation: sourceLocation)
-        }
-    }
-}
