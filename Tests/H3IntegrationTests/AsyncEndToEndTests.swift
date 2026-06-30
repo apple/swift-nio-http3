@@ -28,29 +28,15 @@ import struct NIOQUIC.QUICStreamCreator
 struct AsyncEndToEndTests {
     private let eventLoopGroup = MultiThreadedEventLoopGroup.singleton
 
-    private static func supportsAsyncInterface() -> Bool {
-        if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, visionOS 1.0, macCatalyst 13.0, *) {
-            return true
-        } else {
-            return false
-        }
-    }
-
     private static let standardAuthenticationConfigurations: [AuthenticationConfiguration] = {
         [.keys, .certs]
     }()
 
-    @Test(
-        .enabled(if: Self.supportsAsyncInterface()),
-        arguments: Self.standardAuthenticationConfigurations
-    )
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 26, *)
     func asyncRoundtrip(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let serverLogger = Logger(label: "Server")
         let clientLogger = Logger(label: "Client")
-
-        guard #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, visionOS 1.0, macCatalyst 13.0, *) else {
-            fatalError("Test shouldn't be enabled on this platform")
-        }
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
         let serverName: String
@@ -138,15 +124,12 @@ struct AsyncEndToEndTests {
         }
     }
 
-    @Test(.enabled(if: Self.supportsAsyncInterface()), arguments: Self.standardAuthenticationConfigurations)
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 26, *)
     func goawayMidRequestWithHighID(authenticationConfiguration: AuthenticationConfiguration) async throws {
         // Send a goaway to the client in the middle of a request. See that the client can not make further requests.
         let serverLogger = Logger(label: "Server")
         let clientLogger = Logger(label: "Client")
-
-        guard #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, visionOS 1.0, macCatalyst 13.0, *) else {
-            fatalError("Test shouldn't be enabled on this platform")
-        }
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
         let serverName: String
@@ -245,16 +228,13 @@ struct AsyncEndToEndTests {
         try await clientChannel.close()
     }
 
-    @Test(.enabled(if: Self.supportsAsyncInterface()), arguments: Self.standardAuthenticationConfigurations)
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 26, *)
     func goawayMidRequest(authenticationConfiguration: AuthenticationConfiguration) async throws {
         // Send a goaway to a client during a request, such that the goaway affects the request in flight.
         // See that the server rejects the request.
         let serverLogger = Logger(label: "Server")
         let clientLogger = Logger(label: "Client")
-
-        guard #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, visionOS 1.0, macCatalyst 13.0, *) else {
-            fatalError("Test shouldn't be enabled on this platform")
-        }
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
         let serverName: String
@@ -385,6 +365,7 @@ struct AsyncEndToEndTests {
 
     // MARK: - Helper Functions
 
+    @available(anyAppleOS 26, *)
     private func makeHTTP3Server(
         credentials: Credentials,
         settings: HTTP3Settings,
@@ -473,6 +454,7 @@ struct AsyncEndToEndTests {
         }
     }
 
+    @available(anyAppleOS 26, *)
     private func makeHTTP3Client(
         credentials: Credentials,
         settings: HTTP3Settings,

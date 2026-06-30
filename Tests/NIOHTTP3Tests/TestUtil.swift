@@ -17,13 +17,6 @@ public import HTTP3
 import NIOConcurrencyHelpers
 import NIOCore
 import NIOExtras
-public import NIOQUICHelpers
-
-extension QUICStreamID: @retroactive ExpressibleByIntegerLiteral {
-    public init(integerLiteral value: UInt64) {
-        self.init(rawValue: value)
-    }
-}
 
 extension HTTP3GoawayID: ExpressibleByIntegerLiteral {
     public init(integerLiteral value: UInt64) {

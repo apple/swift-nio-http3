@@ -14,14 +14,7 @@
 
 public import HTTP3
 import NIOCore
-public import NIOQUICHelpers
 import QPACK
-
-extension QUICStreamID: @retroactive ExpressibleByIntegerLiteral {
-    public init(integerLiteral value: UInt64) {
-        self.init(rawValue: value)
-    }
-}
 
 extension String {
     var huffmanEncodedBytes: [UInt8] {
