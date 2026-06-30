@@ -18,11 +18,11 @@ import PackageDescription
 var swiftSettings: [PackageDescription.SwiftSetting] = [
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("InternalImportsByDefault"),
+    .enableExperimentalFeature("AnyAppleOSAvailability"),
 ]
 
 let package = Package(
     name: "swift-nio-http3",
-    platforms: [.macOS("26.0"), .iOS("26.0"), .tvOS("26.0"), .watchOS("26.0"), .visionOS("26.0")],
     products: [
         .library(name: "NIOHTTP3", targets: ["NIOHTTP3"])
     ],

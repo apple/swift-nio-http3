@@ -218,6 +218,7 @@ struct EndToEndTests {
     }()
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 26, *)
     func testSettingsFrame(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -304,6 +305,7 @@ struct EndToEndTests {
         .disabled("See DynamicTable document in NIOHTTP3 module"),
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testRoundtripWithSlowDynamicTable(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -524,6 +526,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testRoundtripWithoutDynamicTable(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -629,6 +632,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testConnectionError(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -685,6 +689,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testServerClosesConnection(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -732,6 +737,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testClosingConnectionAlsoClosesStreams(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -786,6 +792,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testServerClosesConnectionWithActiveStream(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -853,6 +860,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testStreamError(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -924,6 +932,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testUnknownIncomingStream(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -977,10 +986,11 @@ struct EndToEndTests {
         try await serverChannel.close()
     }
 
+    // This is always an error; clients must not open push streams to servers.
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    // This is always an error; clients must not open push streams to servers.
+    @available(anyAppleOS 26, *)
     func testIncomingPushStreamOnServer(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1034,10 +1044,11 @@ struct EndToEndTests {
         try await serverChannel.close()
     }
 
+    // This is an error because the client hasn't specified that it wants to receive push (by sending a MAX_PUSH_ID frame)
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    // This is an error because the client hasn't specified that it wants to receive push (by sending a MAX_PUSH_ID frame)
+    @available(anyAppleOS 26, *)
     func testIncomingPushStreamOnClient(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1124,6 +1135,7 @@ struct EndToEndTests {
         .disabled("See DynamicTable document in NIOHTTP3 module"),
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testBadQPACKInstruction(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1192,10 +1204,11 @@ struct EndToEndTests {
         try await serverChannel.close()
     }
 
+    // If the connection handler gets a shouldquiesce event then the stream handlers should also
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    // If the connection handler gets a shouldquiesce event then the stream handlers should also
+    @available(anyAppleOS 26, *)
     func testForwardShouldQuiesce(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1254,6 +1267,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testNoOutboundRequestsAfterGoawayReceived(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -1377,6 +1391,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
+    @available(anyAppleOS 26, *)
     func testControlStreamClosed(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1461,6 +1476,7 @@ struct EndToEndTests {
 
     // MARK: - Helper Functions
 
+    @available(anyAppleOS 26, *)
     private func makeServer(
         credentials: Credentials,
         host: String,
@@ -1491,6 +1507,7 @@ struct EndToEndTests {
         )
     }
 
+    @available(anyAppleOS 26, *)
     private func makeClient(
         credentials: Credentials,
         host: String,
@@ -1515,6 +1532,7 @@ struct EndToEndTests {
         )
     }
 
+    @available(anyAppleOS 26, *)
     private static func createHTTP3ClientChannel(
         eventLoopGroup: any EventLoopGroup,
         host: String,
@@ -1563,6 +1581,7 @@ struct EndToEndTests {
         return try await httpChannelFuture.get()
     }
 
+    @available(anyAppleOS 26, *)
     private static func createHTTP3ServerChannel(
         eventLoopGroup: any EventLoopGroup,
         host: String,

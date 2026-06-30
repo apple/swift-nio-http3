@@ -16,6 +16,7 @@ import class Foundation.FileManager
 import struct Foundation.UUID
 import struct NIOQUIC.QUICConfiguration
 
+@available(anyAppleOS 26, *)
 extension QUICConfiguration {
     static func makeH3ServerConfig(
         serverName: String,
