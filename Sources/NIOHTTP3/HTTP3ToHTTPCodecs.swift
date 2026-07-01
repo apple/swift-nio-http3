@@ -196,13 +196,13 @@ extension HTTPResponsePart: HTTPMessagePart {
 /// Use this to convert incoming frames into message parts.
 package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
     enum State {
-        case idle
-        case processedHeaders
-        case processedTrailers
-        case previousError
+        case awaitingHeaders
+        case awaitingBodyOrTrailers
+        case messageComplete
+        case failed
     }
 
-    private var state = State.idle
+    private var state = State.awaitingHeaders
 
     package init() {}
 
@@ -213,33 +213,40 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
 
     package mutating func processFrame(frame: HTTP3Frame) -> ProcessFrameAction? {
         switch self.state {
-        case .previousError:
+        case .failed:
             return .none
-        case .idle:
+        case .awaitingHeaders:
             switch frame {
             case .headers(let headers):
                 do {
                     let part = try Part.head(fields: headers.fields)
-                    self.state = .processedHeaders
+                    if headers.representsInterimResponse {
+                        // Multiple interim (1xx) responses can precede the final response; remain in the same state to
+                        // accept further interim responses or the final response. We can only reach this branch on the
+                        // response parsing side.
+                        self.state = .awaitingHeaders
+                    } else {
+                        self.state = .awaitingBodyOrTrailers
+                    }
                     return .returnPart(part)
                 } catch {
-                    self.state = .previousError
+                    self.state = .failed
                     return .emitError(error)
                 }
             case .data, .cancelPush, .settings, .maxPushID, .pushPromise, .goaway:
                 // This should not happen because the stream state machine shouldn't allow a bad frame to get here
                 fatalError("Unexpected frame")
             }
-        case .processedHeaders:
+        case .awaitingBodyOrTrailers:
             switch frame {
             case .headers(let headers):
                 // If the incoming frame is of type 'headers', it must be the trailers
                 do {
                     let part = try Part.end(trailers: headers.fields)
-                    self.state = .processedTrailers
+                    self.state = .messageComplete
                     return .returnPart(part)
                 } catch {
-                    self.state = .previousError
+                    self.state = .failed
                     return .emitError(error)
                 }
             // Any number of data frames is fine. State stays as-is
@@ -249,7 +256,7 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
                 // This should not happen because the stream state machine shouldn't allow a bad frame to get here
                 fatalError("Unexpected frame")
             }
-        case .processedTrailers:
+        case .messageComplete:
             // This should not happen because the stream state machine shouldn't allow a bad frame to get here
             fatalError("More frames received after trailers")
         }
@@ -261,15 +268,15 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
 
     package mutating func inputClosed() -> InputClosedAction? {
         switch self.state {
-        case .idle:
-            self.state = .processedTrailers
+        case .awaitingHeaders:
+            self.state = .messageComplete
             return .returnPart(.end())
-        case .processedHeaders:
-            self.state = .processedTrailers
+        case .awaitingBodyOrTrailers:
+            self.state = .messageComplete
             return .returnPart(.end())
-        case .previousError:
+        case .failed:
             return .none
-        case .processedTrailers:
+        case .messageComplete:
             // If we processed trailers, that means we sent an end, so don't send another one
             return .none
         }
