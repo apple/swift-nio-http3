@@ -32,7 +32,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0-beta.1"),
-        .package(url: "https://github.com/apple/swift-certificates.git", branch: "swift-crypto-5.x"),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.19.3"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.22.0"),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", branch: "main"),
         .package(url: "https://github.com/apple/swift-nio-quic.git", branch: "main"),

@@ -47,25 +47,33 @@ let package = Package(
 
 ### Building and testing
 
+Package in the dependency tree depend on a beta release of swift-crypto.
+Set the environment variable
+`SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA` to allow swift-certificates
+(in the dependency tree) to adopt swift-crypto beta releases as well.
+
 To build via the command line (for all platforms), run at the root of the
 package:
 
 ```
-swift build
+SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift build
 ```
 
 To run all unit tests, run
 
 ```
-swift test
+SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift test
 ```
 
 Unit tests can also be run by filtering a specific class or function:
 
 ```
-swift test --filter EncoderTests
-swift test --filter EncoderTests.maxBlockedStreams
+SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift test --filter EncoderTests
+SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift test --filter EncoderTests.maxBlockedStreams
 ```
+
+Use `SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 xed Package.swift` to open
+the project in Xcode with the environment variable set.
 
 [swift-nio-quic]: https://github.com/apple/swift-nio-quic
 [swift-nio]: https://github.com/apple/swift-nio
