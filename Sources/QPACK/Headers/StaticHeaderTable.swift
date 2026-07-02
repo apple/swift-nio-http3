@@ -121,6 +121,16 @@ package enum StaticHeaderTable {
         (.init(parsed: "x-frame-options")!, "sameorigin"),  // 98
     ]
 
+    /// A mapping of header name to the array of static table indices carrying that name.
+    /// Array are guaranteed to be non-empty, and their values are in ascending index order.
+    private static let indicesByName: [HTTPField.Name: [Int]] = {
+        var result = [HTTPField.Name: [Int]](minimumCapacity: Self.shared.count)
+        for index in Self.shared.indices {
+            result[Self.shared[index].0, default: []].append(index)
+        }
+        return result
+    }()
+
     /// Get the element of the static table at the specific index if it exists
     package static func get(at index: Int) -> (HTTPField.Name, String)? {
         if self.shared.indices.contains(index) {
@@ -143,21 +153,19 @@ package enum StaticHeaderTable {
     ///            parameter, an indication whether that value was also found. Returns `nil`
     ///            if no matching header name could be located.
     static func find(name: HTTPField.Name, value: String?) -> (index: Int, containsValue: Bool)? {
-        var nameOnlyMatchIndex: Int?
-        for index in Self.shared.indices {
-            let header = Self.shared[index]
-            if header.0 == name {
-                if header.1 == value {
+        guard let indices = Self.indicesByName[name] else {
+            return nil
+        }
+
+        if let value = value {
+            for index in indices {
+                if Self.shared[index].1 == value {
                     return (index: index, containsValue: true)
-                } else if nameOnlyMatchIndex == nil {
-                    nameOnlyMatchIndex = index
                 }
             }
         }
-        if let nameOnlyMatchIndex {
-            return (index: nameOnlyMatchIndex, containsValue: false)
-        } else {
-            return nil
-        }
+
+        // No value (or no matching value), return the first index.
+        return (index: indices[0], containsValue: false)
     }
 }
