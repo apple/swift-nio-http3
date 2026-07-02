@@ -34,8 +34,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0-beta.1"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.19.3"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.22.0"),
-        .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", branch: "main"),
-        .package(url: "https://github.com/apple/swift-nio-quic.git", branch: "main"),
+        .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.0")),
+        .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.1.0")),
     ],
     targets: [
         .target(
