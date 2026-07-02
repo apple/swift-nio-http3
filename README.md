@@ -47,7 +47,7 @@ let package = Package(
 
 ### Building and testing
 
-Package in the dependency tree depend on a beta release of swift-crypto.
+Packages in the dependency tree depend on a beta release of swift-crypto.
 Set the environment variable
 `SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA` to allow swift-certificates
 (in the dependency tree) to adopt swift-crypto beta releases as well.
