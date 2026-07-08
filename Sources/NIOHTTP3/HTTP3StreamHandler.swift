@@ -45,6 +45,12 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
     /// The channel context. This handler can only be in one channel at a time.
     private var context: ChannelHandlerContext?
 
+    /// Bytes for frames that have been written but not yet flushed.
+    private var pendingBytes: ByteBuffer?
+
+    /// The promise which will be fulfilled when `pendingBytes` has been written.
+    private var pendingPromise: EventLoopPromise<Void>?
+
     /// The state machine which handles processing incoming bytes into frames, including validating them and decoding QPACK.
     private var stateMachine: HTTP3StreamStateMachine
 
@@ -79,6 +85,11 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
 
     package func channelInactive(context: ChannelHandlerContext) {
         self.logger.trace("HTTP3StreamHandler.channelInactive")
+
+        // Don't leak the pending promise.
+        self.pendingBytes = nil
+        self.pendingPromise.take()?.fail(ChannelError.ioOnClosedChannel)
+
         // We want to flush out anything that's buffered which can be flushed.
         // There's unlikely to be anything...only if we got a channelInactive between a read and a readComplete.
         // We need to buffer any such actions into an array and save it for after we close the state machine
@@ -134,6 +145,10 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
     }
 
     package func handlerRemoved(context: ChannelHandlerContext) {
+        // Don't leak the pending promise.
+        self.pendingBytes = nil
+        self.pendingPromise.take()?.fail(ChannelError.ioOnClosedChannel)
+
         // Cleanup reference to avoid leaks.
         self.context = nil
     }
@@ -187,7 +202,13 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
     package func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         let frame = self.unwrapOutboundIn(data)
         self.logger.trace("HTTP3StreamHandler.write", metadata: [LoggingKeys.h3FrameType: "\(frame.type)"])
-        let action = self.stateMachine.writeFrame(frame: frame)
+
+        if self.pendingBytes == nil {
+            self.pendingBytes = context.channel.allocator.buffer(capacity: 256)
+        }
+
+        let action = self.stateMachine.writeFrame(frame: frame, into: &self.pendingBytes!)
+
         switch action {
         case .previousError:
             // Just drop the byte
@@ -200,8 +221,8 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
                     location: .here()
                 )
             )
-        case .returnBytes(let bytes):
-            context.write(wrapOutboundOut(bytes), promise: promise)
+        case .wroteBytes:
+            self.pendingPromise.setOrCascade(to: promise)
         case .wouldBeStreamError(let error):
             context.fireErrorCaught(error)
             promise?.fail(error)
@@ -213,7 +234,8 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
             promise?.fail(error)
         case .encodeHeaders(let fields):
             let encoded = self.qpackEncoder(fields, self.streamID)
-            let action = self.stateMachine.gotHeaderEncodeResult(encoded, from: fields)
+            let action = self.stateMachine.gotHeaderEncodeResult(encoded, from: fields, into: &self.pendingBytes!)
+
             switch action {
             case .previousError(let previousError):
                 promise?.fail(
@@ -225,11 +247,38 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
                         location: .here()
                     )
                 )
-            case .returnBytes(let bytes):
-                context.write(wrapOutboundOut(bytes), promise: promise)
+            case .wroteBytes:
+                self.pendingPromise.setOrCascade(to: promise)
             case .alreadyClosed:
                 promise?.fail(ChannelError.ioOnClosedChannel)
             }
+        }
+    }
+
+    package func flush(context: ChannelHandlerContext) {
+        self.emitPendingBytes(context: context)
+        context.flush()
+    }
+
+    package func close(
+        context: ChannelHandlerContext,
+        mode: CloseMode,
+        promise: EventLoopPromise<Void>?
+    ) {
+        switch mode {
+        case .output, .all:
+            self.emitPendingBytes(context: context)
+        case .input:
+            ()
+        }
+        context.close(mode: mode, promise: promise)
+    }
+
+    /// Write any pending bytes.
+    private func emitPendingBytes(context: ChannelHandlerContext) {
+        if let bytes = self.pendingBytes.take() {
+            let promise = self.pendingPromise.take()
+            context.write(HTTP3StreamHandler.wrapOutboundOut(bytes), promise: promise)
         }
     }
 

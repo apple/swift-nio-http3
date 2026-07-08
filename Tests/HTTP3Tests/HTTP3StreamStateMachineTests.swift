@@ -836,6 +836,21 @@ extension HTTP3StreamStateMachine.WriteFrameAction {
 }
 
 extension HTTP3StreamStateMachine {
+    /// Test convenience: write a frame using a throwaway buffer, for assertions that don't inspect bytes.
+    fileprivate mutating func writeFrame(frame: HTTP3Frame) -> WriteFrameAction {
+        var buffer = ByteBuffer()
+        return self.writeFrame(frame: frame, into: &buffer)
+    }
+
+    /// Test convenience: deliver an encode result using a throwaway buffer.
+    fileprivate mutating func gotHeaderEncodeResult(
+        _ result: HTTP3PartialFrame.Headers,
+        from: [HTTPField]
+    ) -> HeaderEncodeResultAction {
+        var buffer = ByteBuffer()
+        return self.gotHeaderEncodeResult(result, from: from, into: &buffer)
+    }
+
     fileprivate enum ResolvedAction {
         case returnBytes(ByteBuffer)
         case wouldBeStreamError(HTTP3Error)
@@ -846,12 +861,13 @@ extension HTTP3StreamStateMachine {
     /// Do a write, and do the qpack too, and return just one action.
     fileprivate mutating func writeFrameAndQPACK(frame: HTTP3Frame) -> ResolvedAction? {
         let encoder = StaticQPACKEncoder()
-        let action = self.writeFrame(frame: frame)
+        var buffer = ByteBuffer()
+        let action = self.writeFrame(frame: frame, into: &buffer)
         switch action {
         case .previousError:
             return nil
-        case .returnBytes(let bytes):
-            return .returnBytes(bytes)
+        case .wroteBytes:
+            return .returnBytes(buffer)
         case .wouldBeStreamError(let error):
             return .wouldBeStreamError(error)
         case .wouldBeConnectionError(let error):
@@ -860,10 +876,10 @@ extension HTTP3StreamStateMachine {
             return .alreadyClosed
         case .encodeHeaders(let fields):
             let qpackResult = encoder.encode(headers: fields)
-            let action2 = self.gotHeaderEncodeResult(.init(fieldSection: qpackResult), from: fields)
+            let action2 = self.gotHeaderEncodeResult(.init(fieldSection: qpackResult), from: fields, into: &buffer)
             switch action2 {
-            case .returnBytes(let bytes):
-                return .returnBytes(bytes)
+            case .wroteBytes:
+                return .returnBytes(buffer)
             case .previousError:
                 return nil
             case .alreadyClosed:
