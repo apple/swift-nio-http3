@@ -107,7 +107,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
     package init(settings: HTTP3Settings, type: HTTP3ConnectionType) {
         let qpackState = QPACKStateMachine(
             decoderMaxTableSize: Int(clamping: settings.qpackMaximumTableCapacity),
-            decoderMaxBlockedStreams: Int(clamping: settings.qpackBlockedStreams)
+            decoderMaxBlockedStreams: Int(clamping: settings.qpackBlockedStreams),
+            localEncoderMaxTableCapacity: Int(clamping: settings.qpackMaximumTableCapacity)
         )
         self.init(state: .notStarted(.init(qpackState: qpackState, localSettings: settings, type: type)))
     }

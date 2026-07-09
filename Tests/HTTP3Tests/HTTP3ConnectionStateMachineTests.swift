@@ -369,14 +369,11 @@ struct HTTP3ConnectionStateMachineTests {
         let action1 = stateMachine.initialize()
         #expect(action1 == .createControlStream)
 
+        // Local settings have qpackMaximumTableCapacity = 0, so we will not use the dynamic table
+        // as an encoder even if the remote offers capacity. Per RFC 9204 § 4.2, we may skip the
+        // encoder stream if it will not be used.
         let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
-        guard case .makeEncoderInstructionStream = action2 else {
-            Issue.record("Unexpected action \(String(describing: action2))")
-            return
-        }
-
-        let action3 = stateMachine.outboundEncoderStreamReady(streamID: 3)
-        #expect(action3 == .sendEncoderInstruction(.setDynamicTableCapacity(100)))
+        #expect(action2 == nil)
     }
 
     @Test
@@ -733,13 +730,16 @@ struct HTTP3ConnectionStateMachineTests {
 
     @Test
     func testEncoderStreamReadyAfterShutdown() {
-        let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
-        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .client)
+        let settings = HTTP3Settings(qpackMaximumTableCapacity: 100)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: settings, type: .client)
+        var idGenerator = IDGenerator(type: .client)
 
         let action1 = stateMachine.initialize()
-        #expect(action1 == .createControlStream)
+        #expect(action1 == .createControlAndDecoderStreams)
+        stateMachine.outboundControlStreamReady(streamID: idGenerator.outboundUni())
+        _ = stateMachine.outboundDecoderStreamReady(streamID: idGenerator.outboundUni())
 
-        let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
+        let action2 = stateMachine.receivedControlFrame(.settings(settings))
         guard case .makeEncoderInstructionStream = action2 else {
             Issue.record("Unexpected action \(String(describing: action2))")
             return
@@ -747,7 +747,7 @@ struct HTTP3ConnectionStateMachineTests {
 
         #expect(stateMachine.shutdownConnectionImmediately() == .shutdown)
 
-        let action3 = stateMachine.outboundEncoderStreamReady(streamID: 2)
+        let action3 = stateMachine.outboundEncoderStreamReady(streamID: idGenerator.outboundUni())
         #expect(action3 == nil)  // We don't send our settings because we shutdown
     }
 

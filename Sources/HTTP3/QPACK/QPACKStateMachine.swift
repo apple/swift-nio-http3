@@ -57,27 +57,32 @@ package struct QPACKStateMachine: ~Copyable {
         }
 
         private let state: State
+        private let localMaxTableCapacity: Int
 
-        private init(state: consuming State) {
+        private init(state: consuming State, localMaxTableCapacity: Int) {
             self.state = state
+            self.localMaxTableCapacity = localMaxTableCapacity
         }
 
-        init() {
-            self.init(state: .initial(.init(encoder: .init())))
+        init(localMaxTableCapacity: Int) {
+            self.init(state: .initial(.init(encoder: .init())), localMaxTableCapacity: localMaxTableCapacity)
         }
 
         mutating func receivedRemoteSettings(
             maxQueueSize: Int,
             dynamicTableSize: Int
         ) -> GotRemoteSettingsAction? {
+            let localMaxTableCapacity = self.localMaxTableCapacity
             switch consume self.state {
             case .initial(let initial):
                 // RFC 9204 § 4.2: An endpoint MAY avoid creating an encoder stream if it will not be used
-                if dynamicTableSize == 0 {
+                // This should include if the local table will not be used either
+                if dynamicTableSize == 0 || localMaxTableCapacity == 0 {
                     self = .init(
                         state: .withoutDynamic(
                             .init(encoder: initial.encoder)
-                        )
+                        ),
+                        localMaxTableCapacity: localMaxTableCapacity
                     )
                     return nil
                 } else {
@@ -88,7 +93,8 @@ package struct QPACKStateMachine: ~Copyable {
                                 maxQueueSize: maxQueueSize,
                                 dynamicTableSize: dynamicTableSize
                             )
-                        )
+                        ),
+                        localMaxTableCapacity: localMaxTableCapacity
                     )
                     return .makeEncoderInstructionStream
                 }
@@ -109,6 +115,7 @@ package struct QPACKStateMachine: ~Copyable {
         }
 
         mutating func outboundEncoderStreamReady() -> OutboundEncoderStreamReadyAction {
+            let localMaxTableCapacity = self.localMaxTableCapacity
             switch consume self.state {
             case .initial:
                 fatalError("Encoder stream created when not needed or already made")
@@ -128,35 +135,37 @@ package struct QPACKStateMachine: ~Copyable {
                         .init(
                             encoder: dynamicEncoder
                         )
-                    )
+                    ),
+                    localMaxTableCapacity: localMaxTableCapacity
                 )
                 return .sendEncoderInstruction(instruction)
             }
         }
 
         mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
+            let localMaxTableCapacity = self.localMaxTableCapacity
             switch consume self.state {
             case .initial(let initial):
                 let result = QPACKEncodeResult(fieldSection: initial.encoder.encode(headers: headers), instructions: [])
-                self = .init(state: .initial(initial))
+                self = .init(state: .initial(initial), localMaxTableCapacity: localMaxTableCapacity)
                 return result
             case .awaitingStream(let awaiting):
                 let result = QPACKEncodeResult(
                     fieldSection: awaiting.encoder.encode(headers: headers),
                     instructions: []
                 )
-                self = .init(state: .awaitingStream(awaiting))
+                self = .init(state: .awaitingStream(awaiting), localMaxTableCapacity: localMaxTableCapacity)
                 return result
             case .withoutDynamic(let woDynamic):
                 let result = QPACKEncodeResult(
                     fieldSection: woDynamic.encoder.encode(headers: headers),
                     instructions: []
                 )
-                self = .init(state: .withoutDynamic(woDynamic))
+                self = .init(state: .withoutDynamic(woDynamic), localMaxTableCapacity: localMaxTableCapacity)
                 return result
             case .withDynamic(var withDynamic):
                 let result = withDynamic.encoder.encode(headers: headers, forStream: streamID)
-                self = .init(state: .withDynamic(withDynamic))
+                self = .init(state: .withDynamic(withDynamic), localMaxTableCapacity: localMaxTableCapacity)
                 return result
             }
         }
@@ -178,20 +187,21 @@ package struct QPACKStateMachine: ~Copyable {
                     location: location
                 )
             }
+            let localMaxTableCapacity = self.localMaxTableCapacity
             switch consume self.state {
             case .initial(let initial):
-                self = .init(state: .initial(initial))
+                self = .init(state: .initial(initial), localMaxTableCapacity: localMaxTableCapacity)
                 return .emitConnectionError(noDynamicTableError(location: .here()))
             case .awaitingStream(let awaitingStream):
-                self = .init(state: .awaitingStream(awaitingStream))
+                self = .init(state: .awaitingStream(awaitingStream), localMaxTableCapacity: localMaxTableCapacity)
                 return .emitConnectionError(noDynamicTableError(location: .here()))
             case .withoutDynamic(let withoutDynamic):
-                self = .init(state: .withoutDynamic(withoutDynamic))
+                self = .init(state: .withoutDynamic(withoutDynamic), localMaxTableCapacity: localMaxTableCapacity)
                 return .emitConnectionError(noDynamicTableError(location: .here()))
             case .withDynamic(var withDynamic):
                 do {
                     try withDynamic.encoder.processInstruction(instruction)
-                    self = .init(state: .withDynamic(withDynamic))
+                    self = .init(state: .withDynamic(withDynamic), localMaxTableCapacity: localMaxTableCapacity)
                     return nil
                 } catch {
                     @inline(never)
@@ -208,7 +218,7 @@ package struct QPACKStateMachine: ~Copyable {
                         )
                     }
                     // TODO: move to error state?
-                    self = .init(state: .withDynamic(withDynamic))
+                    self = .init(state: .withDynamic(withDynamic), localMaxTableCapacity: localMaxTableCapacity)
                     return .emitConnectionError(invalidDecoderInstructionError(cause: error, location: .here()))
                 }
             }
@@ -284,8 +294,8 @@ package struct QPACKStateMachine: ~Copyable {
     private var decoderQueue: FieldSectionQueue
     private var outboundDecoderInstructionQueue: OutboundDecoderInstructionQueue
 
-    package init(decoderMaxTableSize: Int, decoderMaxBlockedStreams: Int) {
-        self.encoderState = .init()
+    package init(decoderMaxTableSize: Int, decoderMaxBlockedStreams: Int, localEncoderMaxTableCapacity: Int = 0) {
+        self.encoderState = .init(localMaxTableCapacity: localEncoderMaxTableCapacity)
         self.qpackDecoder = .init(dynamicTableMaxCapacity: decoderMaxTableSize)
         self.decoderQueue = .init(maxItems: decoderMaxBlockedStreams)
         self.outboundDecoderInstructionQueue = .init()
