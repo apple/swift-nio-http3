@@ -88,7 +88,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
             var qpackState: QPACKStateMachine
             /// The type of the connection (client or server).
             let type: HTTP3ConnectionType
-            let localDynamicTableSize: Int
+            let encoderMaxTableSize: Int
             var streamIDTracker = StreamIDTracker()
             var quiescingState: HTTP3ConnectionQuiescingStateMachine
 
@@ -98,7 +98,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                 self.inboundQPACKEncoderStream = .init()
                 self.qpackState = notStarted.qpackState
                 self.type = notStarted.type
-                self.localDynamicTableSize = Int(clamping: notStarted.localSettings.qpackMaximumTableCapacity)
+                self.encoderMaxTableSize = Int(clamping: notStarted.localSettings.qpackMaximumTableCapacity)
                 self.quiescingState = .init(type: notStarted.type)
             }
         }
@@ -526,8 +526,10 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
             case .initialized(var initializedState):
                 let action = initializedState.qpackState.receivedRemoteSettings(
                     maxQueueSize: Int(clamping: settings.qpackBlockedStreams),
-                    effectiveDynamicTableSize: initializedState.localDynamicTableSize == 0
-                        ? 0 : Int(clamping: settings.qpackMaximumTableCapacity)
+                    effectiveDynamicTableSize: min(
+                        initializedState.encoderMaxTableSize,
+                        Int(clamping: settings.qpackMaximumTableCapacity)
+                    )
                 )
                 self = .init(state: .initialized(initializedState))
                 switch action {
