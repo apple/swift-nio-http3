@@ -370,14 +370,14 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
 
         enum WriteAction {
-            /// Bytes are ready to be written out.
-            case writeBytes(ByteBuffer)
+            /// The frame's bytes were appended to the provided buffer.
+            case wroteBytes
             /// We need this header to be encoder.
             case encodeHeaders([HTTPField])
         }
 
-        /// Write a frame out.
-        mutating func write(frame: HTTP3Frame) -> WriteAction {
+        /// Write a frame out by appending its encoded bytes to `buffer`.
+        mutating func write(frame: HTTP3Frame, into buffer: inout ByteBuffer) -> WriteAction {
             switch consume self.state {
             case .idle(let idleState):
                 let maybePartial = MaybePartialFrame(frame)
@@ -394,10 +394,9 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                     // So it won't get this far.
                     fatalError("Tried to write a push promise, which is not supported")
                 case .partial(let partial):
-                    var buffer = ByteBuffer()
                     buffer.writeHTTP3PartialFrame(partial, preferHuffmanEncoding: idleState.preferHuffmanEncoding)
                     self = .init(state: .idle(idleState))
-                    return .writeBytes(buffer)
+                    return .wroteBytes
                 }
             case .waitingForEncode:
                 fatalError("Cannot call write whilst waiting for a QPACK encode result")
@@ -405,13 +404,14 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
 
         enum HeaderEncodeResultAction {
-            /// Bytes are ready to be written out.
-            case writeBytes(ByteBuffer)
+            /// The header's bytes were appended to the provided buffer.
+            case wroteBytes
         }
 
         mutating func gotHeaderEncodeResult(
             _ result: HTTP3PartialFrame.Headers,
-            from: [HTTPField]
+            from: [HTTPField],
+            into buffer: inout ByteBuffer
         ) -> HeaderEncodeResultAction {
             switch consume self.state {
             case .idle:
@@ -420,13 +420,12 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                 guard from == waitingState.fields else {
                     fatalError("Unexpected encode result")
                 }
-                var buffer = ByteBuffer()
                 buffer.writeHTTP3PartialFrame(
                     .headers(result),
                     preferHuffmanEncoding: waitingState.preferHuffmanEncoding
                 )
                 self = .init(state: .idle(.init(preferHuffmanEncoding: waitingState.preferHuffmanEncoding)))
-                return .writeBytes(buffer)
+                return .wroteBytes
             }
         }
     }
@@ -466,8 +465,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     package enum WriteFrameAction {
-        /// You should write out the following bytes to the wire.
-        case returnBytes(ByteBuffer)
+        /// The frame's bytes were appended to the buffer you provided.
+        case wroteBytes
         /// You should encode the given headers and call back with the result.
         case encodeHeaders([HTTPField])
         /// The frame can't be written, because doing so would be a stream error.
@@ -480,8 +479,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         case previousError
     }
 
-    /// Write out a frame.
-    package mutating func writeFrame(frame: HTTP3Frame) -> WriteFrameAction {
+    /// Write out a frame by appending its encoded bytes to `buffer`.
+    package mutating func writeFrame(frame: HTTP3Frame, into buffer: inout ByteBuffer) -> WriteFrameAction {
         switch self.state {
         case .idle(var idleState):
             guard idleState.readState.checkCanWrite() else {
@@ -491,11 +490,11 @@ package struct HTTP3StreamStateMachine: ~Copyable {
             let validationResult = idleState.validator.processOutboundFrame(frame)
             switch validationResult {
             case .forwardFrame(let validatedFrame):
-                let writeAction = idleState.writeState.write(frame: validatedFrame)
+                let writeAction = idleState.writeState.write(frame: validatedFrame, into: &buffer)
                 switch writeAction {
-                case .writeBytes(let bytes):
+                case .wroteBytes:
                     self = .init(state: .idle(idleState))
-                    return .returnBytes(bytes)
+                    return .wroteBytes
                 case .encodeHeaders(let fields):
                     self = .init(state: .idle(idleState))
                     return .encodeHeaders(fields)
@@ -520,8 +519,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     package enum HeaderEncodeResultAction {
-        /// You should write out the following bytes to the wire.
-        case returnBytes(ByteBuffer)
+        /// The header's bytes were appended to the buffer you provided.
+        case wroteBytes
         /// This header can't be encoded because the stream is already in an error state.
         case previousError(HTTP3Error)
         /// You should fail the current write because the stream is already closed
@@ -530,15 +529,16 @@ package struct HTTP3StreamStateMachine: ~Copyable {
 
     package mutating func gotHeaderEncodeResult(
         _ result: HTTP3PartialFrame.Headers,
-        from: [HTTPField]
+        from: [HTTPField],
+        into buffer: inout ByteBuffer
     ) -> HeaderEncodeResultAction {
         switch self.state {
         case .idle(var idleState):
-            let writeAction = idleState.writeState.gotHeaderEncodeResult(result, from: from)
+            let writeAction = idleState.writeState.gotHeaderEncodeResult(result, from: from, into: &buffer)
             self = .init(state: .idle(idleState))
             switch writeAction {
-            case .writeBytes(let bytes):
-                return .returnBytes(bytes)
+            case .wroteBytes:
+                return .wroteBytes
             }
         case .finished:
             // We shouldn't get a header decode result on a finished stream.
