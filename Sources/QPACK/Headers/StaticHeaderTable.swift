@@ -122,7 +122,7 @@ package enum StaticHeaderTable {
     ]
 
     /// A mapping of header name to the array of static table indices carrying that name.
-    /// Array are guaranteed to be non-empty, and their values are in ascending index order.
+    /// Arrays are guaranteed to be non-empty, and their values are in ascending index order.
     private static let indicesByName: [HTTPField.Name: [Int]] = {
         var result = [HTTPField.Name: [Int]](minimumCapacity: Self.shared.count)
         for index in Self.shared.indices {
