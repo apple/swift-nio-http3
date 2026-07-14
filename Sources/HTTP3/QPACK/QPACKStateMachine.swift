@@ -68,12 +68,12 @@ package struct QPACKStateMachine: ~Copyable {
 
         mutating func receivedRemoteSettings(
             maxQueueSize: Int,
-            dynamicTableSize: Int
+            effectiveDynamicTableSize: Int
         ) -> GotRemoteSettingsAction? {
             switch consume self.state {
             case .initial(let initial):
                 // RFC 9204 § 4.2: An endpoint MAY avoid creating an encoder stream if it will not be used
-                if dynamicTableSize == 0 {
+                if effectiveDynamicTableSize == 0 {
                     self = .init(
                         state: .withoutDynamic(
                             .init(encoder: initial.encoder)
@@ -86,7 +86,7 @@ package struct QPACKStateMachine: ~Copyable {
                             .init(
                                 encoder: initial.encoder,
                                 maxQueueSize: maxQueueSize,
-                                dynamicTableSize: dynamicTableSize
+                                dynamicTableSize: effectiveDynamicTableSize
                             )
                         )
                     )
@@ -298,9 +298,12 @@ package struct QPACKStateMachine: ~Copyable {
     /// Call this when the settings have been received from the remote. This must never be called more than once.
     package mutating func receivedRemoteSettings(
         maxQueueSize: Int,
-        dynamicTableSize: Int
+        effectiveDynamicTableSize: Int
     ) -> GotRemoteSettingsAction? {
-        self.encoderState.receivedRemoteSettings(maxQueueSize: maxQueueSize, dynamicTableSize: dynamicTableSize)
+        self.encoderState.receivedRemoteSettings(
+            maxQueueSize: maxQueueSize,
+            effectiveDynamicTableSize: effectiveDynamicTableSize
+        )
     }
 
     package enum OutboundEncoderStreamReadyAction: Hashable, Sendable {
