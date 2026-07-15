@@ -94,6 +94,7 @@ let package = Package(
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
                 .product(name: "NIOEmbedded", package: "swift-nio"),
+                .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOTestUtils", package: "swift-nio"),
                 .product(name: "X509", package: "swift-certificates"),
