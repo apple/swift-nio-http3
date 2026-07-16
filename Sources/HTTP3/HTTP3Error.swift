@@ -140,6 +140,7 @@ extension HTTP3Error {
             case none
             case invalidGoawayStreamID
             case criticalStreamClosed
+            case peerTerminatedStream
         }
 
         public var description: String {
@@ -249,6 +250,11 @@ extension HTTP3Error {
         /// A critical stream was closed.
         public static var criticalStreamClosed: Self {
             Self(.criticalStreamClosed)
+        }
+
+        /// The peer terminated the stream before delivering a complete request or response.
+        public static var peerTerminatedStream: Self {
+            Self(.peerTerminatedStream)
         }
     }
 
