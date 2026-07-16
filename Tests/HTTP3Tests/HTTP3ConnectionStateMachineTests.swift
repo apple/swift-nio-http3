@@ -363,11 +363,12 @@ struct HTTP3ConnectionStateMachineTests {
 
     @Test
     func testGotSettingsWithQPACK() {
+        let localSettings = HTTP3Settings(qpackMaximumTableCapacity: 200)
         let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
-        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .client)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: localSettings, type: .client)
 
         let action1 = stateMachine.initialize()
-        #expect(action1 == .createControlStream)
+        #expect(action1 == .createControlAndDecoderStreams)
 
         let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
         guard case .makeEncoderInstructionStream = action2 else {
@@ -733,11 +734,12 @@ struct HTTP3ConnectionStateMachineTests {
 
     @Test
     func testEncoderStreamReadyAfterShutdown() {
+        let localSettings = HTTP3Settings(qpackMaximumTableCapacity: 200)
         let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
-        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .client)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: localSettings, type: .client)
 
         let action1 = stateMachine.initialize()
-        #expect(action1 == .createControlStream)
+        #expect(action1 == .createControlAndDecoderStreams)
 
         let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
         guard case .makeEncoderInstructionStream = action2 else {
