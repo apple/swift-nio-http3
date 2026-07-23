@@ -58,7 +58,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                         code: .invalidStream,
                         message: "Received a duplicate incoming stream",
                         cause: nil,
-                        errorCode: .H3_STREAM_CREATION_ERROR,
+                        errorCode: .streamCreationError,
                         location: .here()
                     )
                 )
@@ -185,7 +185,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                             code: .rejected,
                             message: "Stream rejected due to server shutting down",
                             cause: nil,
-                            errorCode: .H3_REQUEST_REJECTED,
+                            errorCode: .requestRejected,
                             location: .here()
                         )
                     )
@@ -200,7 +200,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                         code: .streamCreationError,
                         message: "Incoming request stream on client",
                         cause: nil,
-                        errorCode: .H3_STREAM_CREATION_ERROR,
+                        errorCode: .streamCreationError,
                         location: .here()
                     )
                 )
@@ -263,7 +263,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                         code: .streamCreationError,
                         message: "Cannot accept push stream on server",
                         cause: nil,
-                        errorCode: .H3_STREAM_CREATION_ERROR,
+                        errorCode: .streamCreationError,
                         location: .here()
                     )
                 )
@@ -278,7 +278,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                         code: .streamCreationError,
                         message: "Rejecting inbound push stream with invalid ID",
                         cause: nil,
-                        errorCode: .H3_ID_ERROR,
+                        errorCode: .idError,
                         location: .here()
                     )
                 )
@@ -367,7 +367,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                     code: .streamCreationError,
                     message: "Rejecting inbound stream of unknown type \(streamType.rawValue)",
                     cause: nil,
-                    errorCode: .H3_STREAM_CREATION_ERROR,
+                    errorCode: .streamCreationError,
                     location: .here()
                 )
             )
@@ -600,7 +600,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Received MAX_PUSH_ID on client",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )
@@ -959,7 +959,7 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
                             code: .criticalStreamClosed,
                             message: "The \(typeName) \(unidirectionalStreamType) stream was closed",
                             cause: nil,
-                            errorCode: .H3_CLOSED_CRITICAL_STREAM,
+                            errorCode: .closedCriticalStream,
                             location: .here()
                         )
                     )
@@ -1052,7 +1052,7 @@ extension HTTP3Error {
             code: .streamCreationError,
             message: "Endpoint is shutting down",
             cause: nil,
-            errorCode: .H3_STREAM_CREATION_ERROR,
+            errorCode: .streamCreationError,
             location: location
         )
     }

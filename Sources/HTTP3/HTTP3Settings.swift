@@ -106,7 +106,7 @@ public struct HTTP3Settings: Hashable, Sendable {
                 code: .invalidFramePayload,
                 message: "Settings contains duplicated identifier \(identifier)",
                 cause: nil,
-                errorCode: .H3_SETTINGS_ERROR,
+                errorCode: .settingsError,
                 location: location
             )
         }
@@ -174,7 +174,7 @@ extension ByteBuffer {
                     code: .invalidFramePayload,
                     message: "Setting identifier is not a valid QUIC variable-length integer",
                     cause: nil,
-                    errorCode: .H3_FRAME_ERROR,
+                    errorCode: .frameError,
                     location: .here()
                 )
             }
@@ -183,7 +183,7 @@ extension ByteBuffer {
                     code: .invalidFramePayload,
                     message: "Setting value is not a valid QUIC variable-length integer",
                     cause: nil,
-                    errorCode: .H3_FRAME_ERROR,
+                    errorCode: .frameError,
                     location: .here()
                 )
             }
@@ -193,7 +193,7 @@ extension ByteBuffer {
                     code: .invalidFramePayload,
                     message: "Setting identifier is forbidden",
                     cause: nil,
-                    errorCode: .H3_SETTINGS_ERROR,
+                    errorCode: .settingsError,
                     location: .here()
                 )
             }

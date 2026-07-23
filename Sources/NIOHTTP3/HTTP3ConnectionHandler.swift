@@ -99,12 +99,12 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             self.logger.debug(
                 "Closing connection",
                 metadata: [
-                    LoggingKeys.error: "\(error.h3ErrorCode ?? .H3_NO_ERROR)", LoggingKeys.reason: "\(error.message)",
+                    LoggingKeys.error: "\(error.h3ErrorCode ?? .noError)", LoggingKeys.reason: "\(error.message)",
                 ]
             )
             self.context?.triggerUserOutboundEvent(
                 QUICCloseConnectionEvent(
-                    code: QUICApplicationErrorCode(error.h3ErrorCode ?? .H3_NO_ERROR),
+                    code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError),
                     reasonPhrase: error.message
                 ),
                 promise: nil
@@ -360,7 +360,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             return
         }
         // RFC 9114 § 8: Receipt of an unknown error code MUST be treated as equivalent to H3_NO_ERROR.
-        let h3Code = HTTP3ErrorCode(rawValue: quicError.code) ?? .H3_NO_ERROR
+        let h3Code = HTTP3ErrorCode(rawValue: quicError.code) ?? .noError
         self.logger.debug(
             "HTTP3ConnectionHandler caught error",
             metadata: [LoggingKeys.error: "\(h3Code)", LoggingKeys.reason: "\(quicError.reason)"]
@@ -404,7 +404,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
                     code: .unableToFindStreamID,
                     message: "Unable to find stream ID for incoming stream",
                     cause: cause,
-                    errorCode: .H3_INTERNAL_ERROR,
+                    errorCode: .internalError,
                     location: .here()
                 )
             )

@@ -266,7 +266,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
                 code: .streamCreationError,
                 message: "test",
                 cause: nil,
-                errorCode: .H3_STREAM_CREATION_ERROR,
+                errorCode: .streamCreationError,
                 location: .here()
             )
         )
@@ -276,7 +276,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
         #expect(inboundEventsHandler.channelReadCalls == 0)
 
         // The channel sends an outbound QUICStopSendingEvent event and an inbound error caught
-        #expect(closeTriggerRecorder.errorCode == QUICApplicationErrorCode(.H3_STREAM_CREATION_ERROR))
+        #expect(closeTriggerRecorder.errorCode == QUICApplicationErrorCode(.streamCreationError))
         #expect(inboundEventsHandler.errorCaughtCalls == 1)
         #expect(outboundEventsHandler.triggerUserOutboundEventCalls == 1)
     }

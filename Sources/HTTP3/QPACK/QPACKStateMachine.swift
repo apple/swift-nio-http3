@@ -174,7 +174,7 @@ package struct QPACKStateMachine: ~Copyable {
                     code: .qpackDecoderStreamError,
                     message: "Decoder instruction received when dynamic table not being used",
                     cause: nil,
-                    errorCode: .QPACK_DECODER_STREAM_ERROR,
+                    errorCode: .qpackDecoderStreamError,
                     location: location
                 )
             }
@@ -203,7 +203,7 @@ package struct QPACKStateMachine: ~Copyable {
                             code: .qpackDecoderStreamError,
                             message: "Invalid decoder instruction",
                             cause: cause,
-                            errorCode: .QPACK_DECODER_STREAM_ERROR,
+                            errorCode: .qpackDecoderStreamError,
                             location: location
                         )
                     }
@@ -388,7 +388,7 @@ package struct QPACKStateMachine: ~Copyable {
                 code: .qpackDecoderError,
                 message: "Invalid field section prefix",
                 cause: nil,
-                errorCode: .QPACK_DECOMPRESSION_FAILED,
+                errorCode: .qpackDecompressionFailed,
                 location: location
             )
         }
@@ -435,7 +435,7 @@ package struct QPACKStateMachine: ~Copyable {
                             code: .qpackDecoderError,
                             message: "Too many streams blocked on QPACK",
                             cause: cause,
-                            errorCode: .QPACK_DECOMPRESSION_FAILED,
+                            errorCode: .qpackDecompressionFailed,
                             location: location
                         )
                     }
@@ -518,7 +518,7 @@ package struct QPACKStateMachine: ~Copyable {
                 code: .qpackDecoderError,
                 message: "Could not decode QPACK headers for stream \(streamID)",
                 cause: qpackError,
-                errorCode: .QPACK_DECOMPRESSION_FAILED,
+                errorCode: .qpackDecompressionFailed,
                 location: .here()
             )
             return .connection(h3Error)
@@ -529,7 +529,7 @@ package struct QPACKStateMachine: ~Copyable {
                 code: .qpackDecoderError,
                 message: "Could not decode QPACK headers",
                 cause: qpackError,
-                errorCode: .H3_MESSAGE_ERROR,
+                errorCode: .messageError,
                 location: .here()
             )
             return .stream(h3Error)
@@ -556,7 +556,7 @@ package struct QPACKStateMachine: ~Copyable {
                 code: .qpackEncoderStreamError,
                 message: "Invalid encoder instruction",
                 cause: cause,
-                errorCode: .QPACK_ENCODER_STREAM_ERROR,
+                errorCode: .qpackEncoderStreamError,
                 location: location
             )
         }

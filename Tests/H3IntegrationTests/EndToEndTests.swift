@@ -678,7 +678,7 @@ struct EndToEndTests {
         let clientConnectionError = try await clientErrorPromise.futureResult.get()
         let clientH3ConnectionError = clientConnectionError as? HTTP3Error
         #expect(clientH3ConnectionError?.code == .remoteConnectionError)
-        #expect(clientH3ConnectionError?.h3ErrorCode == .H3_FRAME_UNEXPECTED)
+        #expect(clientH3ConnectionError?.h3ErrorCode == .frameUnexpected)
         #expect(clientH3ConnectionError?.message == "Expected headers, got settings")
 
         // Client connection should close itself
@@ -727,7 +727,7 @@ struct EndToEndTests {
         let clientConnectionError = try await clientErrorPromise.futureResult.get()
         let clientH3ConnectionError = clientConnectionError as? HTTP3Error
         #expect(clientH3ConnectionError?.code == .remoteConnectionError)
-        #expect(clientH3ConnectionError?.h3ErrorCode == .H3_NO_ERROR)
+        #expect(clientH3ConnectionError?.h3ErrorCode == .noError)
 
         // Client connection should close itself
         try await clientConnectionChannel.closeFuture.get()
@@ -920,7 +920,7 @@ struct EndToEndTests {
         let streamError = try await clientErrorPromise.futureResult.get()
         let clientH3ConnectionError = streamError as? HTTP3Error
         #expect(clientH3ConnectionError?.code == .remoteStreamError)
-        #expect(clientH3ConnectionError?.h3ErrorCode == .H3_MESSAGE_ERROR)
+        #expect(clientH3ConnectionError?.h3ErrorCode == .messageError)
 
         // Request stream should close because of the error
         try await requestStreamChannel.closeFuture.get()
@@ -977,7 +977,7 @@ struct EndToEndTests {
 
         let clientStreamError = try await clientErrorPromise.futureResult.get()
         let clientStreamQUICError = clientStreamError as? QUICStopSendingError
-        #expect(clientStreamQUICError?.code == QUICApplicationErrorCode(.H3_STREAM_CREATION_ERROR))
+        #expect(clientStreamQUICError?.code == QUICApplicationErrorCode(.streamCreationError))
 
         // Client stream should close
         try await streamChannel.closeFuture.get()
@@ -1035,7 +1035,7 @@ struct EndToEndTests {
         let clientConnectionError = try await clientErrorPromise.futureResult.get()
         let clientH3ConnectionError = clientConnectionError as? HTTP3Error
         #expect(clientH3ConnectionError?.code == .remoteConnectionError)
-        #expect(clientH3ConnectionError?.h3ErrorCode == .H3_STREAM_CREATION_ERROR)
+        #expect(clientH3ConnectionError?.h3ErrorCode == .streamCreationError)
         #expect(clientH3ConnectionError?.message == "Cannot accept push stream on server")
 
         // Client connection should close itself
@@ -1121,7 +1121,7 @@ struct EndToEndTests {
         let serverConnectionError = try await serverErrorPromise.futureResult.get()
         let serverH3ConnectionError = serverConnectionError as? HTTP3Error
         #expect(serverH3ConnectionError?.code == .remoteConnectionError)
-        #expect(serverH3ConnectionError?.h3ErrorCode == .H3_ID_ERROR)
+        #expect(serverH3ConnectionError?.h3ErrorCode == .idError)
         #expect(serverH3ConnectionError?.message == "Rejecting inbound push stream with invalid ID")
 
         // server and client connections should close themselves
@@ -1194,7 +1194,7 @@ struct EndToEndTests {
         let clientConnectionError = try await clientErrorPromise.futureResult.get()
         let clientH3ConnectionError = clientConnectionError as? HTTP3Error
         #expect(clientH3ConnectionError?.code == .remoteConnectionError)
-        #expect(clientH3ConnectionError?.h3ErrorCode == .QPACK_ENCODER_STREAM_ERROR)
+        #expect(clientH3ConnectionError?.h3ErrorCode == .qpackEncoderStreamError)
         #expect(clientH3ConnectionError?.message == "Invalid QPACK instruction")
 
         // Client connection should close itself
@@ -1467,7 +1467,7 @@ struct EndToEndTests {
         expectH3ErrorEqual(
             error: serverCaughtError,
             expectedCode: .remoteConnectionError,
-            expectedH3ErrorCode: .H3_CLOSED_CRITICAL_STREAM
+            expectedH3ErrorCode: .closedCriticalStream
         )
 
         // Tear down

@@ -189,7 +189,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .QPACK_DECOMPRESSION_FAILED
+            expectedH3ErrorCode: .qpackDecompressionFailed
         )
     }
 
@@ -216,7 +216,7 @@ struct QPACKStateMachineTests {
         }
         #expect(error.headers == testHeader)
         #expect(error.streamID == streamID)
-        expectH3ErrorEqual(error: error.error, expectedCode: .qpackDecoderError, expectedH3ErrorCode: .H3_MESSAGE_ERROR)
+        expectH3ErrorEqual(error: error.error, expectedCode: .qpackDecoderError, expectedH3ErrorCode: .messageError)
     }
 
     @Test
@@ -301,7 +301,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: decodeError.error,
             expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .H3_MESSAGE_ERROR
+            expectedH3ErrorCode: .messageError
         )
     }
 
@@ -330,7 +330,7 @@ struct QPACKStateMachineTests {
             error:
                 error,
             expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .QPACK_DECOMPRESSION_FAILED,
+            expectedH3ErrorCode: .qpackDecompressionFailed,
             expectedMessage: "Invalid field section prefix"
         )
     }
@@ -374,7 +374,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .QPACK_DECOMPRESSION_FAILED,
+            expectedH3ErrorCode: .qpackDecompressionFailed,
             expectedMessage: "Too many streams blocked on QPACK"
         )
     }
@@ -457,7 +457,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .QPACK_DECODER_STREAM_ERROR
+            expectedH3ErrorCode: .qpackDecoderStreamError
         )
     }
 
@@ -474,7 +474,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .QPACK_DECODER_STREAM_ERROR
+            expectedH3ErrorCode: .qpackDecoderStreamError
         )
     }
 
@@ -491,7 +491,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .QPACK_DECODER_STREAM_ERROR
+            expectedH3ErrorCode: .qpackDecoderStreamError
         )
     }
 
@@ -508,7 +508,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .QPACK_DECODER_STREAM_ERROR
+            expectedH3ErrorCode: .qpackDecoderStreamError
         )
     }
 
@@ -527,7 +527,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .qpackEncoderStreamError,
-            expectedH3ErrorCode: .QPACK_ENCODER_STREAM_ERROR
+            expectedH3ErrorCode: .qpackEncoderStreamError
         )
     }
 
@@ -550,7 +550,7 @@ struct QPACKStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .qpackEncoderStreamError,
-            expectedH3ErrorCode: .QPACK_ENCODER_STREAM_ERROR
+            expectedH3ErrorCode: .qpackEncoderStreamError
         )
     }
 
