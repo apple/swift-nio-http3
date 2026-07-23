@@ -162,7 +162,7 @@ package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
                 code: .invalidGoawayStreamID,
                 message: "Invalid GOAWAY id",
                 cause: nil,
-                errorCode: .H3_ID_ERROR,
+                errorCode: .idError,
                 location: location
             )
         }
@@ -418,7 +418,7 @@ extension HTTP3Error {
             code: .invalidGoawayStreamID,
             message: "GOAWAY id was increased",
             cause: nil,
-            errorCode: .H3_ID_ERROR,
+            errorCode: .idError,
             location: location
         )
     }

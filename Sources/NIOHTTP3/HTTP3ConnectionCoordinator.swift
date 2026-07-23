@@ -289,7 +289,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                         streamType: .request
                     )
                     streamChannel.triggerUserOutboundEvent(
-                        QUICStopSendingEvent(code: QUICApplicationErrorCode(.H3_REQUEST_REJECTED)),
+                        QUICStopSendingEvent(code: QUICApplicationErrorCode(.requestRejected)),
                         promise: nil
                     )
                 }
@@ -395,7 +395,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                                         code: .qpackEncoderStreamError,
                                         message: "Invalid QPACK instruction",
                                         cause: error,
-                                        errorCode: .QPACK_ENCODER_STREAM_ERROR,
+                                        errorCode: .qpackEncoderStreamError,
                                         location: .here()
                                     )
                                 )
@@ -442,7 +442,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                                         code: .qpackEncoderStreamError,
                                         message: "Invalid QPACK instruction",
                                         cause: error,
-                                        errorCode: .QPACK_ENCODER_STREAM_ERROR,
+                                        errorCode: .qpackEncoderStreamError,
                                         location: .here()
                                     )
                                 )
@@ -637,7 +637,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     code: .none,
                     message: "",
                     cause: nil,
-                    errorCode: .H3_NO_ERROR,
+                    errorCode: .noError,
                     location: .here()
                 )
             )

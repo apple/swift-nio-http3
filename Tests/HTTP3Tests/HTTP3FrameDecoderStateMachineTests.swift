@@ -120,7 +120,7 @@ struct HTTP3FrameDecoderStateMachineTests {
                 expectH3ErrorEqual(
                     error: error,
                     expectedCode: .forbiddenFrameType,
-                    expectedH3ErrorCode: .H3_FRAME_UNEXPECTED
+                    expectedH3ErrorCode: .frameUnexpected
                 )
             case .returnFrame, .needMoreBytes, .previousError, .returnUnknownFrame:
                 Issue.record("Unexpected action")

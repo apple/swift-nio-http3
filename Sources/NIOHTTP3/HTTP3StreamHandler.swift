@@ -185,7 +185,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
                 self.qpackDecoder(partialHeader, self.streamID)
             case .emitStreamError(let error):
                 context.triggerUserOutboundEvent(
-                    QUICStopSendingEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .H3_NO_ERROR)),
+                    QUICStopSendingEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
                     promise: nil
                 )
                 context.fireErrorCaught(error)
@@ -359,7 +359,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
                 code: .rejected,
                 message: "Stream cancelled due to GOAWAY",
                 cause: nil,
-                errorCode: .H3_REQUEST_REJECTED,
+                errorCode: .requestRejected,
                 location: location
             )
         }

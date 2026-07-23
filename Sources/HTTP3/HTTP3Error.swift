@@ -30,9 +30,13 @@ public struct HTTP3Error: Error, Sendable {
     /// about the root cause of the failure.
     public var cause: (any Error)?
 
-    /// The http3 error code to be sent to the peer when the connection or stream is closed.
-    /// See RFC 9114 § 8.1.
-    package var h3ErrorCode: HTTP3ErrorCode?
+    /// The HTTP/3 error code associated with this error (RFC 9114 § 8.1).
+    ///
+    /// For an error this endpoint raises, this is the code it will send to the
+    /// peer when it closes the stream or connection. For an error representing a
+    /// reset received from the peer (see ``HTTP3Error/Code-swift.struct/remoteStreamError``),
+    /// this is the code the peer sent, preserved verbatim.
+    public var h3ErrorCode: HTTP3ErrorCode?
 
     /// The location from which this error was thrown.
     public var location: SourceLocation

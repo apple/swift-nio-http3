@@ -59,7 +59,7 @@ struct HTTP3SettingsTests {
 
     @Test
     func duplicateKnownSetting() {
-        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .H3_SETTINGS_ERROR) {
+        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .settingsError) {
             _ = try HTTP3Settings(parsing: [
                 .init(identifier: .qpackBlockedStreams, value: 30),
                 .init(identifier: .qpackBlockedStreams, value: 40),
@@ -69,7 +69,7 @@ struct HTTP3SettingsTests {
 
     @Test
     func duplicateUnknownSetting() {
-        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .H3_SETTINGS_ERROR) {
+        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .settingsError) {
             _ = try HTTP3Settings(parsing: [
                 .init(identifier: .init(extensionSetting: 100)!, value: 30),
                 .init(identifier: .init(extensionSetting: 100)!, value: 40),
@@ -114,7 +114,7 @@ struct HTTP3SettingsTests {
             var buffer = ByteBuffer(bytes: encodedSettingsBytes)
             expectH3Error(
                 code: .invalidFramePayload,
-                h3ErrorCode: .H3_SETTINGS_ERROR,
+                h3ErrorCode: .settingsError,
                 message: "Setting identifier is forbidden"
             ) {
                 _ = try buffer.readHTTP3Settings()

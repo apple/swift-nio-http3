@@ -121,7 +121,7 @@ package final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundH
                     // The callback threw an error, we should close the stream
                     if let h3Error = error as? HTTP3Error {
                         context.fireErrorCaught(h3Error)
-                        self.sendStreamReset(errorCode: h3Error.h3ErrorCode ?? .H3_INTERNAL_ERROR)
+                        self.sendStreamReset(errorCode: h3Error.h3ErrorCode ?? .internalError)
                     } else {
                         @inline(never)
                         func streamCreationError(
@@ -132,13 +132,13 @@ package final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundH
                                 code: .streamCreationError,
                                 message: "Failed to initialize inbound stream",
                                 cause: cause,
-                                errorCode: .H3_INTERNAL_ERROR,
+                                errorCode: .internalError,
                                 location: location
                             )
                         }
                         let h3Error = streamCreationError(cause: error, location: .here())
                         context.fireErrorCaught(h3Error)
-                        self.sendStreamReset(errorCode: .H3_INTERNAL_ERROR)
+                        self.sendStreamReset(errorCode: .internalError)
                     }
                 }
             }

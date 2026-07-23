@@ -47,7 +47,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         expectH3ErrorEqual(
             error: action?.connectionError,
             expectedCode: .invalidGoawayStreamID,
-            expectedH3ErrorCode: .H3_ID_ERROR
+            expectedH3ErrorCode: .idError
         )
     }
 
@@ -59,7 +59,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         expectH3ErrorEqual(
             error: action?.connectionError,
             expectedCode: .invalidGoawayStreamID,
-            expectedH3ErrorCode: .H3_ID_ERROR
+            expectedH3ErrorCode: .idError
         )
     }
 
@@ -72,7 +72,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         expectH3ErrorEqual(
             error: action?.connectionError,
             expectedCode: .invalidGoawayStreamID,
-            expectedH3ErrorCode: .H3_ID_ERROR
+            expectedH3ErrorCode: .idError
         )
     }
 
@@ -120,7 +120,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         expectH3ErrorEqual(
             error: action3.throwError,
             expectedCode: .invalidGoawayStreamID,
-            expectedH3ErrorCode: .H3_ID_ERROR
+            expectedH3ErrorCode: .idError
         )
     }
 
@@ -149,7 +149,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         expectH3ErrorEqual(
             error: action4.throwError,
             expectedCode: .invalidGoawayStreamID,
-            expectedH3ErrorCode: .H3_ID_ERROR
+            expectedH3ErrorCode: .idError
         )
     }
 
@@ -172,7 +172,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         expectH3ErrorEqual(
             error: action3.throwError,
             expectedCode: .invalidGoawayStreamID,
-            expectedH3ErrorCode: .H3_ID_ERROR
+            expectedH3ErrorCode: .idError
         )
     }
 
