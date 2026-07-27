@@ -359,8 +359,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             context.fireErrorCaught(error)
             return
         }
-        // RFC 9114 § 8: Receipt of an unknown error code MUST be treated as equivalent to H3_NO_ERROR.
-        let h3Code = HTTP3ErrorCode(rawValue: quicError.code) ?? .noError
+        let h3Code = HTTP3ErrorCode(rawValue: quicError.code)
         self.logger.debug(
             "HTTP3ConnectionHandler caught error",
             metadata: [LoggingKeys.error: "\(h3Code)", LoggingKeys.reason: "\(quicError.reason)"]
