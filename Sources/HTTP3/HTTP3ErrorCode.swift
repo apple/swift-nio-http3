@@ -18,10 +18,9 @@
 /// terminating streams, aborting reading of streams, or immediately closing
 /// connections. See RFC 9114 § 8.1.
 ///
-/// This is modeled as a struct rather than an enum so that codes registered by
-/// future revisions or extensions can be added without a source-breaking
-/// change, and so that a code received from a peer is preserved verbatim even
-/// when this library does not recognize it (mirroring `HTTP2ErrorCode`).
+/// This is modeled as a struct rather than an enum so that a code received from
+/// a peer is preserved verbatim even when this library does not recognize it
+/// (mirroring `HTTP2ErrorCode`).
 public struct HTTP3ErrorCode: Hashable, Sendable {
     /// The underlying error code value (RFC 9114 § 8.1 / RFC 9000 § 20.2).
     public var rawValue: UInt64
@@ -76,31 +75,31 @@ public struct HTTP3ErrorCode: Hashable, Sendable {
     public static let qpackDecoderStreamError = HTTP3ErrorCode(rawValue: 0x0202)
 }
 
-extension HTTP3ErrorCode: CustomStringConvertible {
-    public var description: String {
+extension HTTP3ErrorCode: CustomDebugStringConvertible {
+    public var debugDescription: String {
         let name: String
         switch self {
-        case .noError: name = "H3_NO_ERROR"
-        case .generalProtocolError: name = "H3_GENERAL_PROTOCOL_ERROR"
-        case .internalError: name = "H3_INTERNAL_ERROR"
-        case .streamCreationError: name = "H3_STREAM_CREATION_ERROR"
-        case .closedCriticalStream: name = "H3_CLOSED_CRITICAL_STREAM"
-        case .frameUnexpected: name = "H3_FRAME_UNEXPECTED"
-        case .frameError: name = "H3_FRAME_ERROR"
-        case .excessiveLoad: name = "H3_EXCESSIVE_LOAD"
-        case .idError: name = "H3_ID_ERROR"
-        case .settingsError: name = "H3_SETTINGS_ERROR"
-        case .missingSettings: name = "H3_MISSING_SETTINGS"
-        case .requestRejected: name = "H3_REQUEST_REJECTED"
-        case .requestCancelled: name = "H3_REQUEST_CANCELLED"
-        case .requestIncomplete: name = "H3_REQUEST_INCOMPLETE"
-        case .messageError: name = "H3_MESSAGE_ERROR"
-        case .connectError: name = "H3_CONNECT_ERROR"
-        case .versionFallback: name = "H3_VERSION_FALLBACK"
-        case .qpackDecompressionFailed: name = "QPACK_DECOMPRESSION_FAILED"
-        case .qpackEncoderStreamError: name = "QPACK_ENCODER_STREAM_ERROR"
-        case .qpackDecoderStreamError: name = "QPACK_DECODER_STREAM_ERROR"
-        default: name = "UNKNOWN"
+        case .noError: name = "No Error"
+        case .generalProtocolError: name = "General Protocol Error"
+        case .internalError: name = "Internal Error"
+        case .streamCreationError: name = "Stream Creation Error"
+        case .closedCriticalStream: name = "Closed Critical Stream"
+        case .frameUnexpected: name = "Frame Unexpected"
+        case .frameError: name = "Frame Error"
+        case .excessiveLoad: name = "Excessive Load"
+        case .idError: name = "ID Error"
+        case .settingsError: name = "Settings Error"
+        case .missingSettings: name = "Missing Settings"
+        case .requestRejected: name = "Request Rejected"
+        case .requestCancelled: name = "Request Cancelled"
+        case .requestIncomplete: name = "Request Incomplete"
+        case .messageError: name = "Message Error"
+        case .connectError: name = "Connect Error"
+        case .versionFallback: name = "Version Fallback"
+        case .qpackDecompressionFailed: name = "QPACK Decompression Failed"
+        case .qpackEncoderStreamError: name = "QPACK Encoder Stream Error"
+        case .qpackDecoderStreamError: name = "QPACK Decoder Stream Error"
+        default: name = "Unknown Error"
         }
         return "HTTP3ErrorCode<0x\(String(self.rawValue, radix: 16)) \(name)>"
     }
