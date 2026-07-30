@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 /// An HTTP/3 error code.
-///
 /// HTTP/3 uses error codes to communicate what went wrong when abruptly
 /// terminating streams, aborting reading of streams, or immediately closing
 /// connections. See RFC 9114 § 8.1.
