@@ -22,7 +22,6 @@ import class NIOQUIC.AsyncVerifier
 import class NIOQUIC.Authenticator
 import struct NIOQUIC.QUICConfiguration
 import class NIOQUIC.QUICHandler
-import struct NIOQUIC.QUICMetrics
 import struct NIOQUIC.QUICStreamCreator
 
 typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator>
@@ -37,7 +36,6 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - configuration: The ``HTTP3ServerConfiguration``.
     ///   - settings: The `HTTP3Settings` to use for all incoming connections.
     ///   - quicConfiguration: The `QUICConfiguration` to be used.
-    ///   - metrics: The metrics.
     ///   - logger: The logger.
     ///   - inboundRequestStreamInitializer: Closure to run for each incoming stream. Must be synchronous.
     /// - Returns: A ``HTTP3ServerConnectionMultiplexer``. Use this to iterate incoming connections.
@@ -47,7 +45,6 @@ extension ChannelPipeline.SynchronousOperations {
         configuration: HTTP3ServerConfiguration = .defaults,
         settings: HTTP3Settings = .init(),
         quicConfiguration: QUICConfiguration,
-        metrics: QUICMetrics? = nil,
         logger: Logger,
         inboundRequestStreamInitializer:
             @Sendable @escaping (HTTP3StreamInitializerParameters)
@@ -69,7 +66,6 @@ extension ChannelPipeline.SynchronousOperations {
             asyncVerifier: nil,
             authenticator: authenticator,
             logger: logger,
-            metrics: metrics,
             inboundConnectionInitializer: { connectionChannel, streamCreator in
                 connectionChannel.eventLoop.makeCompletedFuture {
                     let loopBoundHandler: NIOLoopBoundBox<HTTP3ConnectionHandler<QUICStreamCreator>?> = .init(
@@ -114,7 +110,6 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - configuration: The ``HTTP3ClientConfiguration``.
     ///   - settings: The `HTTP3Settings` to use for all outgoing connections.
     ///   - quicConfiguration: The `QUICConfiguration` to be used.
-    ///   - metrics: The metrics.
     ///   - logger: The logger.
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-push stream.
     /// - Returns: A ``HTTP3ClientConnectionMultiplexer``. Use this to create outgoing connections.
@@ -124,7 +119,6 @@ extension ChannelPipeline.SynchronousOperations {
         configuration: HTTP3ClientConfiguration = .defaults,
         settings: HTTP3Settings = .init(),
         quicConfiguration: QUICConfiguration,
-        metrics: QUICMetrics? = nil,
         logger: Logger,
         internalInboundStreamInitializer: (
             @Sendable (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
@@ -148,7 +142,6 @@ extension ChannelPipeline.SynchronousOperations {
             asyncVerifier: asyncVerifier,
             authenticator: nil,
             logger: logger,
-            metrics: metrics,
             inboundConnectionInitializer: { _, _ in
                 fatalError()
             },
@@ -211,7 +204,6 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - configuration: The ``HTTP3ServerConfiguration``.
     ///   - settings: The `HTTP3Settings` to use for all incoming connections.
     ///   - quicConfiguration: The `QUICConfiguration` to be used.
-    ///   - metrics: The metrics.
     ///   - logger: The logger.
     ///   - inboundConnectionInitializer: Closure to run for each incoming connection.
     ///   - inboundRequestStreamInitializer: Closure to run for each incoming request stream.
@@ -222,7 +214,6 @@ extension ChannelPipeline.SynchronousOperations {
         configuration: HTTP3ServerConfiguration = .defaults,
         settings: HTTP3Settings = .init(),
         quicConfiguration: QUICConfiguration,
-        metrics: QUICMetrics? = nil,
         logger: Logger,
         inboundConnectionInitializer: @Sendable @escaping (any Channel) -> EventLoopFuture<Void>,
         inboundRequestStreamInitializer:
@@ -248,7 +239,6 @@ extension ChannelPipeline.SynchronousOperations {
             asyncVerifier: nil,
             authenticator: authenticator,
             logger: logger,
-            metrics: metrics,
             inboundConnectionInitializer: { connectionChannel, streamCreator in
                 connectionChannel.eventLoop.makeCompletedFuture {
                     let h3Handler = HTTP3ConnectionHandler.server(
