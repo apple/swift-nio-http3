@@ -167,6 +167,24 @@ extension ByteBuffer {
         }
     }
 
+    /// The largest number of bytes that `encodedLength` Huffman-encoded octets can decode to.
+    ///
+    /// The shortest code in the QPACK Huffman table is 5 bits, so `encodedLength` octets carry
+    /// `floor(encodedLength * 8 / 5)` symbols at most. We round up, which is one byte of slack
+    /// at most and keeps the arithmetic obviously non-negative.
+    ///
+    /// This bound is load-bearing for memory safety, not just a heuristic: ``decodeHuffman(at:length:into:)``
+    /// writes into its destination without bounds checks, relying on the destination having
+    /// been sized with this function.
+    fileprivate static func maxHuffmanDecodedLength(ofEncodedLength encodedLength: Int) -> Int {
+        (encodedLength * 8 + 4) / 5
+    }
+
+    /// Decoded strings up to this many bytes long are decoded via a stack buffer, so that the
+    /// resulting `String` can pick its own (possibly inline, allocation-free) storage. Chosen to
+    /// cover every header name and all but the longest header values.
+    fileprivate static let huffmanStackDecodeThreshold = 128
+
     /// Decodes a huffman-encoded string from the `ByteBuffer`.
     /// - Parameters:
     ///   - index: The location of the encoded bytes to read.
@@ -185,46 +203,81 @@ extension ByteBuffer {
             return ""
         }
 
-        let capacity = length * QPACKConstants.huffmanMaxCompressionRatio
+        let maxDecodedLength = Self.maxHuffmanDecodedLength(ofEncodedLength: length)
 
-        return try? String(unsafeUninitializedCapacity: capacity) { backingStorage in
-            var state: UInt8 = 0
-
-            // We do unchecked math on offset. Offset is strictly unable to get any larger than `length * 2`,
-            // and we already did checked multiplication on that value.
-            var offset = 0
-            var acceptable = false
-
-            // We force-unwrap here to crash if we attempt to decode out of bounds.
-            for ch in self.viewBytes(at: index, length: length)! {
-                var t = HuffmanDecoderTable[state: state, nybble: ch >> 4]
-                if t.flags.contains(.failure) {
-                    throw HuffmanDecodeError.invalidState
+        if maxDecodedLength <= Self.huffmanStackDecodeThreshold {
+            // Decode into a stack buffer and then hand the exact byte count to `String`, so short
+            // results can live inline in the `String` rather than forcing a heap allocation.
+            return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: maxDecodedLength) { scratch in
+                guard let count = self.decodeHuffman(at: index, length: length, into: scratch) else {
+                    return nil
                 }
-                if t.flags.contains(.symbol) {
-                    backingStorage[offset] = t.sym
-                    offset &+= 1
-                }
-
-                t = HuffmanDecoderTable[state: t.state, nybble: ch & 0xf]
-                if t.flags.contains(.failure) {
-                    throw HuffmanDecodeError.invalidState
-                }
-                if t.flags.contains(.symbol) {
-                    backingStorage[offset] = t.sym
-                    offset &+= 1
-                }
-
-                state = t.state
-                acceptable = t.flags.contains(.accepted)
+                return String(decoding: scratch[..<count], as: UTF8.self)
             }
+        }
 
-            guard acceptable else {
+        // For long values, decode straight into the `String`'s storage rather than paying for a
+        // scratch buffer plus a copy. This over-reserves by up to 1.6x, but such values are far
+        // beyond the inline-storage limit anyway, so the allocation was unavoidable.
+        return try? String(unsafeUninitializedCapacity: maxDecodedLength) { backingStorage in
+            guard let count = self.decodeHuffman(at: index, length: length, into: backingStorage) else {
                 throw HuffmanDecodeError.invalidState
             }
-
-            return offset
+            return count
         }
+    }
+
+    /// Decode `length` Huffman-encoded octets starting at `index` into `destination`.
+    ///
+    /// - Precondition: `destination` must have room for
+    ///   ``maxHuffmanDecodedLength(ofEncodedLength:)`` bytes; the writes below are unchecked.
+    /// - Returns: The number of bytes decoded, or `nil` if the input is not a valid Huffman
+    ///   encoding.
+    @available(anyAppleOS 26.0, *)
+    private func decodeHuffman(
+        at index: Int,
+        length: Int,
+        into destination: UnsafeMutableBufferPointer<UInt8>
+    ) -> Int? {
+        assert(destination.count >= Self.maxHuffmanDecodedLength(ofEncodedLength: length))
+
+        var state: UInt8 = 0
+
+        // We do unchecked math on offset. Every symbol emitted consumes at least 5 bits of the
+        // `length * 8` bits of input, so offset cannot exceed `maxHuffmanDecodedLength(ofEncodedLength: length)`,
+        // which is the asserted size of `destination`.
+        var offset = 0
+        var acceptable = false
+
+        // We force-unwrap here to crash if we attempt to decode out of bounds.
+        for ch in self.viewBytes(at: index, length: length)! {
+            var t = HuffmanDecoderTable[state: state, nybble: ch >> 4]
+            if t.flags.contains(.failure) {
+                return nil
+            }
+            if t.flags.contains(.symbol) {
+                destination[offset] = t.sym
+                offset &+= 1
+            }
+
+            t = HuffmanDecoderTable[state: t.state, nybble: ch & 0xf]
+            if t.flags.contains(.failure) {
+                return nil
+            }
+            if t.flags.contains(.symbol) {
+                destination[offset] = t.sym
+                offset &+= 1
+            }
+
+            state = t.state
+            acceptable = t.flags.contains(.accepted)
+        }
+
+        guard acceptable else {
+            return nil
+        }
+
+        return offset
     }
 }
 
