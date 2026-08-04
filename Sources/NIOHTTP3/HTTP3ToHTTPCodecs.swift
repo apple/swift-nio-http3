@@ -34,7 +34,7 @@ private func invalidHeadersError(message: String, location: HTTP3Error.SourceLoc
         code: .malformedMessage,
         message: "Invalid headers",
         cause: cause,
-        errorCode: .H3_MESSAGE_ERROR,
+        errorCode: .messageError,
         location: location
     )
 }
@@ -49,7 +49,7 @@ extension HTTPRequestPart: HTTPMessagePart {
                 code: .malformedMessage,
                 message: "Invalid headers",
                 cause: error,
-                errorCode: .H3_MESSAGE_ERROR,
+                errorCode: .messageError,
                 location: .here()
             )
         }
@@ -130,7 +130,7 @@ extension HTTPRequestPart: HTTPMessagePart {
                     code: .malformedMessage,
                     message: "Invalid trailers",
                     cause: error,
-                    errorCode: .H3_MESSAGE_ERROR,
+                    errorCode: .messageError,
                     location: .here()
                 )
             }
@@ -152,7 +152,7 @@ extension HTTPResponsePart: HTTPMessagePart {
                 code: .malformedMessage,
                 message: "Invalid headers",
                 cause: error,
-                errorCode: .H3_MESSAGE_ERROR,
+                errorCode: .messageError,
                 location: .here()
             )
         }
@@ -180,7 +180,7 @@ extension HTTPResponsePart: HTTPMessagePart {
                     code: .malformedMessage,
                     message: "Invalid trailers",
                     cause: error,
-                    errorCode: .H3_MESSAGE_ERROR,
+                    errorCode: .messageError,
                     location: .here()
                 )
             }

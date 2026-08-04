@@ -341,7 +341,7 @@ struct AsyncEndToEndTests {
                 let h3Error = caughtError as? HTTP3Error
                 #expect(
                     (h3Error?.code == .rejected && h3Error?.h3ErrorCode == nil)
-                        || (h3Error?.code == .remoteStreamError && h3Error?.h3ErrorCode == .H3_REQUEST_REJECTED)
+                        || (h3Error?.code == .remoteStreamError && h3Error?.h3ErrorCode == .requestRejected)
                         || (h3Error?.code == .remoteConnectionError && h3Error?.h3ErrorCode == nil)
                 )
 

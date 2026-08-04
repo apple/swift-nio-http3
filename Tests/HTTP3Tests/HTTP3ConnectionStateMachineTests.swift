@@ -75,7 +75,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action2)")
             return
         }
-        error.expect(code: .streamCreationError, h3ErrorCode: .H3_STREAM_CREATION_ERROR)
+        error.expect(code: .streamCreationError, h3ErrorCode: .streamCreationError)
     }
 
     @Test
@@ -97,7 +97,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action3)")
             return
         }
-        error.expect(code: .invalidStream, h3ErrorCode: .H3_STREAM_CREATION_ERROR)
+        error.expect(code: .invalidStream, h3ErrorCode: .streamCreationError)
     }
 
     @Test
@@ -110,7 +110,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action)")
             return
         }
-        error.expect(code: .streamCreationError, h3ErrorCode: .H3_STREAM_CREATION_ERROR)
+        error.expect(code: .streamCreationError, h3ErrorCode: .streamCreationError)
     }
 
     @Test
@@ -123,7 +123,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action)")
             return
         }
-        error.expect(code: .streamCreationError, h3ErrorCode: .H3_ID_ERROR)
+        error.expect(code: .streamCreationError, h3ErrorCode: .idError)
     }
 
     @Test
@@ -138,7 +138,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action)")
             return
         }
-        error.expect(code: .streamCreationError, h3ErrorCode: .H3_STREAM_CREATION_ERROR)
+        error.expect(code: .streamCreationError, h3ErrorCode: .streamCreationError)
     }
 
     @Test
@@ -169,7 +169,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action2)")
             return
         }
-        error.expect(code: .invalidStream, h3ErrorCode: .H3_STREAM_CREATION_ERROR)
+        error.expect(code: .invalidStream, h3ErrorCode: .streamCreationError)
     }
 
     @Test
@@ -187,7 +187,7 @@ struct HTTP3ConnectionStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .streamCreationError,
-            expectedH3ErrorCode: .H3_STREAM_CREATION_ERROR
+            expectedH3ErrorCode: .streamCreationError
         )
     }
 
@@ -219,7 +219,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action2)")
             return
         }
-        error.expect(code: .invalidStream, h3ErrorCode: .H3_STREAM_CREATION_ERROR)
+        error.expect(code: .invalidStream, h3ErrorCode: .streamCreationError)
     }
 
     @Test
@@ -237,7 +237,7 @@ struct HTTP3ConnectionStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .streamCreationError,
-            expectedH3ErrorCode: .H3_STREAM_CREATION_ERROR
+            expectedH3ErrorCode: .streamCreationError
         )
     }
 
@@ -264,7 +264,7 @@ struct HTTP3ConnectionStateMachineTests {
             return
         }
 
-        error.expect(code: .streamCreationError, h3ErrorCode: .H3_STREAM_CREATION_ERROR)
+        error.expect(code: .streamCreationError, h3ErrorCode: .streamCreationError)
     }
 
     @Test
@@ -279,7 +279,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action2)")
             return
         }
-        error.expect(code: .streamCreationError, h3ErrorCode: .H3_STREAM_CREATION_ERROR)
+        error.expect(code: .streamCreationError, h3ErrorCode: .streamCreationError)
     }
 
     @Test
@@ -298,7 +298,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action3)")
             return
         }
-        expectH3ErrorEqual(error: error, expectedCode: .rejected, expectedH3ErrorCode: .H3_REQUEST_REJECTED)
+        expectH3ErrorEqual(error: error, expectedCode: .rejected, expectedH3ErrorCode: .requestRejected)
     }
 
     @Test
@@ -317,7 +317,7 @@ struct HTTP3ConnectionStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .streamCreationError,
-            expectedH3ErrorCode: .H3_STREAM_CREATION_ERROR,
+            expectedH3ErrorCode: .streamCreationError,
             expectedMessage: "Rejecting inbound stream of unknown type 100"
         )
     }
@@ -344,7 +344,7 @@ struct HTTP3ConnectionStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .streamCreationError,
-            expectedH3ErrorCode: .H3_STREAM_CREATION_ERROR,
+            expectedH3ErrorCode: .streamCreationError,
             expectedMessage: "Rejecting inbound stream of unknown type 100"
         )
     }
@@ -433,7 +433,7 @@ struct HTTP3ConnectionStateMachineTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .invalidGoawayStreamID,
-            expectedH3ErrorCode: .H3_ID_ERROR
+            expectedH3ErrorCode: .idError
         )
     }
 
@@ -567,7 +567,7 @@ struct HTTP3ConnectionStateMachineTests {
         let action = stateMachine.receivedControlFrame(.maxPushID(1))
         switch action {
         case .emitConnectionError(let error):
-            expectH3ErrorEqual(error: error, expectedCode: .unexpectedFrame, expectedH3ErrorCode: .H3_FRAME_UNEXPECTED)
+            expectH3ErrorEqual(error: error, expectedCode: .unexpectedFrame, expectedH3ErrorCode: .frameUnexpected)
         default:
             Issue.record("Unexpected action: \(String(describing: action))")
         }
@@ -763,7 +763,7 @@ struct HTTP3ConnectionStateMachineTests {
             code: .invalidFramePayload,
             message: "test",
             cause: nil,
-            errorCode: .H3_FRAME_ERROR,
+            errorCode: .frameError,
             location: .here()
         )
         let action = stateMachine.emitConnectionErrorFromStream(error: testError)
@@ -772,7 +772,7 @@ struct HTTP3ConnectionStateMachineTests {
             expectH3ErrorEqual(
                 error: emittedError,
                 expectedCode: .invalidFramePayload,
-                expectedH3ErrorCode: .H3_FRAME_ERROR,
+                expectedH3ErrorCode: .frameError,
                 expectedMessage: "test"
             )
         case .none:
@@ -856,7 +856,7 @@ struct HTTP3ConnectionStateMachineTests {
         expectH3ErrorEqual(
             error: connectionError,
             expectedCode: .criticalStreamClosed,
-            expectedH3ErrorCode: .H3_CLOSED_CRITICAL_STREAM,
+            expectedH3ErrorCode: .closedCriticalStream,
             expectedMessage: "The server-initiated control stream was closed"
         )
     }

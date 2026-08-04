@@ -25,7 +25,7 @@ struct HTTP3FrameCodingTests {
         var buffer = ByteBuffer()
         buffer.writeEncodedInteger(2, strategy: .quic)  // type 2 was used in http/2, and forbidden in http/3
 
-        expectH3Error(code: .forbiddenFrameType, h3ErrorCode: .H3_FRAME_UNEXPECTED) {
+        expectH3Error(code: .forbiddenFrameType, h3ErrorCode: .frameUnexpected) {
             _ = try decoder.decode(buffer: &buffer)
         }
     }
@@ -241,7 +241,7 @@ struct HTTP3FrameCodingTests {
         var decoder = HTTP3FrameDecoder()
         expectH3Error(
             code: .invalidFramePayload,
-            h3ErrorCode: .H3_FRAME_ERROR,
+            h3ErrorCode: .frameError,
             message: "Frame length longer than payload"
         ) {
             _ = try decoder.decode(buffer: &buffer)
@@ -255,7 +255,7 @@ struct HTTP3FrameCodingTests {
         // But that one byte is insufficient to make a valid frame. It is malformed.
         var buffer = ByteBuffer(bytes: [7, 1, 64])
         var decoder = HTTP3FrameDecoder()
-        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .H3_FRAME_ERROR, message: "Invalid frame payload") {
+        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .frameError, message: "Invalid frame payload") {
             _ = try decoder.decode(buffer: &buffer)
         }
     }
@@ -556,7 +556,7 @@ struct HTTP3FrameCodingTests {
         var decoder = HTTP3FrameDecoder()
         expectH3Error(
             code: .invalidFramePayload,
-            h3ErrorCode: .H3_FRAME_ERROR,
+            h3ErrorCode: .frameError,
             message: "Frame length longer than payload"
         ) {
             _ = try decoder.decode(buffer: &buffer)
@@ -568,7 +568,7 @@ struct HTTP3FrameCodingTests {
         // Type 1 (headers) but not enough bytes to actually make a full header field section
         var buffer = ByteBuffer(bytes: [1, 1, 0])
         var decoder = HTTP3FrameDecoder()
-        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .H3_FRAME_ERROR, message: "Invalid frame payload") {
+        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .frameError, message: "Invalid frame payload") {
             _ = try decoder.decode(buffer: &buffer)
         }
     }
@@ -637,7 +637,7 @@ struct HTTP3FrameCodingTests {
         buffer.writeEncodedInteger(size, strategy: .quic)
 
         var decoder = HTTP3FrameDecoder()
-        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .H3_EXCESSIVE_LOAD) {
+        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .excessiveLoad) {
             _ = try decoder.decode(buffer: &buffer)
         }
     }

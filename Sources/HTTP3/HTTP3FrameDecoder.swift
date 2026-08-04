@@ -109,7 +109,7 @@ package struct HTTP3FrameDecoder: ~Copyable {
                         code: .invalidFramePayload,
                         message: "Payload too large",
                         cause: nil,
-                        errorCode: .H3_EXCESSIVE_LOAD,
+                        errorCode: .excessiveLoad,
                         location: .here()
                     )
                 }
@@ -163,7 +163,7 @@ package struct HTTP3FrameDecoder: ~Copyable {
                     code: .invalidFramePayload,
                     message: "Payload too large",
                     cause: nil,
-                    errorCode: .H3_EXCESSIVE_LOAD,
+                    errorCode: .excessiveLoad,
                     location: .here()
                 )
             }
@@ -182,7 +182,7 @@ package struct HTTP3FrameDecoder: ~Copyable {
                     code: .invalidFramePayload,
                     message: "Invalid frame payload",
                     cause: nil,
-                    errorCode: .H3_FRAME_ERROR,
+                    errorCode: .frameError,
                     location: .here()
                 )
             }
@@ -202,7 +202,7 @@ package struct HTTP3FrameDecoder: ~Copyable {
                     code: .invalidFramePayload,
                     message: "Frame length longer than payload",
                     cause: nil,
-                    errorCode: .H3_FRAME_ERROR,
+                    errorCode: .frameError,
                     location: .here()
                 )
             }
@@ -270,7 +270,7 @@ extension ByteBuffer {
                     code: .integerTooLarge,
                     message: "Integer is too large",
                     cause: error,
-                    errorCode: .H3_GENERAL_PROTOCOL_ERROR,
+                    errorCode: .generalProtocolError,
                     location: .here()
                 )
             }
