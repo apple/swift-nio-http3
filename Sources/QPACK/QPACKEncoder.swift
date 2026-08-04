@@ -510,22 +510,25 @@ package struct StaticQPACKEncoder {
     package init() {}
     package func encode(headers: [HTTPField]) -> FieldSection {
         let base = 0  // base 0 is the cheapest way when no dynamic entries
-        let encodeResults = headers.map { header in
+        var lines = [FieldLine]()
+        lines.reserveCapacity(headers.count)
+        for header in headers {
             let requireLiteralRepresentation =
                 switch header.indexingStrategy {
                 case .prefer, .automatic, .avoid: false
                 case .disallow: true
                 default: false
                 }
-            return self.encodeSingleHeader(
-                header,
-                requireLiteralRepresentation: requireLiteralRepresentation
+            lines.append(
+                self.encodeSingleHeader(
+                    header,
+                    requireLiteralRepresentation: requireLiteralRepresentation
+                ).asFieldLine(base: base)
             )
         }
         let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: base)
         let encodedPrefix = prefix.encode(maxCapacity: 0)
 
-        let lines = encodeResults.map { $0.asFieldLine(base: base) }
         return .init(prefix: encodedPrefix, lines: lines)
     }
 
