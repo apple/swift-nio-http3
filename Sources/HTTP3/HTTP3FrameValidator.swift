@@ -52,7 +52,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                         code: .firstControlFrameNotSettings,
                         message: "Expected settings, got unknown",
                         cause: nil,
-                        errorCode: .H3_MISSING_SETTINGS,
+                        errorCode: .missingSettings,
                         location: .here()
                     )
                 )
@@ -82,7 +82,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .firstControlFrameNotSettings,
                             message: "Expected settings, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_MISSING_SETTINGS,
+                            errorCode: .missingSettings,
                             location: .here()
                         )
                     )
@@ -96,7 +96,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Expected cancelPush or goaway or maxPushID, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )
@@ -108,7 +108,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Received a second settings frame",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: location
                         )
                     }
@@ -160,7 +160,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Expected headers or data, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )
@@ -214,7 +214,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                         code: .malformedMessage,
                         message: "A HTTP response was sent before a request",
                         cause: nil,
-                        errorCode: .H3_MESSAGE_ERROR,
+                        errorCode: .messageError,
                         location: .here()
                     )
                 )
@@ -243,7 +243,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Expected headers, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )
@@ -265,7 +265,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Expected headers or data, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )
@@ -280,7 +280,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Expected no further frames after response trailers, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )
@@ -311,7 +311,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Expected headers, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )
@@ -335,7 +335,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Expected headers or data, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )
@@ -350,7 +350,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Expected no further frames after request trailers, got \(frame.type)",
                             cause: nil,
-                            errorCode: .H3_FRAME_UNEXPECTED,
+                            errorCode: .frameUnexpected,
                             location: .here()
                         )
                     )

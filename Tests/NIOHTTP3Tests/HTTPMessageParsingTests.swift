@@ -87,7 +87,7 @@ struct HTTPMessageParsingTests {
             expectH3ErrorEqual(
                 error: error,
                 expectedCode: .malformedMessage,
-                expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+                expectedH3ErrorCode: .messageError,
                 expectedMessage: "Invalid headers",
                 verifyCause: { #expect($0.map(String.init(describing:)) == "requestWithoutMethod") }
             )
@@ -113,7 +113,7 @@ struct HTTPMessageParsingTests {
             expectH3ErrorEqual(
                 error: $0,
                 expectedCode: .malformedMessage,
-                expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+                expectedH3ErrorCode: .messageError,
                 expectedMessage: "Invalid trailers",
                 verifyCause: { #expect($0.map(String.init(describing:)) == "trailerFieldsWithPseudo") }
             )
@@ -207,7 +207,7 @@ struct HTTPMessageParsingTests {
             expectH3ErrorEqual(
                 error: error,
                 expectedCode: .malformedMessage,
-                expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+                expectedH3ErrorCode: .messageError,
                 expectedMessage: "Invalid headers"
             )
         }
@@ -553,7 +553,7 @@ struct HTTPMessageParsingTests {
             expectH3ErrorEqual(
                 error: $0,
                 expectedCode: .malformedMessage,
-                expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+                expectedH3ErrorCode: .messageError,
                 expectedMessage: "Invalid trailers",
                 verifyCause: { #expect($0.map(String.init(describing:)) == "trailerFieldsWithPseudo") }
             )
@@ -567,7 +567,7 @@ struct HTTPMessageParsingTests {
             expectH3ErrorEqual(
                 error: $0,
                 expectedCode: .malformedMessage,
-                expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+                expectedH3ErrorCode: .messageError,
                 expectedMessage: "Invalid trailers",
                 verifyCause: { #expect($0.map(String.init(describing:)) == "trailerFieldsWithPseudo") }
             )
@@ -587,7 +587,7 @@ struct HTTPMessageParsingTests {
             expectH3ErrorEqual(
                 error: error,
                 expectedCode: .malformedMessage,
-                expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+                expectedH3ErrorCode: .messageError,
                 expectedMessage: "Invalid headers",
                 verifyCause: { #expect($0.map(String.init(describing:)) == expectedError) },
                 sourceLocation: sourceLocation
@@ -606,7 +606,7 @@ struct HTTPMessageParsingTests {
             expectH3ErrorEqual(
                 error: error,
                 expectedCode: .malformedMessage,
-                expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+                expectedH3ErrorCode: .messageError,
                 expectedMessage: "Invalid headers",
                 verifyCause: { #expect($0.map(String.init(describing:)) == expectedError) },
                 sourceLocation: sourceLocation

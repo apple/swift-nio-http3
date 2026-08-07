@@ -80,7 +80,7 @@ struct NIOHTTP3StreamHandlerTests {
             code: .qpackDecoderError,
             message: "test",
             cause: nil,
-            errorCode: .H3_INTERNAL_ERROR,
+            errorCode: .internalError,
             location: .here()
         )
         guard let headerToDecode else {
@@ -89,7 +89,7 @@ struct NIOHTTP3StreamHandlerTests {
         }
         handler.onQPACKDecodeError(testError, forHeaders: headerToDecode)
 
-        expectH3Error(code: .qpackDecoderError, h3ErrorCode: .H3_INTERNAL_ERROR, message: "test") {
+        expectH3Error(code: .qpackDecoderError, h3ErrorCode: .internalError, message: "test") {
             _ = try recorderPromise.futureResult.wait()
         }
     }
@@ -234,10 +234,10 @@ struct NIOHTTP3StreamHandlerTests {
         let channel = EmbeddedChannel(handlers: [handler, errorRecorder], loop: eventLoop)
 
         // write out response (invalid because we didn't get a request)
-        expectH3Error(code: .malformedMessage, h3ErrorCode: .H3_MESSAGE_ERROR) {
+        expectH3Error(code: .malformedMessage, h3ErrorCode: .messageError) {
             try channel.writeOutbound(HTTP3Frame.headers([]))
         }
-        expectH3Error(code: .malformedMessage, h3ErrorCode: .H3_MESSAGE_ERROR) {
+        expectH3Error(code: .malformedMessage, h3ErrorCode: .messageError) {
             let thrownError = try errorPromise.futureResult.wait()
             throw thrownError
         }
@@ -263,10 +263,10 @@ struct NIOHTTP3StreamHandlerTests {
         let channel = EmbeddedChannel(handlers: [handler, errorRecorder], loop: eventLoop)
 
         // write out a settings frame. This is invalid, because this is a request stream
-        expectH3Error(code: .unexpectedFrame, h3ErrorCode: .H3_FRAME_UNEXPECTED) {
+        expectH3Error(code: .unexpectedFrame, h3ErrorCode: .frameUnexpected) {
             try channel.writeOutbound(HTTP3Frame.settings(.init()))
         }
-        expectH3Error(code: .unexpectedFrame, h3ErrorCode: .H3_FRAME_UNEXPECTED) {
+        expectH3Error(code: .unexpectedFrame, h3ErrorCode: .frameUnexpected) {
             let thrownError = try errorPromise.futureResult.wait()
             throw thrownError
         }
@@ -328,7 +328,7 @@ struct NIOHTTP3StreamHandlerTests {
         expectH3ErrorEqual(
             error: error,
             expectedCode: .invalidFramePayload,
-            expectedH3ErrorCode: .H3_FRAME_ERROR,
+            expectedH3ErrorCode: .frameError,
             expectedMessage: "Setting value is not a valid QUIC variable-length integer"
         )
     }
