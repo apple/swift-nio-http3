@@ -407,7 +407,7 @@ struct AsyncEndToEndTests {
                         _ = try await inboundPartIterator.next()
                     }
 
-                    #expect(error.h3ErrorCode == .H3_REQUEST_INCOMPLETE)
+                    #expect(error.h3ErrorCode == .requestIncomplete)
                     #expect(error.code == .peerTerminatedInboundStream)
 
                     // The stream should close now that we have sent a RESET_STREAM.
@@ -445,7 +445,7 @@ struct AsyncEndToEndTests {
                     let error = try await #require(throws: HTTP3Error.self) {
                         _ = try await inboundPartIterator.next()
                     }
-                    #expect(error.h3ErrorCode == .H3_REQUEST_INCOMPLETE)
+                    #expect(error.h3ErrorCode == .requestIncomplete)
                     #expect(error.code == .remoteStreamError)
 
                     // The stream should close now that we have received a RESET_STREAM.

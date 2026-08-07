@@ -422,7 +422,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                     code: .peerTerminatedInboundStream,
                     message: "Inbound request stream closed before a complete request was received",
                     cause: nil,
-                    errorCode: .H3_REQUEST_INCOMPLETE,
+                    errorCode: .requestIncomplete,
                     location: .here()
                 )
             )
@@ -445,7 +445,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                     code: .peerTerminatedInboundStream,
                     message: "Inbound response stream closed before a complete response was received",
                     cause: nil,
-                    errorCode: .H3_NO_ERROR,
+                    errorCode: .noError,
                     location: .here()
                 )
             )

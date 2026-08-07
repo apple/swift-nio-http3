@@ -297,7 +297,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
 
         case .resetStream(let error):
             context.triggerUserOutboundEvent(
-                QUICResetStreamEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .H3_NO_ERROR)),
+                QUICResetStreamEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
                 promise: nil
             )
             context.fireErrorCaught(error)

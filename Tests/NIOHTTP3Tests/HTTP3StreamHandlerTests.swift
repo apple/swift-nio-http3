@@ -569,13 +569,13 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(recordedInboundEvents[0].isChannelRegistered)
         let error = try #require(recordedInboundEvents[1].isHTTP3Error)
         #expect(error.code == .peerTerminatedInboundStream)
-        #expect(error.h3ErrorCode == .H3_REQUEST_INCOMPLETE)
+        #expect(error.h3ErrorCode == .requestIncomplete)
         #expect(recordedInboundEvents[2].isInputClosedEvent)
 
         try #require(recordedOutboundEvents.count == 2)
         #expect(recordedOutboundEvents[0].isChannelRegistered)
         let resetStreamEvent = try #require(recordedOutboundEvents[1].isResetStreamEvent)
-        #expect(resetStreamEvent.code == QUICApplicationErrorCode(HTTP3ErrorCode.H3_REQUEST_INCOMPLETE))
+        #expect(resetStreamEvent.code == QUICApplicationErrorCode(HTTP3ErrorCode.requestIncomplete))
     }
 
     @Test
