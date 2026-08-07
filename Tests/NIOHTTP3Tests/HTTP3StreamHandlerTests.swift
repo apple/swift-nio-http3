@@ -495,7 +495,7 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     @Test
-    func testMoreInputAfterInputClosed() async throws {
+    func testMoreInputAfterInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
 
         let handler = HTTP3StreamHandler(
@@ -523,9 +523,136 @@ struct NIOHTTP3StreamHandlerTests {
         // Data frame
         try channel.writeInbound(ByteBuffer(bytes: [0, 4, 1, 2, 3, 4]))
 
-        try await Task.sleep(for: .milliseconds(500), tolerance: .zero)
         // We only see the headers frame, not the data
         let seenFrames = recorder.getDataOnEventloop()
         #expect(seenFrames.count == 1)
+    }
+
+    @Test
+    func inputClosedWithIncompleteRequest() throws {
+        let eventLoop = EmbeddedEventLoop()
+
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
+            streamID: 5,
+            streamType: .request,
+            qpackEncoder: self.testEncoderClosure,
+            qpackDecoder: { _, _ in },
+            onStreamClosed: { _, _, _ in },
+            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            logger: self.logger
+        )
+
+        let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
+        let inboundEventRecorder = DebugInboundEventsHandler { event, _ in
+            inboundEvents.withLockedValue { $0.append(event) }
+        }
+
+        let outboundEvents = NIOLockedValueBox<[DebugOutboundEventsHandler.Event]>([])
+        let outboundEventRecorder = DebugOutboundEventsHandler { event, _ in
+            outboundEvents.withLockedValue { $0.append(event) }
+        }
+
+        let channel = EmbeddedChannel(
+            handlers: [outboundEventRecorder, handler, inboundEventRecorder],
+            loop: eventLoop
+        )
+
+        // Close the input before having received a complete request.
+        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+        try handler.channelReadComplete(context: channel.pipeline.syncOperations.context(handler: handler))
+
+        let recordedInboundEvents = inboundEvents.withLockedValue { $0 }
+        let recordedOutboundEvents = outboundEvents.withLockedValue { $0 }
+
+        try #require(recordedInboundEvents.count == 3)
+        #expect(recordedInboundEvents[0].isChannelRegistered)
+        let error = try #require(recordedInboundEvents[1].isHTTP3Error)
+        #expect(error.code == .peerTerminatedInboundStream)
+        #expect(error.h3ErrorCode == .H3_REQUEST_INCOMPLETE)
+        #expect(recordedInboundEvents[2].isInputClosedEvent)
+
+        try #require(recordedOutboundEvents.count == 2)
+        #expect(recordedOutboundEvents[0].isChannelRegistered)
+        let resetStreamEvent = try #require(recordedOutboundEvents[1].isResetStreamEvent)
+        #expect(resetStreamEvent.code == QUICApplicationErrorCode(HTTP3ErrorCode.H3_REQUEST_INCOMPLETE))
+    }
+
+    @Test
+    func inputClosedWithIncompleteResponse() throws {
+        let eventLoop = EmbeddedEventLoop()
+
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
+            streamID: 5,
+            streamType: .request,
+            qpackEncoder: self.testEncoderClosure,
+            qpackDecoder: { _, _ in },
+            onStreamClosed: { _, _, _ in },
+            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            logger: self.logger
+        )
+
+        let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
+        let inboundEventRecorder = DebugInboundEventsHandler { event, _ in
+            inboundEvents.withLockedValue { $0.append(event) }
+        }
+        let channel = EmbeddedChannel(handlers: [handler, inboundEventRecorder], loop: eventLoop)
+
+        // Close the input before having received a complete request.
+        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+        try handler.channelReadComplete(context: channel.pipeline.syncOperations.context(handler: handler))
+
+        let recordedInboundEvents = inboundEvents.withLockedValue { $0 }
+
+        try #require(recordedInboundEvents.count == 3)
+        #expect(recordedInboundEvents[0].isChannelRegistered)
+        let error = try #require(recordedInboundEvents[1].isHTTP3Error)
+        #expect(error.code == .peerTerminatedInboundStream)
+        #expect(recordedInboundEvents[2].isInputClosedEvent)
+    }
+}
+
+extension DebugInboundEventsHandler.Event {
+    var isInputClosedEvent: Bool {
+        switch self {
+        case .userInboundEventTriggered(let event as ChannelEvent):
+            return event == .inputClosed
+
+        default:
+            return false
+        }
+    }
+
+    var isHTTP3Error: HTTP3Error? {
+        switch self {
+        case .errorCaught(let error as HTTP3Error):
+            return error
+
+        default:
+            return nil
+        }
+    }
+}
+
+extension DebugOutboundEventsHandler.Event {
+    var isChannelRegistered: Bool {
+        switch self {
+        case .register:
+            return true
+
+        default:
+            return false
+        }
+    }
+
+    var isResetStreamEvent: NIOQUICHelpers.QUICResetStreamEvent? {
+        switch self {
+        case .triggerUserOutboundEvent(let event as NIOQUICHelpers.QUICResetStreamEvent):
+            return event
+
+        default:
+            return nil
+        }
     }
 }

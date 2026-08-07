@@ -491,12 +491,90 @@ struct HTTP3StreamStateMachineTests {
     // MARK: Input closed
 
     @Test
-    func testInputClosed() {
+    func testInputClosedBeforeReceivingCompleteRequest() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
         machine.inputClosed()
         let action = machine.decodeNext()
-        guard case .inputClosed = action else {
+        guard case .inputClosed(.resetStream(let error)) = action else {
             Issue.record("Unexpected action \(action)")
+            return
+        }
+
+        expectH3ErrorEqual(
+            error: error,
+            expectedCode: .peerTerminatedInboundStream,
+            expectedH3ErrorCode: .H3_REQUEST_INCOMPLETE
+        )
+    }
+
+    @Test
+    func testInputClosedBeforeReceivingCompleteResponse() {
+        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: false, preferHuffmanEncoding: false)
+        machine.inputClosed()
+        let action = machine.decodeNext()
+
+        guard case .inputClosed(.emitErrorAndEvent(let error)) = action else {
+            Issue.record("Unexpected action \(action)")
+            return
+        }
+
+        expectH3ErrorEqual(
+            error: error,
+            expectedCode: .peerTerminatedInboundStream,
+            expectedH3ErrorCode: .H3_NO_ERROR
+        )
+    }
+
+    @Test
+    func testInputClosedAfterReceivingCompleteRequest() {
+        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
+
+        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
+
+        let action1 = machine.decodeNext()
+        guard case .decodeHeader(let headerToDecode) = action1 else {
+            Issue.record("Unexpected action \(action1)")
+            return
+        }
+
+        machine.gotHeaderDecodeResult(self.testRequestHeaderFields, from: headerToDecode)
+        machine.inputClosed()
+
+        machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
+        let closeAction = machine.decodeNext()
+
+        // If the input closed after receiving a complete request, the state machine should just tell us to fire the
+        // inputClosed event.
+        guard case .inputClosed(.emitEvent) = closeAction else {
+            Issue.record("Unexpected action \(closeAction)")
+            return
+        }
+    }
+
+    @Test
+    func testInputClosedAfterReceivingCompleteResponse() {
+        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: false, preferHuffmanEncoding: false)
+
+        // Before simulating receiving a response, we must send a request.
+        _ = machine.writeFrame(frame: .headers(self.testRequestHeaderFields))
+        machine.buffer(.init(bytes: self.testResponseHeaderFrameBytes))
+
+        let action1 = machine.decodeNext()
+        guard case .decodeHeader(let headerToDecode) = action1 else {
+            Issue.record("Unexpected action \(action1)")
+            return
+        }
+
+        machine.gotHeaderDecodeResult(self.testResponseHeaderFields, from: headerToDecode)
+        machine.inputClosed()
+
+        machine.assertReturnFrame(expected: .headers(self.testResponseHeaderFields))
+        let closeAction = machine.decodeNext()
+
+        // If the input closed after receiving a complete response, the state machine should just tell us to fire the
+        // inputClosed event.
+        guard case .inputClosed(.emitEvent) = closeAction else {
+            Issue.record("Unexpected action \(closeAction)")
             return
         }
     }
@@ -519,7 +597,7 @@ struct HTTP3StreamStateMachineTests {
         // Now the headers are returned, then the input close, then nothing else
         machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
         let action2 = machine.decodeNext()
-        guard case .inputClosed = action2 else {
+        guard case .inputClosed(.emitEvent) = action2 else {
             Issue.record("Unexpected action \(action2)")
             return
         }
@@ -544,7 +622,7 @@ struct HTTP3StreamStateMachineTests {
         // Now the headers are returned, then the input close, then nothing else
         machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
         let action2 = machine.decodeNext()
-        guard case .inputClosed = action2 else {
+        guard case .inputClosed(.emitEvent) = action2 else {
             Issue.record("Unexpected action \(action2)")
             return
         }
@@ -570,7 +648,7 @@ struct HTTP3StreamStateMachineTests {
         // Now the headers are returned, then the input close, then nothing else
         machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
         let action2 = machine.decodeNext()
-        guard case .inputClosed = action2 else {
+        guard case .inputClosed(.emitEvent) = action2 else {
             Issue.record("Unexpected action \(action2)")
             return
         }

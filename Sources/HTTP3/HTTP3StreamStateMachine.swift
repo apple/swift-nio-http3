@@ -195,7 +195,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
             }
         }
 
-        /// Inform the state machine of a qpack decode result that has been previously been asked for.
+        /// Inform the state machine of a qpack decode result that has been previously asked for.
         /// It is an error to call this function with a result for a partial header which wasn't asked for.
         mutating func gotHeaderDecodeResult(_ decoded: [HTTPField], from: HTTP3PartialFrame.Headers) {
             switch consume self.state {
@@ -577,7 +577,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         /// A frame is ready, but you need to decode it and call the state machine back with the result.
         case decodeHeader(HTTP3PartialFrame.Headers)
         /// The input was newly closed.
-        case inputClosed
+        case inputClosed(InputClosedAction)
         /// The input was already closed
         case alreadyClosed
         /// More input is needed before the next action can be determined
@@ -586,6 +586,19 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         case previousError
         /// The decodeNext() function should be called again to get the next action.
         case callAgain
+
+        package enum InputClosedAction {
+            /// A complete request/response was received before the input was closed. As such, we should just deliver
+            /// the `inputClosed` event downstream.
+            case emitEvent
+
+            /// A complete response was not received before the input was closed. We need to notify the downstream about
+            /// the incompleteness through an error and then deliver the `inputClosed` event.
+            case emitErrorAndEvent(HTTP3Error)
+
+            /// A complete request was not received before the input was closed. We need to send a RESET\_STREAM frame.
+            case resetStream(HTTP3Error)
+        }
     }
 
     /// Read out the next frame if it is ready. This may ask you to run qpack on some partial headers.
@@ -643,8 +656,20 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                 self = .init(state: .idle(idleState))
                 return .needMoreBytes
             case .inputClosed:
-                self = .init(state: .idle(idleState))
-                return .inputClosed
+                // The input was closed. Inform the validator to determine what to do next.
+                switch idleState.validator.processInboundClosed() {
+                case .doNothing:
+                    self = .init(state: .idle(idleState))
+                    return .inputClosed(.emitEvent)
+
+                case .notifyDownstream(let error):
+                    self = .init(state: .idle(idleState))
+                    return .inputClosed(.emitErrorAndEvent(error))
+
+                case .resetStream(let error):
+                    self = .init(state: .idle(idleState))
+                    return .inputClosed(.resetStream(error))
+                }
             }
         case .finished:
             self = .init(state: .finished)

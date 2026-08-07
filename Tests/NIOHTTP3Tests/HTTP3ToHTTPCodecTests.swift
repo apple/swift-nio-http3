@@ -20,7 +20,6 @@ import NIOEmbedded
 import NIOExtras
 import NIOHTTP3
 import NIOHTTPTypes
-import NIOQUICHelpers
 import Testing
 
 struct HTTP3ToHTTPCodecTests {
@@ -31,8 +30,12 @@ struct HTTP3ToHTTPCodecTests {
         .init(name: .path, value: "/"),
     ])
 
-    private let validResponseHead: HTTP3Frame = .headers([
+    private let validFinalResponseHead: HTTP3Frame = .headers([
         .init(name: .status, value: "200")
+    ])
+
+    private let validInterimResponseHead: HTTP3Frame = .headers([
+        .init(name: .status, value: "103")
     ])
 
     @Test
@@ -89,7 +92,7 @@ struct HTTP3ToHTTPCodecTests {
         let recorder = InboundDataRecorder(promise: partsPromise, targetCount: 3)
         let channel = EmbeddedChannel(handlers: [handler, recorder], loop: eventLoop)
 
-        try channel.writeInbound(self.validResponseHead)
+        try channel.writeInbound(self.validFinalResponseHead)
         try channel.writeInbound(HTTP3Frame.data(.init(bytes: [1, 2, 3])))
         try channel.writeInbound(HTTP3Frame.data(.init(bytes: [1, 2, 3])))
 
@@ -164,97 +167,105 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test
-    func serverCodecAbortsStreamWhenRequestIncompleteAndInputClosed() throws {
+    func serverCodecGeneratesEndPartForCompleteRequestUponInputClosed() throws {
+        let eventLoop = EmbeddedEventLoop()
+        let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
+        let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
+
         let codec = HTTP3ToHTTPServerCodec()
-        let outboundEvents = NIOLockedValueBox([])
-        let outboundEventRecorder = DebugOutboundEventsHandler { event, _ in
-            if case .triggerUserOutboundEvent(let outboundEvent) = event {
-                outboundEvents.withLockedValue { $0.append(outboundEvent) }
-            }
+
+        let channel = EmbeddedChannel(handlers: [codec, dataRecorder], loop: eventLoop)
+
+        // Write a request head and then close the input side.
+        try channel.writeInbound(self.validRequestHead)
+        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+
+        let parts = try partsPromise.futureResult.wait()
+        try #require(parts.count == 2)
+        #expect(parts[0] == .head(.init(method: .get, scheme: "https", authority: "test", path: "/")))
+        #expect(parts[1] == .end(nil))
+    }
+
+    @Test
+    func clientCodecGeneratesEndPartForCompleteResponseUponInputClosed() throws {
+        let eventLoop = EmbeddedEventLoop()
+        let partsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
+        let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
+
+        let codec = HTTP3ToHTTPClientCodec()
+
+        let channel = EmbeddedChannel(handlers: [codec, dataRecorder], loop: eventLoop)
+
+        // Write a response head and then close the input side.
+        try channel.writeInbound(self.validFinalResponseHead)
+        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+
+        let parts = try partsPromise.futureResult.wait()
+        try #require(parts.count == 2)
+        #expect(parts[0] == .head(.init(status: .ok)))
+        #expect(parts[1] == .end(nil))
+    }
+
+    @Test
+    func serverCodecDoesNotFireChannelReadWhenNoRequest() throws {
+        let eventLoop = EmbeddedEventLoop()
+        let promise = eventLoop.makePromise(of: [Void].self)
+        let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
+        let eventRecorder = DebugInboundEventsHandler { event, context in
+            inboundEvents.withLockedValue { $0.append(event) }
         }
 
-        let eventLoop = EmbeddedEventLoop()
-        let errorPromise = eventLoop.makePromise(of: (any Error).self)
-        let errorRecorder = InboundErrorRecorder(errorPromise: errorPromise)
+        let codec = HTTP3ToHTTPServerCodec()
 
-        let channel = EmbeddedChannel(handlers: [outboundEventRecorder, codec, errorRecorder], loop: eventLoop)
+        let channel = EmbeddedChannel(handlers: [codec, eventRecorder], loop: eventLoop)
 
         // The client terminated the stream before even sending a request head.
         channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
 
-        // The server should abort its response stream with H3_REQUEST_INCOMPLETE.
-        let events = outboundEvents.withLockedValue { $0 }
-        try #require(events.count == 1)
-        let resetStreamEvent = try #require(events.first as? QUICResetStreamEvent)
-        #expect(resetStreamEvent.code == QUICApplicationErrorCode(.H3_REQUEST_INCOMPLETE))
+        // We expect the server codec to not fire any channelReads if no request parts were sent before the input closed;
+        // `HTTP3StreamHandler` handles this case by resetting the stream and firing an error down the pipeline.
+        let events = inboundEvents.withLockedValue { $0 }
+        #expect(events.count == 2)
+        #expect(events[0].isChannelRegistered)
+        #expect(events[1].isInputClosedEvent)
 
-        // The failure should also be surfaced to the application.
-        let error = try errorPromise.futureResult.wait()
-        let h3Error = try #require(error as? HTTP3Error)
-        #expect(h3Error.code == .peerTerminatedStream)
-        #expect(h3Error.h3ErrorCode == .H3_REQUEST_INCOMPLETE)
+        // Clean up the promise as it never gets fulfilled.
+        promise.succeed([Void]())
     }
 
-    @Test
-    func clientCodecFiresErrorWhenResponseIncompleteAndInputClosed() throws {
+    @Test(arguments: [true, false])
+    func clientCodecDoesNotEmitEndWhenResponseIncomplete(includeInterimResponses: Bool) throws {
+        let eventLoop = EmbeddedEventLoop()
+        let promise = eventLoop.makePromise(of: [HTTPResponsePart].self)
+        let dataRecorder = InboundDataRecorder(promise: promise, targetCount: includeInterimResponses ? 2 : 0)
+
         let codec = HTTP3ToHTTPClientCodec()
 
-        let eventLoop = EmbeddedEventLoop()
-        let errorPromise = eventLoop.makePromise(of: (any Error).self)
-        let errorRecorder = InboundErrorRecorder(errorPromise: errorPromise)
+        let channel = EmbeddedChannel(handlers: [codec, dataRecorder], loop: eventLoop)
 
-        let responsePartsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
-        let responsePartsRecorder = InboundDataRecorder(promise: responsePartsPromise, targetCount: 2)
-
-        let channel = EmbeddedChannel(handlers: [codec, errorRecorder, responsePartsRecorder], loop: eventLoop)
-
-        // The client receives two interim responses, after which the server cleanly closes its send side.
-        try channel.writeInbound(HTTP3Frame.headers([.init(name: .status, value: "100")]))
-        try channel.writeInbound(HTTP3Frame.headers([.init(name: .status, value: "103")]))
-        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
-
-        // But the response is incomplete since the server didn't send a final response...
-        let parts = try responsePartsPromise.futureResult.wait()
-        try #require(parts.count == 2)
-        #expect(parts[0] == .head(.init(status: .continue)))
-        #expect(parts[1] == .head(.init(status: .earlyHints)))
-
-        // so the client should surface an error to the application.
-        let error = try errorPromise.futureResult.wait()
-        let h3Error = try #require(error as? HTTP3Error)
-        #expect(h3Error.code == .peerTerminatedStream)
-        #expect(h3Error.h3ErrorCode == .H3_NO_ERROR)
-    }
-
-    @Test
-    func serverCodecDoesNotAbortStreamWhenRequestCompleted() throws {
-        let codec = HTTP3ToHTTPServerCodec()
-
-        let outboundEvents = NIOLockedValueBox([])
-        let outboundEventRecorder = DebugOutboundEventsHandler { event, _ in
-            if case .triggerUserOutboundEvent(let outboundEvent) = event {
-                outboundEvents.withLockedValue { $0.append(outboundEvent) }
-            }
+        if includeInterimResponses {
+            // Receiving interim response head(s) does not mean the response is complete; the response is only
+            // considered complete once a *final* response head is received.
+            try channel.writeInbound(self.validInterimResponseHead)
+            try channel.writeInbound(self.validInterimResponseHead)
         }
 
-        let eventLoop = EmbeddedEventLoop()
-        let requestPartsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
-        let requestPartsRecorder = InboundDataRecorder(promise: requestPartsPromise, targetCount: 2)
-
-        let channel = EmbeddedChannel(handlers: [outboundEventRecorder, codec, requestPartsRecorder], loop: eventLoop)
-        print(channel.pipeline)
-
-        // The server receives a complete request, after which the client cleanly closes its send side.
-        try channel.writeInbound(self.validRequestHead)
+        // The server terminated the stream before sending a final response head.
         channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
 
-        // Since the request was complete...
-        let parts = try requestPartsPromise.futureResult.wait()
-        try #require(parts.count == 2)
-        #expect(parts[0] == .head(.init(method: .get, scheme: "https", authority: "test", path: "/")))
-        #expect(parts[1] == .end(nil))
+        // We expect the client codec to not generate an end part if the response is incomplete when the input closed;
+        // `HTTP3StreamHandler` handles this case by firing an error down the pipeline.
+        if includeInterimResponses {
+            let parts = try promise.futureResult.wait()
+            try #require(parts.count == 2)
+            #expect(parts[0] == .head(.init(status: .earlyHints)))
+            #expect(parts[1] == .head(.init(status: .earlyHints)))
+        } else {
+            // We expect the client codec to not deliver anything when nothing was sent before the input closed.
+            #expect(dataRecorder.getDataOnEventloop().count == 0)
 
-        // the stream must not be aborted.
-        #expect(outboundEvents.withLockedValue { $0 }.isEmpty)
+            // Clean up the promise as it never gets fulfilled when `includeInterimResponse` == `false`.
+            promise.succeed([HTTPResponsePart]())
+        }
     }
 }

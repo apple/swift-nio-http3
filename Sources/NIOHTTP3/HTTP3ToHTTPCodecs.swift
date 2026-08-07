@@ -16,7 +16,6 @@ public import HTTP3
 package import HTTPTypes
 public import NIOCore
 public import NIOHTTPTypes
-internal import NIOQUICHelpers
 
 package protocol HTTPMessagePart {
     static func head(fields: [HTTPField]) throws(HTTP3Error) -> Self
@@ -265,16 +264,15 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
 
     package enum InputClosedAction {
         case returnPart(Part)
-        case notifyMessageIncomplete
     }
 
     package mutating func inputClosed() -> InputClosedAction? {
         switch self.state {
         case .awaitingHeaders:
-            // Either no request/response head was received at all, or, in the case of clients, only interim response
-            // heads were received. In either case, the message is incomplete.
+            // The input was closed without even receiving a head part. This case is handled appropriately by
+            // ``HTTP3StreamHandler``, so just return `.none` here.
             self.state = .failed
-            return .notifyMessageIncomplete
+            return .none
         case .awaitingBodyOrTrailers:
             self.state = .messageComplete
             return .returnPart(.end())
@@ -367,18 +365,6 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
         case .returnPart(let part):
             context.fireChannelRead(self.wrapInboundOut(part))
             context.fireChannelReadComplete()
-        case .notifyMessageIncomplete:
-            // Inform the downstream application about this.
-            // See https://datatracker.ietf.org/doc/html/rfc9114#section-4.1.1-6.
-            context.fireErrorCaught(
-                HTTP3Error(
-                    code: .peerTerminatedStream,
-                    message: "Stream closed before a complete response was received",
-                    cause: nil,
-                    errorCode: .H3_NO_ERROR,
-                    location: .here()
-                )
-            )
         case .none:
             break
         }
@@ -399,9 +385,6 @@ public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
     public typealias OutboundOut = HTTP3Frame
 
     private var readState: HTTPMessageParsingStateMachine<HTTPRequestPart> = .init()
-
-    /// Whether a complete response has been written.
-    private var completedResponse = false
 
     public init() {}
 
@@ -447,8 +430,6 @@ public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
                 // No trailers, just close
                 context.close(mode: .output, promise: promise)
             }
-
-            self.completedResponse = true
         }
     }
 
@@ -462,26 +443,6 @@ public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
         case .returnPart(let part):
             context.fireChannelRead(self.wrapInboundOut(part))
             context.fireChannelReadComplete()
-        case .notifyMessageIncomplete:
-            // The client terminated the stream before delivering a complete request. Per RFC 9114 § 4.1, the server
-            // should abort the response stream with H3_REQUEST_INCOMPLETE (unless a complete response was already
-            // written).
-            if self.completedResponse { break }
-
-            context.triggerUserOutboundEvent(
-                QUICResetStreamEvent(code: QUICApplicationErrorCode(.H3_REQUEST_INCOMPLETE)),
-                promise: nil
-            )
-            // Inform the downstream application about this.
-            context.fireErrorCaught(
-                HTTP3Error(
-                    code: .peerTerminatedStream,
-                    message: "Stream closed before a complete request was received",
-                    cause: nil,
-                    errorCode: .H3_REQUEST_INCOMPLETE,
-                    location: .here()
-                )
-            )
         case .none:
             break
         }

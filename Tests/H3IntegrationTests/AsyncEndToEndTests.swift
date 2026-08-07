@@ -363,6 +363,104 @@ struct AsyncEndToEndTests {
         try await clientChannel.close()
     }
 
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 26, *)
+    func streamClosesAfterInputClosedWithIncompleteRequest(
+        authenticationConfiguration: AuthenticationConfiguration
+    ) async throws {
+        let serverLogger = Logger(label: "Server")
+        let clientLogger = Logger(label: "Client")
+
+        let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
+        let serverName: String
+        switch credentials {
+        case .rawKeys(let name, _, _, _):
+            serverName = name
+        case .certificates(let name, _, _, _):
+            serverName = name
+        }
+
+        let (serverChannel, serverMultiplexer) = try await makeHTTP3Server(
+            credentials: credentials,
+            settings: .init(),
+            logger: serverLogger
+        )
+        let (clientChannel, clientMultiplexer) = try await makeHTTP3Client(
+            credentials: credentials,
+            settings: .init(),
+            logger: clientLogger
+        )
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            // Server
+            group.addTask {
+                var inboundConnections = serverMultiplexer.inboundConnections.makeAsyncIterator()
+                let inboundConnection = try #require(await inboundConnections.next())
+
+                var inboundStreams = inboundConnection.inboundStreams.makeAsyncIterator()
+                let inboundStream = try #require(await inboundStreams.next())
+
+                try await inboundStream.executeThenClose { inboundParts, _ in
+                    let error = try await #require(throws: HTTP3Error.self) {
+                        var inboundPartIterator = inboundParts.makeAsyncIterator()
+                        // The client closes the input without sending .end(). This makes the request incomplete.
+                        _ = try await inboundPartIterator.next()
+                    }
+
+                    #expect(error.h3ErrorCode == .H3_REQUEST_INCOMPLETE)
+                    #expect(error.code == .peerTerminatedInboundStream)
+
+                    // The stream should close now that we have sent a RESET_STREAM.
+                    try await inboundStream.channel.closeFuture.get()
+                }
+            }
+
+            // Client
+            group.addTask {
+                let clientConnection = try await clientMultiplexer.concurrencyView.createConnection(
+                    serverName: serverName,
+                    remoteAddress: serverChannel.localAddress!,
+                    inboundPushStreamInitializer: { _ in
+                        fatalError("Push streams not supported")
+                    }
+                )
+
+                let outboundStream = try await clientConnection.concurrencyView.createRequestStream {
+                    let streamChannel = $0.channel
+                    return streamChannel.eventLoop.makeCompletedFuture {
+                        try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
+                            wrappingChannelSynchronously: streamChannel,
+                            configuration: .init(isOutboundHalfClosureEnabled: true)
+                        )
+                    }
+                }
+
+                try await outboundStream.executeThenClose { inboundParts, outbound in
+                    // Close the outbound side without sending a request.
+                    outbound.finish()
+
+                    // Try to read the response. Since the server will send a RESET_STREAM for the incomplete request, we
+                    // should see an error.
+                    var inboundPartIterator = inboundParts.makeAsyncIterator()
+                    let error = try await #require(throws: HTTP3Error.self) {
+                        _ = try await inboundPartIterator.next()
+                    }
+                    #expect(error.h3ErrorCode == .H3_REQUEST_INCOMPLETE)
+                    #expect(error.code == .remoteStreamError)
+
+                    // The stream should close now that we have received a RESET_STREAM.
+                    try await outboundStream.channel.closeFuture.get()
+                }
+            }
+
+            try await group.waitForAll()
+        }
+
+        // cleanup
+        try await clientChannel.close()
+        try await serverChannel.close()
+    }
+
     // MARK: - Helper Functions
 
     @available(anyAppleOS 26, *)

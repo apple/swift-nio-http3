@@ -116,8 +116,8 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
             var didFireChannelRead = false
             loop: for action in actionBuffer {
                 switch action {
-                case .inputClosed:
-                    context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+                case .inputClosed(let inputClosedAction):
+                    self.handleInputClosed(action: inputClosedAction, context: context)
                 case .returnFrame(let frame):
                     context.fireChannelRead(wrapInboundOut(frame))
                     didFireChannelRead = true
@@ -167,8 +167,8 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         decodeLoop: while true {
             let action = self.stateMachine.decodeNext()
             switch action {
-            case .inputClosed:
-                context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+            case .inputClosed(let inputClosedAction):
+                self.handleInputClosed(action: inputClosedAction, context: context)
             case .needMoreBytes, .alreadyClosed, .previousError:
                 break decodeLoop
             case .callAgain:
@@ -282,6 +282,29 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         }
     }
 
+    /// Processes the `InputClosedAction`.
+    private func handleInputClosed(
+        action: HTTP3StreamStateMachine.DecodeNextAction.InputClosedAction,
+        context: ChannelHandlerContext
+    ) {
+        switch action {
+        case .emitEvent:
+            context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+
+        case .emitErrorAndEvent(let error):
+            context.fireErrorCaught(error)
+            context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+
+        case .resetStream(let error):
+            context.triggerUserOutboundEvent(
+                QUICResetStreamEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .H3_NO_ERROR)),
+                promise: nil
+            )
+            context.fireErrorCaught(error)
+            context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+        }
+    }
+
     package func errorCaught(context: ChannelHandlerContext, error: any Error) {
         switch error {
         case let error as QUICStreamResetError:
@@ -311,7 +334,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
     package func onQPACKDecodeResult(fields: [HTTPField], forHeaders headers: HTTP3PartialFrame.Headers) {
         self.logger.trace("HTTP3StreamHandler.onQPACKDecodeResult")
         guard let context = self.context else {
-            // The stream must have been created an registered to get QPACK events and thus already have
+            // The stream must have been created and registered to get QPACK events and thus already have
             // the context available. Since pending decodes are dropped when the stream closes it must
             // still be open and active.
             fatalError("Tried to deliver QPACK results before handler was added")

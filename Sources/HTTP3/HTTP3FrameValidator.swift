@@ -176,7 +176,7 @@ package enum HTTP3FrameValidator: ~Copyable {
     /// It looks at both request and response frames.
     /// When using this validator for a client, the request frames are the outbound and the response frames are inbound.
     /// This is reversed for a server.
-    package struct RequestStreamValidator: ~Copyable {
+    private struct RequestStreamValidator: ~Copyable {
         /// Models the state of one side of the connection.
         enum State {
             /// Nothing has happened yet.
@@ -357,29 +357,150 @@ package enum HTTP3FrameValidator: ~Copyable {
                 }
             }
         }
+
+        /// Whether the complete request has been received.
+        private var receivedCompleteRequest: Bool {
+            switch self.requestState {
+            case .idle:
+                // We haven't received the request head part yet, so the request is trivially incomplete.
+                return false
+
+            case .headersProcessed:
+                // TODO: If a Content-Length header was specified, we need to check whether we have received all the
+                // specified bytes. If that is not the case, then the request is malformed per RFC 9114 § 4.1.2, and it
+                // must be treated as a stream error.
+                return true
+
+            case .trailersProcessed:
+                // If we have processed trailers, we have seen the full request.
+                return true
+
+            case .previousError:
+                // There was already an error. That will result in the stream closing anyway, so just return `true`.
+                return true
+            }
+        }
+
+        /// Whether the complete response has been received.
+        private var receivedCompleteResponse: Bool {
+            switch self.responseState {
+            case .idle:
+                // We haven't received a final response head part yet, so the response is trivially incomplete.
+                return false
+
+            case .headersProcessed:
+                // TODO: If a Content-Length header was specified, we need to check whether we have received all the
+                // specified bytes. If that is not the case, then the request is malformed per RFC 9114 § 4.1.2, and it
+                // must be treated as a stream error.
+                return true
+
+            case .trailersProcessed:
+                // If we have processed trailers, we have seen the full response.
+                return true
+
+            case .previousError:
+                // There was already an error. That will result in the stream closing anyway, so just return `true`.
+                return true
+            }
+        }
+
+        /// Records that the inbound request stream has closed.
+        mutating func processInboundRequestStreamClosed() -> InboundClosedAction {
+            if self.receivedCompleteRequest {
+                return .doNothing
+            }
+
+            // The input closed before we saw a *complete* request. Per RFC 9114 § 4.1:
+            // "If a client-initiated stream terminates without enough of the HTTP message to provide a complete
+            //  response, the server SHOULD abort its response stream with the error code H3\_REQUEST\_INCOMPLETE".
+            //
+            // We therefore need to reset the stream.
+            self = .init(requestState: .previousError, responseState: .previousError)
+
+            return .resetStream(
+                HTTP3Error(
+                    code: .peerTerminatedInboundStream,
+                    message: "Inbound request stream closed before a complete request was received",
+                    cause: nil,
+                    errorCode: .H3_REQUEST_INCOMPLETE,
+                    location: .here()
+                )
+            )
+        }
+
+        /// Records that the inbound response stream has closed.
+        func processInboundResponseStreamClosed() -> InboundClosedAction {
+            if self.receivedCompleteResponse {
+                return .doNothing
+            }
+
+            // The input closed before we saw a *complete* response. Per RFC 9114 § 4.1.1:
+            // "... if a stream is cancelled after receiving a partial response, the response SHOULD NOT be used".
+            //
+            // We therefore need to inform the downstream so they can decide what to do with the incomplete response.
+            //
+            // This is not a stream or connection error, so we don't modify the request or response state.
+            return .notifyDownstream(
+                HTTP3Error(
+                    code: .peerTerminatedInboundStream,
+                    message: "Inbound response stream closed before a complete response was received",
+                    cause: nil,
+                    errorCode: .H3_NO_ERROR,
+                    location: .here()
+                )
+            )
+        }
+    }
+
+    /// The action to take when the inbound side of a stream closes.
+    package enum InboundClosedAction {
+        /// We received the full request or response before the inbound closed. As such, there is nothing to do.
+        case doNothing
+
+        /// The inbound closed before we received the full response. The downstream should be notified so they can
+        /// decide what to do with the partial response.
+        case notifyDownstream(HTTP3Error)
+
+        /// The inbound closed before we received the full request. Per RFC 9114 § 4.1, the server should abort the
+        /// response stream by sending a RESET_STREAM frame.
+        case resetStream(HTTP3Error)
     }
 
     package struct ServerRequestStreamValidator: ~Copyable {
         private var underlying = RequestStreamValidator()
 
+        /// Validates an inbound request frame.
         package mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             self.underlying.processRequestFrame(frame)
         }
 
+        /// Validates an outbound response frame.
         package mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             self.underlying.processResponseFrame(frame)
+        }
+
+        /// Records that the inbound request stream has closed.
+        package mutating func processInboundClosed() -> InboundClosedAction {
+            self.underlying.processInboundRequestStreamClosed()
         }
     }
 
     package struct ClientRequestStreamValidator: ~Copyable {
         private var underlying = RequestStreamValidator()
 
+        /// Validates an inbound response frame.
         package mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             self.underlying.processResponseFrame(frame)
         }
 
+        /// Validates an outbound request frame.
         package mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             self.underlying.processRequestFrame(frame)
+        }
+
+        /// Records that the inbound response stream has closed.
+        package func processInboundClosed() -> InboundClosedAction {
+            self.underlying.processInboundResponseStreamClosed()
         }
     }
 
@@ -592,6 +713,37 @@ package enum HTTP3FrameValidator: ~Copyable {
         case .outgoingPushStream(let v):
             self = .outgoingPushStream(v)
             return .dropFrame
+        }
+    }
+
+    /// Records that the inbound side of the stream has closed.
+    package mutating func processInboundClosed() -> InboundClosedAction {
+        switch self {
+        case .incomingRequestStream(var validator):
+            let result = validator.processInboundClosed()
+            self = .incomingRequestStream(validator)
+            return result
+
+        case .outgoingRequestStream(let validator):
+            let result = validator.processInboundClosed()
+            self = .outgoingRequestStream(validator)
+            return result
+
+        case .incomingControlStream(let validator):
+            self = .incomingControlStream(validator)
+            return .doNothing
+
+        case .outgoingControlStream(let validator):
+            self = .outgoingControlStream(validator)
+            return .doNothing
+
+        case .incomingPushStream(let validator):
+            self = .incomingPushStream(validator)
+            return .doNothing
+
+        case .outgoingPushStream(let validator):
+            self = .outgoingPushStream(validator)
+            return .doNothing
         }
     }
 }
