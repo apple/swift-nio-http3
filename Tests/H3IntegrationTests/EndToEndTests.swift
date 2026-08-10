@@ -1257,10 +1257,10 @@ struct EndToEndTests {
             try $0.channel.pipeline.syncOperations.addHandler(ShouldQuiesceRecorder(promise: gotQueisceOnStreamPromise))
         }.get()
 
-        clientConnectionChannel.pipeline.fireUserInboundEventTriggered(ChannelShouldQuiesceEvent())
+        clientConnectionChannel.parent!.pipeline.fireUserInboundEventTriggered(ChannelShouldQuiesceEvent())
         try await gotQueisceOnStreamPromise.futureResult.get()
 
-        try await clientConnectionChannel.close()
+        try await clientConnectionChannel.closeFuture.get()
         try await serverChannel.close()
     }
 
