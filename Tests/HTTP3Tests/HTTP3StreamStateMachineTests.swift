@@ -518,7 +518,7 @@ struct HTTP3StreamStateMachineTests {
             return
         }
 
-        expectH3ErrorEqual(error: error, expectedCode: .peerTerminatedInboundStream, expectedH3ErrorCode: .noError)
+        expectH3ErrorEqual(error: error, expectedCode: .peerTerminatedInboundStream, expectedH3ErrorCode: nil)
     }
 
     @Test
