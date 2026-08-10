@@ -230,7 +230,7 @@ struct HTTP3StreamStateMachineTests {
             code: .qpackDecoderError,
             message: "test",
             cause: nil,
-            errorCode: .H3_INTERNAL_ERROR,
+            errorCode: .internalError,
             location: .here()
         )
         machine.gotHeaderDecodeError(testError, from: partialHeader)
@@ -241,7 +241,7 @@ struct HTTP3StreamStateMachineTests {
             expectH3ErrorEqual(
                 error: e,
                 expectedCode: .qpackDecoderError,
-                expectedH3ErrorCode: .H3_INTERNAL_ERROR,
+                expectedH3ErrorCode: .internalError,
                 expectedMessage: "test"
             )
         }
@@ -273,7 +273,7 @@ struct HTTP3StreamStateMachineTests {
             code: .qpackDecoderError,
             message: "test",
             cause: nil,
-            errorCode: .H3_INTERNAL_ERROR,
+            errorCode: .internalError,
             location: .here()
         )
         machine.gotHeaderDecodeError(testError, from: partialHeader)
@@ -287,7 +287,7 @@ struct HTTP3StreamStateMachineTests {
             expectH3ErrorEqual(
                 error: $0,
                 expectedCode: .qpackDecoderError,
-                expectedH3ErrorCode: .H3_INTERNAL_ERROR,
+                expectedH3ErrorCode: .internalError,
                 expectedMessage: "test"
             )
         }
@@ -306,7 +306,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
-        expectH3ErrorEqual(error: error, expectedCode: .forbiddenFrameType, expectedH3ErrorCode: .H3_FRAME_UNEXPECTED)
+        expectH3ErrorEqual(error: error, expectedCode: .forbiddenFrameType, expectedH3ErrorCode: .frameUnexpected)
 
         // All further reads and writes should fail
         machine.assertNoNext()
@@ -328,7 +328,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
-        expectH3ErrorEqual(error: error, expectedCode: .unexpectedFrame, expectedH3ErrorCode: .H3_FRAME_UNEXPECTED)
+        expectH3ErrorEqual(error: error, expectedCode: .unexpectedFrame, expectedH3ErrorCode: .frameUnexpected)
 
         // All further reads and writes should fail
         machine.assertNoNext()
@@ -465,7 +465,7 @@ struct HTTP3StreamStateMachineTests {
         case .wouldBeConnectionError(let error):
             expectH3Error(
                 code: .unexpectedFrame,
-                h3ErrorCode: .H3_FRAME_UNEXPECTED,
+                h3ErrorCode: .frameUnexpected,
                 message: "Expected headers, got data"
             ) {
                 throw error
@@ -591,7 +591,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action2)")
             return
         }
-        expectH3ErrorEqual(error: error, expectedCode: .leftoverBytes, expectedH3ErrorCode: .H3_FRAME_ERROR)
+        expectH3ErrorEqual(error: error, expectedCode: .leftoverBytes, expectedH3ErrorCode: .frameError)
     }
 
     // MARK: Stream closed
@@ -608,7 +608,7 @@ struct HTTP3StreamStateMachineTests {
     func testStreamClosedAfterError() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
 
-        let action1 = machine.streamErrorCaught(errorCode: QUICApplicationErrorCode(.H3_MESSAGE_ERROR))
+        let action1 = machine.streamErrorCaught(errorCode: QUICApplicationErrorCode(.messageError))
         #expect(action1 != nil)
 
         let action2 = machine.closed()
@@ -701,7 +701,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action)")
             return
         }
-        expectH3ErrorEqual(error: error, expectedCode: .unexpectedFrame, expectedH3ErrorCode: .H3_ID_ERROR)
+        expectH3ErrorEqual(error: error, expectedCode: .unexpectedFrame, expectedH3ErrorCode: .idError)
     }
 
     @Test
@@ -764,7 +764,7 @@ extension HTTP3StreamStateMachine {
                 code: .qpackDecoderError,
                 message: "Failed to qpack decode",
                 cause: qpackError,
-                errorCode: .QPACK_DECOMPRESSION_FAILED,
+                errorCode: .qpackDecompressionFailed,
                 location: .here()
             )
             self.gotHeaderDecodeError(error, from: partialHeader)

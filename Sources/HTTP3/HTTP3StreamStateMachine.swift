@@ -137,7 +137,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                                     code: .leftoverBytes,
                                     message: "There were leftover bytes when the input was closed",
                                     cause: nil,
-                                    errorCode: .H3_FRAME_ERROR,
+                                    errorCode: .frameError,
                                     location: location
                                 )
                             }
@@ -169,7 +169,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                             code: .unexpectedFrame,
                             message: "Unexpected push promise",
                             cause: nil,
-                            errorCode: .H3_ID_ERROR,
+                            errorCode: .idError,
                             location: .here()
                         )
                     )
@@ -706,8 +706,11 @@ package struct HTTP3StreamStateMachine: ~Copyable {
 
     /// Inform the state machine of a stream error which was caught on this stream.
     package mutating func streamErrorCaught(errorCode: QUICApplicationErrorCode) -> ErrorCaughtAction? {
-        // RFC 9114 § 8: Receipt of an unknown error code MUST be treated as equivalent to H3_NO_ERROR
-        let errorCodeValue = HTTP3ErrorCode(rawValue: errorCode.rawValue) ?? .H3_NO_ERROR
+        // Preserve the peer's error code verbatim for reporting, even if it is
+        // not one this library recognizes. The reaction is a generic stream
+        // error (`.remoteStreamError`), which already satisfies RFC 9114 § 8's
+        // requirement to treat an unknown code as equivalent to H3_NO_ERROR.
+        let errorCodeValue = HTTP3ErrorCode(rawValue: errorCode.rawValue)
         @inline(never)
         func remoteStreamError(
             errorCode: HTTP3ErrorCode,

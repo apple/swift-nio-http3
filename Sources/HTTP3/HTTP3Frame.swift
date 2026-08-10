@@ -97,7 +97,7 @@ package enum HTTP3FrameType: Hashable {
                 code: .forbiddenFrameType,
                 message: "\(rawValue) is not allowed",
                 cause: nil,
-                errorCode: .H3_FRAME_UNEXPECTED,  // RFC 9114 § 7.2.8
+                errorCode: .frameUnexpected,  // RFC 9114 § 7.2.8
                 location: location
             )
         }

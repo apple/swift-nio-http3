@@ -90,7 +90,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected headers, got \(testFrame.type)"
         )
         // now, even sending valid headers will give no action due to previous error
@@ -146,7 +146,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action2.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected headers or data, got \(testFrame.type)"
         )
 
@@ -173,7 +173,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action1.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected no further frames after request trailers, got \(testFrame.type)"
         )
     }
@@ -188,7 +188,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action3.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected no further frames after request trailers, got headers"
         )
     }
@@ -200,7 +200,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action.streamError,
             expectedCode: .malformedMessage,
-            expectedH3ErrorCode: .H3_MESSAGE_ERROR,
+            expectedH3ErrorCode: .messageError,
             expectedMessage: "A HTTP response was sent before a request"
         )
     }
@@ -252,7 +252,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action3.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected no further frames after response trailers, got \(testFrame.type)"
         )
     }
@@ -274,7 +274,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action2.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected headers or data, got \(testFrame.type)"
         )
 
@@ -298,7 +298,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected headers, got \(testFrame.type)"
         )
         // now, even sending valid headers will give no action due to previous error
@@ -375,7 +375,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action.connectionError,
             expectedCode: .firstControlFrameNotSettings,
-            expectedH3ErrorCode: .H3_MISSING_SETTINGS,
+            expectedH3ErrorCode: .missingSettings,
             expectedMessage: "Expected settings, got \(testFrame.type)"
         )
 
@@ -391,7 +391,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action.connectionError,
             expectedCode: .firstControlFrameNotSettings,
-            expectedH3ErrorCode: .H3_MISSING_SETTINGS,
+            expectedH3ErrorCode: .missingSettings,
             expectedMessage: "Expected settings, got unknown"
         )
 
@@ -437,7 +437,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action2.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected cancelPush or goaway or maxPushID, got \(testFrame.type)"
         )
 
@@ -457,7 +457,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action2.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Received a second settings frame"
         )
     }
@@ -514,7 +514,7 @@ struct HTTP3FrameValidatorTests {
         expectH3ErrorEqual(
             error: action.connectionError,
             expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .H3_FRAME_UNEXPECTED,
+            expectedH3ErrorCode: .frameUnexpected,
             expectedMessage: "Expected headers or data, got \(testFrame.type)"
         )
     }
