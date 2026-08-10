@@ -117,7 +117,20 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
             loop: for action in actionBuffer {
                 switch action {
                 case .inputClosed(let inputClosedAction):
-                    self.handleInputClosed(action: inputClosedAction, context: context)
+                    switch inputClosedAction {
+                    case .emitEvent:
+                        context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+
+                    case .emitErrorAndEvent(let error):
+                        context.fireErrorCaught(error)
+                        context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+
+                    case .resetStream(let error):
+                        // The channel is already inactive, so we cannot send a RESET_STREAM. Just emit the error and
+                        // event downstream.
+                        context.fireErrorCaught(error)
+                        context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+                    }
                 case .returnFrame(let frame):
                     context.fireChannelRead(wrapInboundOut(frame))
                     didFireChannelRead = true
@@ -168,7 +181,22 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
             let action = self.stateMachine.decodeNext()
             switch action {
             case .inputClosed(let inputClosedAction):
-                self.handleInputClosed(action: inputClosedAction, context: context)
+                switch inputClosedAction {
+                case .emitEvent:
+                    context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+
+                case .emitErrorAndEvent(let error):
+                    context.fireErrorCaught(error)
+                    context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+
+                case .resetStream(let error):
+                    context.triggerUserOutboundEvent(
+                        QUICResetStreamEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
+                        promise: nil
+                    )
+                    context.fireErrorCaught(error)
+                    context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+                }
             case .needMoreBytes, .alreadyClosed, .previousError:
                 break decodeLoop
             case .callAgain:
@@ -279,29 +307,6 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         if let bytes = self.pendingBytes.take() {
             let promise = self.pendingPromise.take()
             context.write(HTTP3StreamHandler.wrapOutboundOut(bytes), promise: promise)
-        }
-    }
-
-    /// Processes the `InputClosedAction`.
-    private func handleInputClosed(
-        action: HTTP3StreamStateMachine.DecodeNextAction.InputClosedAction,
-        context: ChannelHandlerContext
-    ) {
-        switch action {
-        case .emitEvent:
-            context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
-
-        case .emitErrorAndEvent(let error):
-            context.fireErrorCaught(error)
-            context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
-
-        case .resetStream(let error):
-            context.triggerUserOutboundEvent(
-                QUICResetStreamEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
-                promise: nil
-            )
-            context.fireErrorCaught(error)
-            context.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
         }
     }
 
