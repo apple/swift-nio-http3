@@ -187,7 +187,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                 self = .init(state: .idle(.init(decoder: bufferState.decoder, seenEOF: bufferState.seenEOF)))
                 return .returnFrame(bufferState.frame)
             case .headerDecodeError(let error):
-                self = .init(state: .inputClosed)
+                self = .init(state: .headerDecodeError(error))
                 return .emitStreamError(error.error)
             case .inputClosed:
                 self = .init(state: .inputClosed)
