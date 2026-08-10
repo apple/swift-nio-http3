@@ -445,7 +445,7 @@ package enum HTTP3FrameValidator: ~Copyable {
                     code: .peerTerminatedInboundStream,
                     message: "Inbound response stream closed before a complete response was received",
                     cause: nil,
-                    errorCode: .noError,
+                    errorCode: nil,
                     location: .here()
                 )
             )
