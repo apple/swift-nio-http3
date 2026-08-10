@@ -304,9 +304,14 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
             }
         case let error as QUICConnectionError:
             self.logger.trace("Caught CONNECTION_CLOSE")
-            // RFC 9114 § 8: "Receipt of an unknown error code MUST be treated as equivalent to
-            // H3_NO_ERROR."
-            let h3Code = error.isApplication ? HTTP3ErrorCode(rawValue: error.code) ?? .H3_NO_ERROR : nil
+            let h3Code: HTTP3ErrorCode?
+            if error.isApplication {
+                // RFC 9114 § 8: "Receipt of an unknown error code MUST be treated as equivalent to
+                // H3_NO_ERROR."
+                h3Code = HTTP3ErrorCode(rawValue: error.code) ?? .H3_NO_ERROR
+            } else {
+                h3Code = nil
+            }
             context.fireErrorCaught(
                 HTTP3Error(
                     code: .remoteConnectionError,
