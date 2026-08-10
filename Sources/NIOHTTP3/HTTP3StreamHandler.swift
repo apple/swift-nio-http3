@@ -308,7 +308,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
             if error.isApplication {
                 // RFC 9114 § 8: "Receipt of an unknown error code MUST be treated as equivalent to
                 // H3_NO_ERROR."
-                h3Code = HTTP3ErrorCode(rawValue: error.code) ?? .H3_NO_ERROR
+                h3Code = HTTP3ErrorCode(rawValue: error.code)
             } else {
                 h3Code = nil
             }
