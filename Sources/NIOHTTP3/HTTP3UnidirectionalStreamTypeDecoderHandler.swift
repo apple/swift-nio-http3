@@ -69,8 +69,10 @@ package final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundH
     /// You should not release the queue before the stream type is known.
     private func releaseQueue() {
         guard let context = self.context else {
-            fatalError("Tried to release queue but missing context")
+            // No context means the stream is closed: no-op.
+            return
         }
+
         // We must call unbufferElement in a loop until `done` is returned
         var didFireChannelRead = false
         loop: while true {
