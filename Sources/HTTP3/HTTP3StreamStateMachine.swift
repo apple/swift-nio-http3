@@ -187,7 +187,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                 self = .init(state: .idle(.init(decoder: bufferState.decoder, seenEOF: bufferState.seenEOF)))
                 return .returnFrame(bufferState.frame)
             case .headerDecodeError(let error):
-                self = .init(state: .inputClosed)
+                self = .init(state: .headerDecodeError(error))
                 return .emitStreamError(error.error)
             case .inputClosed:
                 self = .init(state: .inputClosed)
@@ -195,7 +195,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
             }
         }
 
-        /// Inform the state machine of a qpack decode result that has been previously been asked for.
+        /// Inform the state machine of a qpack decode result that has been previously asked for.
         /// It is an error to call this function with a result for a partial header which wasn't asked for.
         mutating func gotHeaderDecodeResult(_ decoded: [HTTPField], from: HTTP3PartialFrame.Headers) {
             switch consume self.state {
@@ -435,14 +435,24 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         case idle(Idle)
 
         /// We previously hit an error, and now can't do anything.
-        case previousError(HTTP3Error)
+        case previousError(PreviousErrorState)
 
         /// The stream is closed.
         case finished
+
         struct Idle: ~Copyable {
             var validator: HTTP3FrameValidator
             var readState: ReadState
             var writeState: WriteState
+        }
+
+        /// The state contained in ``State/previousError(_:)``.
+        struct PreviousErrorState: ~Copyable {
+            /// The error that was reached. This is reported back on any subsequent operation.
+            var error: HTTP3Error
+
+            /// The read state when the error occurred.
+            var readState: ReadState
         }
     }
 
@@ -500,10 +510,10 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                     return .encodeHeaders(fields)
                 }
             case .emitStreamError(let error):
-                self = .init(state: .previousError(error))
+                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
                 return .wouldBeStreamError(error)
             case .emitConnectionError(let error):
-                self = .init(state: .previousError(error))
+                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
                 return .wouldBeConnectionError(error)
             case .previousError:
                 self = .init(state: .idle(idleState))
@@ -546,8 +556,9 @@ package struct HTTP3StreamStateMachine: ~Copyable {
             // But if we do, just drop it, nobody is waiting for it now.
             self = .init(state: .finished)
             return .alreadyClosed
-        case .previousError(let error):
-            self = .init(state: .previousError(error))
+        case .previousError(let errorState):
+            let error = errorState.error
+            self = .init(state: .previousError(errorState))
             return .previousError(error)
         }
     }
@@ -577,7 +588,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         /// A frame is ready, but you need to decode it and call the state machine back with the result.
         case decodeHeader(HTTP3PartialFrame.Headers)
         /// The input was newly closed.
-        case inputClosed
+        case inputClosed(InputClosedAction)
         /// The input was already closed
         case alreadyClosed
         /// More input is needed before the next action can be determined
@@ -586,6 +597,19 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         case previousError
         /// The decodeNext() function should be called again to get the next action.
         case callAgain
+
+        package enum InputClosedAction {
+            /// A complete request/response was received before the input was closed. As such, we should just deliver
+            /// the `inputClosed` event downstream.
+            case emitEvent
+
+            /// A complete response was not received before the input was closed. We need to notify the downstream about
+            /// the incompleteness through an error and then deliver the `inputClosed` event.
+            case emitErrorAndEvent(HTTP3Error)
+
+            /// A complete request was not received before the input was closed. We need to send a RESET\_STREAM frame.
+            case resetStream(HTTP3Error)
+        }
     }
 
     /// Read out the next frame if it is ready. This may ask you to run qpack on some partial headers.
@@ -603,10 +627,10 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                     self = .init(state: .idle(idleState))
                     return .returnFrame(validatedFrame)
                 case .emitStreamError(let error):
-                    self = .init(state: .previousError(error))
+                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
                     return .emitStreamError(error)
                 case .emitConnectionError(let error):
-                    self = .init(state: .previousError(error))
+                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
                     return .emitConnectionError(error)
                 case .previousError:
                     self = .init(state: .idle(idleState))
@@ -616,7 +640,7 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                 let validationResult = idleState.validator.processInboundUnknownFrame()
                 switch validationResult {
                 case .emitConnectionError(let error):
-                    self = .init(state: .previousError(error))
+                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
                     return .emitConnectionError(error)
                 case .dropFrame:
                     self = .init(state: .idle(idleState))
@@ -628,10 +652,10 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                     return .previousError
                 }
             case .emitConnectionError(let error):
-                self = .init(state: .previousError(error))
+                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
                 return .emitConnectionError(error)
             case .emitStreamError(let error):
-                self = .init(state: .previousError(error))
+                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
                 return .emitStreamError(error)
             case .decodeHeader(let partialHeader):
                 self = .init(state: .idle(idleState))
@@ -643,8 +667,20 @@ package struct HTTP3StreamStateMachine: ~Copyable {
                 self = .init(state: .idle(idleState))
                 return .needMoreBytes
             case .inputClosed:
-                self = .init(state: .idle(idleState))
-                return .inputClosed
+                // The input was closed. Inform the validator to determine what to do next.
+                switch idleState.validator.processInboundClosed() {
+                case .doNothing:
+                    self = .init(state: .idle(idleState))
+                    return .inputClosed(.emitEvent)
+
+                case .notifyDownstream(let error):
+                    self = .init(state: .idle(idleState))
+                    return .inputClosed(.emitErrorAndEvent(error))
+
+                case .resetStream(let error):
+                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                    return .inputClosed(.resetStream(error))
+                }
             }
         case .finished:
             self = .init(state: .finished)
@@ -725,9 +761,9 @@ package struct HTTP3StreamStateMachine: ~Copyable {
             )
         }
         switch consume self.state {
-        case .idle:
+        case .idle(let idleState):
             let error = remoteStreamError(errorCode: errorCodeValue, location: .here())
-            self = .init(state: .previousError(error))
+            self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
             return .emitStreamError(error)
         case .previousError(let previousError):
             // ignore the new error because we already are in an error state
@@ -752,13 +788,25 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         case .idle(let idle):
             let finishState = idle.readState.closed()
             self = .init(state: .finished)
+
             switch finishState {
-            case .sawEOF: return .streamClosed(seenEOF: true)
-            case .noEOF: return .streamClosed(seenEOF: false)
+            case .sawEOF:
+                return .streamClosed(seenEOF: true)
+
+            case .noEOF:
+                return .streamClosed(seenEOF: false)
             }
-        case .previousError:
+        case .previousError(let errorState):
+            let finishState = errorState.readState.closed()
             self = .init(state: .finished)
-            return .streamClosed(seenEOF: false)
+
+            switch finishState {
+            case .sawEOF:
+                return .streamClosed(seenEOF: true)
+
+            case .noEOF:
+                return .streamClosed(seenEOF: false)
+            }
         case .finished:
             fatalError("Finished called twice")
         }
