@@ -17,6 +17,7 @@ public import HTTP3
 import NIOConcurrencyHelpers
 import NIOCore
 import NIOExtras
+import Testing
 
 extension HTTP3GoawayID: ExpressibleByIntegerLiteral {
     public init(integerLiteral value: UInt64) {
@@ -215,6 +216,18 @@ extension DebugInboundEventsHandler.Event {
         switch self {
         case .read(let data): return data
         default: return nil
+        }
+    }
+}
+
+extension Trait where Self == ConditionTrait {
+    static var enableInDebugBuilds: Self {
+        .enabled {
+            #if DEBUG
+            return true
+            #else
+            return false
+            #endif
         }
     }
 }

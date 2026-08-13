@@ -72,6 +72,11 @@ public struct HTTP3ErrorCode: Hashable, Sendable {
     public static let qpackEncoderStreamError = HTTP3ErrorCode(rawValue: 0x0201)
     /// The encoder failed to interpret a decoder instruction received on the decoder stream.
     public static let qpackDecoderStreamError = HTTP3ErrorCode(rawValue: 0x0202)
+
+    // MARK: Datagrams and Capsule (RFC 9297)
+
+    /// Datagram or Capsule protocol parse error.
+    public static let datagramError = HTTP3ErrorCode(rawValue: 0x33)
 }
 
 extension HTTP3ErrorCode: CustomDebugStringConvertible {
@@ -98,6 +103,7 @@ extension HTTP3ErrorCode: CustomDebugStringConvertible {
         case .qpackDecompressionFailed: name = "QPACK Decompression Failed"
         case .qpackEncoderStreamError: name = "QPACK Encoder Stream Error"
         case .qpackDecoderStreamError: name = "QPACK Decoder Stream Error"
+        case .datagramError: name = "Datagram Error"
         default: name = "Unknown Error"
         }
         return "HTTP3ErrorCode<0x\(String(self.rawValue, radix: 16)) \(name)>"
