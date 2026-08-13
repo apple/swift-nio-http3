@@ -156,6 +156,12 @@ struct HTTP3SettingsTests {
         #expect(empty.other == [])
     }
 
+    @Test
+    func h3DatagramIsEnabledByDefault() {
+        let settings = HTTP3Settings(qpackMaximumTableCapacity: 1024)
+        #expect(settings.h3Datagram)
+    }
+
     @Test(arguments: [UInt64(2), 3, 42])
     func h3DatagramSettingWithInvalidValue(value: UInt64) {
         expectH3Error(

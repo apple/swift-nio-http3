@@ -63,12 +63,13 @@ public struct HTTP3Settings: Hashable, Sendable {
     ///   - qpackBlockedStreams: The maximum number of streams which may be blocked on QPACK at any one time. Corresponds to `SETTINGS_QPACK_BLOCKED_STREAMS`.
     ///   - maximumFieldSectionSize: The maximum size of a field section. Corresponds to `SETTINGS_MAX_FIELD_SECTION_SIZE`.
     ///   - h3Datagram: Whether this endpoint is willing to receive HTTP datagrams. Corresponds to `SETTINGS_H3_DATAGRAM`.
+    ///     Defaults to 'true' per RFC 9297 § 2.1.1.
     /// - Precondition: The values must be QUIC-encodable integers, that means they must be between 1 and 2^62-1.
     public init(
         qpackMaximumTableCapacity: UInt64? = nil,
         qpackBlockedStreams: UInt64? = nil,
         maximumFieldSectionSize: UInt64? = nil,
-        h3Datagram: Bool = false
+        h3Datagram: Bool = true
     ) {
         self.init()
 
