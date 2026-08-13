@@ -269,8 +269,10 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
     package mutating func inputClosed() -> InputClosedAction? {
         switch self.state {
         case .awaitingHeaders:
-            self.state = .messageComplete
-            return .returnPart(.end())
+            // The input was closed without even receiving a head part. This case is handled appropriately by
+            // ``HTTP3StreamHandler``, so just return `.none` here.
+            self.state = .failed
+            return .none
         case .awaitingBodyOrTrailers:
             self.state = .messageComplete
             return .returnPart(.end())
