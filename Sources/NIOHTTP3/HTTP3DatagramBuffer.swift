@@ -70,6 +70,21 @@ struct HTTP3DatagramBuffer {
     /// storing `N` contiguous entries where one would be sufficient.
     private var runs: Deque<StreamIDRun>
 
+    #if DEBUG
+    /// A set of stream IDs for which datagrams have already been discarded.
+    private var unbuffered: Set<QUICStreamID> = []
+
+    private mutating func markUnbuffered(_ streamID: QUICStreamID) {
+        self.unbuffered.insert(streamID)
+    }
+
+    private func checkNotUnbuffered(_ streamID: QUICStreamID) {
+        if self.unbuffered.contains(streamID) {
+            fatalError("\(streamID) has been discarded: you can't buffer data for a stream after it has been unbuffered")
+        }
+    }
+    #endif
+
     /// The total number of bytes currently stored in the buffer.
     private(set) var totalSize: Int
 
@@ -89,7 +104,14 @@ struct HTTP3DatagramBuffer {
     /// Append a datagram to the buffer.
     ///
     /// Datagrams may be evicted in order to make space for the new datagram.
+    ///
+    /// - Important: You must not append a datagram for a stream which has already had its
+    ///   frames unbuffered.
     mutating func append(_ datagram: HTTP3Datagram) {
+        #if DEBUG
+        self.checkNotUnbuffered(datagram.streamID)
+        #endif
+
         if self.runs.isEmpty || self.runs.last!.streamID != datagram.streamID {
             // New bucket.
             self.runs.append(StreamIDRun(streamID: datagram.streamID, count: 1))
@@ -108,6 +130,10 @@ struct HTTP3DatagramBuffer {
 
     /// Removes all datagrams for the given stream ID and return them, if they exist.
     mutating func unbufferDatagrams(forStream id: QUICStreamID) -> Deque<HTTP3Datagram>? {
+        #if DEBUG
+        self.markUnbuffered(id)
+        #endif
+
         guard let batch = self.storage.removeValue(forKey: id) else { return nil }
 
         self.totalSize -= batch.totalSize
@@ -116,6 +142,10 @@ struct HTTP3DatagramBuffer {
 
     /// Removes all datagrams for the given stream ID, if they exist.
     mutating func discardDatagrams(forStream id: QUICStreamID) {
+        #if DEBUG
+        self.markUnbuffered(id)
+        #endif
+
         if let batch = self.storage.removeValue(forKey: id) {
             self.totalSize -= batch.totalSize
         }
@@ -130,6 +160,12 @@ struct HTTP3DatagramBuffer {
 
     /// Removes all buffered datagrams.
     mutating func discardAllDatagrams() {
+        #if DEBUG
+        for id in self.storage.keys {
+            self.markUnbuffered(id)
+        }
+        #endif
+
         self.storage.removeAll()
         self.runs.removeAll()
         self.totalSize = 0
