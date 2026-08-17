@@ -20,6 +20,7 @@ public struct HTTP3Settings: Hashable, Sendable {
     private var _qpackMaximumTableCapacity: UInt64?
     private var _qpackBlockedStreams: UInt64?
     private var _maximumFieldSectionSize: UInt64?
+    private var _h3Datagram: Bool?
     private var _other: [HTTP3Setting] = []
 
     /// The maximum capacity of the qpack dynamic table. Corresponds to `SETTINGS_QPACK_MAX_TABLE_CAPACITY`.
@@ -40,6 +41,12 @@ public struct HTTP3Settings: Hashable, Sendable {
         self._maximumFieldSectionSize
     }
 
+    /// Whether the sender is willing to receive HTTP datagrams. Corresponds to `SETTINGS_H3_DATAGRAM`.
+    /// Returns false if this setting was not explicitly set.
+    public var h3Datagram: Bool {
+        self._h3Datagram ?? false
+    }
+
     /// All settings which are not understood by this implementation.
     /// There are guaranteed to be no duplicated identifiers in this array.
     public var other: [HTTP3Setting] {
@@ -55,11 +62,14 @@ public struct HTTP3Settings: Hashable, Sendable {
     ///   - qpackMaximumTableCapacity: The maximum capacity of the qpack dynamic table. Corresponds to `SETTINGS_QPACK_MAX_TABLE_CAPACITY`.
     ///   - qpackBlockedStreams: The maximum number of streams which may be blocked on QPACK at any one time. Corresponds to `SETTINGS_QPACK_BLOCKED_STREAMS`.
     ///   - maximumFieldSectionSize: The maximum size of a field section. Corresponds to `SETTINGS_MAX_FIELD_SECTION_SIZE`.
+    ///   - h3Datagram: Whether this endpoint is willing to receive HTTP datagrams. Corresponds to `SETTINGS_H3_DATAGRAM`.
+    ///     Defaults to 'true' per RFC 9297 § 2.1.1.
     /// - Precondition: The values must be QUIC-encodable integers, that means they must be between 1 and 2^62-1.
     public init(
         qpackMaximumTableCapacity: UInt64? = nil,
         qpackBlockedStreams: UInt64? = nil,
-        maximumFieldSectionSize: UInt64? = nil
+        maximumFieldSectionSize: UInt64? = nil,
+        h3Datagram: Bool = true
     ) {
         self.init()
 
@@ -79,6 +89,7 @@ public struct HTTP3Settings: Hashable, Sendable {
         self._qpackMaximumTableCapacity = qpackMaximumTableCapacity
         self._qpackBlockedStreams = qpackBlockedStreams
         self._maximumFieldSectionSize = maximumFieldSectionSize
+        self._h3Datagram = h3Datagram
     }
 
     /// Parse the provided settings into a ``HTTP3Settings``.
@@ -111,6 +122,23 @@ public struct HTTP3Settings: Hashable, Sendable {
             )
         }
 
+        // RFC 9297 § 2.1.1: An endpoint that receives the SETTINGS_H3_DATAGRAM parameter with a value
+        // that is neither 0 nor 1 MUST terminate the connection with error H3_SETTINGS_ERROR.
+        @inline(never)
+        func invalidSettingValueError(
+            identifier: HTTP3Setting.Identifier,
+            value: UInt64,
+            location: HTTP3Error.SourceLocation
+        ) -> HTTP3Error {
+            HTTP3Error(
+                code: .invalidFramePayload,
+                message: "Settings contains invalid value \(value) for identifier \(identifier)",
+                cause: nil,
+                errorCode: .settingsError,
+                location: location
+            )
+        }
+
         switch setting.identifier {
         case .qpackMaximumTableCapacity:
             if self._qpackMaximumTableCapacity != nil {
@@ -127,6 +155,22 @@ public struct HTTP3Settings: Hashable, Sendable {
                 throw duplicateSettingError(identifier: setting.identifier, location: .here())
             }
             self._maximumFieldSectionSize = setting.value
+        case .h3Datagram:
+            if self._h3Datagram != nil {
+                throw duplicateSettingError(identifier: setting.identifier, location: .here())
+            }
+            switch setting.value {
+            case 0:
+                self._h3Datagram = false
+            case 1:
+                self._h3Datagram = true
+            default:
+                throw invalidSettingValueError(
+                    identifier: setting.identifier,
+                    value: setting.value,
+                    location: .here()
+                )
+            }
         default:
             // A linear search is likely cheaper than using a Set or other technique to detect duplicates
             // That is because we do not expect many unknown settings
@@ -145,6 +189,7 @@ public struct HTTP3Settings: Hashable, Sendable {
         hasher.combine(self.qpackMaximumTableCapacity)
         hasher.combine(self.qpackBlockedStreams)
         hasher.combine(self.maximumFieldSectionSize)
+        hasher.combine(self.h3Datagram)
         hasher.combine(self.other)
     }
 
@@ -155,7 +200,8 @@ public struct HTTP3Settings: Hashable, Sendable {
         // same as one with it not set
         lhs.qpackMaximumTableCapacity == rhs.qpackMaximumTableCapacity
             && lhs.qpackBlockedStreams == rhs.qpackBlockedStreams
-            && lhs.maximumFieldSectionSize == rhs.maximumFieldSectionSize && lhs.other == rhs.other
+            && lhs.maximumFieldSectionSize == rhs.maximumFieldSectionSize && lhs.h3Datagram == rhs.h3Datagram
+            && lhs.other == rhs.other
     }
 }
 
@@ -223,6 +269,9 @@ extension ByteBuffer {
             bytesWritten += self.writeHTTP3Setting(
                 .init(identifier: .maximumFieldSectionSize, value: maximumFieldSectionSize)
             )
+        }
+        if settings.h3Datagram {
+            bytesWritten += self.writeHTTP3Setting(.init(identifier: .h3Datagram, value: 1))
         }
         for setting in settings.other {
             bytesWritten += self.writeHTTP3Setting(setting)

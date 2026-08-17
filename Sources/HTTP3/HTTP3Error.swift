@@ -145,6 +145,8 @@ extension HTTP3Error {
             case invalidGoawayStreamID
             case criticalStreamClosed
             case peerTerminatedInboundStream
+            case datagramsNotNegotiated
+            case connectionClosed
         }
 
         public var description: String {
@@ -259,6 +261,17 @@ extension HTTP3Error {
         /// The peer terminated the inbound stream before delivering a complete request or response.
         public static var peerTerminatedInboundStream: Self {
             Self(.peerTerminatedInboundStream)
+        }
+
+        // Attempted to send a datagram but the remote peer hasn't advertised that it's willing
+        /// to receive datagrams.
+        public static var datagramsNotNegotiated: Self {
+            Self(.datagramsNotNegotiated)
+        }
+
+        /// The operation requires a connection which is no longer open.
+        public static var connectionClosed: Self {
+            Self(.connectionClosed)
         }
     }
 

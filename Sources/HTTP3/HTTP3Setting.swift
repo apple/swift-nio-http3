@@ -85,5 +85,13 @@ extension HTTP3Setting {
         ///
         /// See [RFC 9204 § 5](https://datatracker.ietf.org/doc/html/rfc9204#name-configuration)
         public static let qpackBlockedStreams = Self(extensionSetting: 0x07)!
+
+        /// Corresponds to `SETTINGS_H3_DATAGRAM`.
+        ///
+        /// The value must be either zero or one; the default is zero. A value of one indicates
+        /// that the sender is willing to receive HTTP datagrams.
+        ///
+        /// See [RFC 9297 § 2.1.1](https://www.rfc-editor.org/rfc/rfc9297.html#section-2.1.1)
+        public static let h3Datagram = Self(extensionSetting: 0x33)!
     }
 }
