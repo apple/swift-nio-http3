@@ -27,15 +27,15 @@ public struct HTTP3Datagram: @unchecked Sendable {
     // using a backing class we still pay that cost but only once, on construction.
     private final class Storage {
         var streamID: QUICStreamID
-        var data: ByteBuffer
+        var payload: ByteBuffer
 
         init(streamID: QUICStreamID, data: ByteBuffer) {
             self.streamID = streamID
-            self.data = data
+            self.payload = data
         }
 
         func copy() -> Storage {
-            Storage(streamID: self.streamID, data: self.data)
+            Storage(streamID: self.streamID, data: self.payload)
         }
     }
 
@@ -60,11 +60,11 @@ public struct HTTP3Datagram: @unchecked Sendable {
     }
 
     /// The payload of the datagram.
-    public var data: ByteBuffer {
-        get { self.storage.data }
+    public var payload: ByteBuffer {
+        get { self.storage.payload }
         set {
             self.copyIfNotUniquelyReferenced()
-            self.storage.data = newValue
+            self.storage.payload = newValue
         }
     }
 
@@ -133,7 +133,7 @@ extension ByteBuffer {
     mutating func writeDatagram(_ datagram: HTTP3Datagram) -> Int {
         // Assume largest sized integer for stream ID. Capacity is rounded up to the nearest power
         // of two so using the largest size won't make any difference in the vast majority of cases.
-        self.reserveCapacity(minimumWritableBytes: 8 + datagram.data.readableBytes)
+        self.reserveCapacity(minimumWritableBytes: 8 + datagram.payload.readableBytes)
 
         var bytesWritten = 0
         let quarterStreamID = datagram.streamID.rawValue / 4
@@ -146,7 +146,7 @@ extension ByteBuffer {
         )
 
         bytesWritten += self.writeEncodedInteger(quarterStreamID, strategy: .quic)
-        bytesWritten += self.writeImmutableBuffer(datagram.data)
+        bytesWritten += self.writeImmutableBuffer(datagram.payload)
         return bytesWritten
     }
 }

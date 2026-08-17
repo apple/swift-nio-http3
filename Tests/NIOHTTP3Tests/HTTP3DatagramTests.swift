@@ -33,26 +33,25 @@ struct HTTP3DatagramTests {
 
         #expect(datagram1.streamID == 1)
         #expect(datagram2.streamID == 2)
-        #expect(datagram1.data == datagram2.data)
+        #expect(datagram1.payload == datagram2.payload)
 
         var datagram3 = datagram1
-        datagram3.data.writeString(", Datagrams!")
+        datagram3.payload.writeString(", Datagrams!")
         #expect(datagram3.streamID == 1)
-        #expect(datagram3.data == ByteBuffer(string: "Hello, Datagrams!"))
-        #expect(datagram1.data == ByteBuffer(string: "Hello"))
+        #expect(datagram3.payload == ByteBuffer(string: "Hello, Datagrams!"))
+        #expect(datagram1.payload == ByteBuffer(string: "Hello"))
     }
 
     @Test
     func datagramFromEmptyBuffer() throws {
         var buffer = ByteBuffer()
 
-        do {
+        let error = try #require(throws: HTTP3Error.self) {
             _ = try buffer.parseDatagram()
-            Issue.record("Expected error")
-        } catch {
-            #expect(error.code == .remoteConnectionError)
-            #expect(error.h3ErrorCode == .datagramError)
         }
+
+        #expect(error.code == .remoteConnectionError)
+        #expect(error.h3ErrorCode == .datagramError)
     }
 
     @Test
@@ -62,13 +61,13 @@ struct HTTP3DatagramTests {
         let bytesWritten = buffer.writeEncodedInteger(invalidQuarterStreamID, strategy: .quic)
         #expect(bytesWritten > 0)
 
-        do {
+        let error = try #require(throws: HTTP3Error.self) {
             _ = try buffer.parseDatagram()
-            Issue.record("Expected error")
-        } catch {
-            #expect(error.code == .remoteConnectionError)
-            #expect(error.h3ErrorCode == .datagramError)
         }
+
+        #expect(error.code == .remoteConnectionError)
+        #expect(error.h3ErrorCode == .datagramError)
+
     }
 
     @Test(arguments: [42, HTTP3Datagram.largestValidQuarterStreamID])
@@ -80,7 +79,7 @@ struct HTTP3DatagramTests {
 
         let datagram = try buffer.parseDatagram()
         #expect(datagram.streamID == QUICStreamID(rawValue: quarterStreamID * 4))
-        #expect(String(buffer: datagram.data) == "Hello, Datagram!")
+        #expect(String(buffer: datagram.payload) == "Hello, Datagram!")
     }
 
     @Test
@@ -91,7 +90,7 @@ struct HTTP3DatagramTests {
 
         let decoded = try buffer.parseDatagram()
         #expect(decoded.streamID == 40)
-        #expect(decoded.data == ByteBuffer())
+        #expect(decoded.payload == ByteBuffer())
     }
 
     @Test
@@ -104,7 +103,7 @@ struct HTTP3DatagramTests {
 
         let decoded = try buffer.parseDatagram()
         #expect(decoded.streamID == 40)
-        #expect(decoded.data == data)
+        #expect(decoded.payload == data)
     }
 
     @Test(.enableInDebugBuilds)
