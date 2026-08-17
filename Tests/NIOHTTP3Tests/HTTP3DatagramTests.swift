@@ -87,7 +87,7 @@ struct HTTP3DatagramTests {
     func writeEmptyDatagramToBuffer() throws {
         var buffer = ByteBuffer()
         let bytesWritten = buffer.writeDatagram(HTTP3Datagram(streamID: 40, data: ByteBuffer()))
-        #expect(bytesWritten == 1)  // 42 can be encoded in a single byte.
+        #expect(bytesWritten == 1)  // 40 can be encoded in a single byte.
 
         let decoded = try buffer.parseDatagram()
         #expect(decoded.streamID == 40)
