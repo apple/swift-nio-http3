@@ -80,7 +80,9 @@ struct HTTP3DatagramBuffer {
 
     private func checkNotUnbuffered(_ streamID: QUICStreamID) {
         if self.unbuffered.contains(streamID) {
-            fatalError("\(streamID) has been discarded: you can't buffer data for a stream after it has been unbuffered")
+            fatalError(
+                "\(streamID) has been discarded: you can't buffer data for a stream after it has been unbuffered"
+            )
         }
     }
     #endif
@@ -234,13 +236,22 @@ extension [QUICStreamID: HTTP3DatagramBuffer.DatagramBatch] {
 
             var dropped = Dropped(bytes: 0, datagrams: 0)
 
-            while dropped.datagrams < maxDatagramsToDrop, dropped.bytes < bytesToDrop, let removed = batch!.popFirst() {
-                dropped.record(bytes: removed.payload.readableBytes)
-            }
-
-            // Empty: remove the batch from the dictionary.
-            if batch!.isEmpty {
+            // Fast-path: drop a whole batch.
+            if batch!.datagrams.count <= maxDatagramsToDrop, bytesToDrop <= batch!.totalSize {
+                dropped.datagrams = batch!.datagrams.count
+                dropped.record(bytes: batch!.totalSize)
                 batch = nil
+            } else {
+                while dropped.datagrams < maxDatagramsToDrop, dropped.bytes < bytesToDrop,
+                    let removed = batch!.popFirst()
+                {
+                    dropped.record(bytes: removed.payload.readableBytes)
+                }
+
+                // Empty: remove the batch from the dictionary.
+                if batch!.isEmpty {
+                    batch = nil
+                }
             }
 
             return dropped
