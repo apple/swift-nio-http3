@@ -21,6 +21,7 @@ import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
+@available(anyAppleOS 26, *)
 final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator> {
     private let eventLoop: any EventLoop
     private var connectionStateMachine: HTTP3ConnectionStateMachine

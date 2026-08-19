@@ -21,6 +21,7 @@ struct HTTP3ConnectionStateMachineTests {
     // MARK: Initialization
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInitialize() {
         let testSettings = HTTP3Settings()
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -29,6 +30,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInitializeWithQPACK() {
         let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -37,6 +39,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInitializeAfterFinish() {
         var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .client)
         #expect(stateMachine.shutdownConnectionImmediately() == .shutdown)
@@ -46,6 +49,7 @@ struct HTTP3ConnectionStateMachineTests {
     // MARK: Inbound streams
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundControlStream() {
         let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -61,6 +65,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundControlStreamAfterShutdown() {
         let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -79,6 +84,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testDoubleInboundControlStream() {
         let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -101,6 +107,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundPushStreamOnServer() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -114,6 +121,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundPushStreamOnClient() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -127,6 +135,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundPushStreamAfterShutdown() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -142,6 +151,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundQPACKEncoderStream() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -154,6 +164,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testDoubleInboundQPACKEncoderStream() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -173,6 +184,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundQPACKEncoderStreamAfterShutdown() {
         let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -192,6 +204,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundQPACKDecoderStream() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -204,6 +217,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testDoubleInboundQPACKDecoderStream() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -223,6 +237,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundQPACKDecoderStreamAfterShutdown() {
         let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -242,6 +257,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundRequestStreamOnServer() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -254,6 +270,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundRequestStreamOnClient() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -268,6 +285,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundRequestStreamAfterShutdown() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -283,6 +301,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundRequestStreamAfterGoawayWithHigherID() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -302,6 +321,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundUnknownStream() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -323,6 +343,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testInboundUnknownStreamAfterShutdown() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -352,6 +373,7 @@ struct HTTP3ConnectionStateMachineTests {
     // MARK: Settings
 
     @Test
+    @available(anyAppleOS 26, *)
     func testGotSettingsNoQPACK() {
         let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 0)
         var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .client)
@@ -362,6 +384,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testGotSettingsWithQPACK() {
         let localSettings = HTTP3Settings(qpackMaximumTableCapacity: 200)
         let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
@@ -381,6 +404,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testGotSettingsAfterShutdown() {
         let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .client)
@@ -397,6 +421,7 @@ struct HTTP3ConnectionStateMachineTests {
     // MARK: GOAWAY
 
     @Test
+    @available(anyAppleOS 26, *)
     func testGotGoawayWithNoStreams() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -414,6 +439,7 @@ struct HTTP3ConnectionStateMachineTests {
         2,  // Client-initiated uni
         3,  // Server-initiated uni
     ])
+    @available(anyAppleOS 26, *)
     // Note: Theres no such thing as an invalid ID on the server. Because the server takes push ids, not stream ids, and those can be any number.
     func testGotGoawayWithInvalidIDOnClient(testID: HTTP3GoawayID) {
         let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
@@ -438,6 +464,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testGotGoawayOnServerDoesNothing() {
         let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
@@ -453,6 +480,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testGotGoawayCancelsStream() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -500,6 +528,7 @@ struct HTTP3ConnectionStateMachineTests {
 
     /// When the server sends a goaway, we should explicitly cancel streams above that ID
     @Test
+    @available(anyAppleOS 26, *)
     func testSendGoawayCancelsStream() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -549,6 +578,7 @@ struct HTTP3ConnectionStateMachineTests {
     // MARK: Push
 
     @Test
+    @available(anyAppleOS 26, *)
     func testMaxPushIDOnServer() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -559,6 +589,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testMaxPushIDOnClient() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -574,6 +605,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test(arguments: [HTTP3ConnectionType.server, .client])
+    @available(anyAppleOS 26, *)
     func testCancelPush(type: HTTP3ConnectionType) {
         var idGenerator = IDGenerator(type: type)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: type, idGenerator: &idGenerator)
@@ -586,6 +618,7 @@ struct HTTP3ConnectionStateMachineTests {
     // MARK: Outbound streams
 
     @Test
+    @available(anyAppleOS 26, *)
     func testOutboundRequestStreamFromClient() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -598,6 +631,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testOutboundRequestStreamFromServer() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
@@ -611,6 +645,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testOutboundRequestStreamAfterShutdown() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -626,6 +661,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testOutboundRequestStreamAfteReceiveGoaway() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -643,6 +679,7 @@ struct HTTP3ConnectionStateMachineTests {
     // MARK: QPACK
 
     @Test
+    @available(anyAppleOS 26, *)
     func testIncomingEncoderInstructionWithQueue() {
         let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -665,6 +702,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testIncomingEncoderInstructionNoQueue() {
         let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -686,6 +724,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testIncomingEncoderInstructionAfterShutdown() {
         let testSettings: HTTP3Settings = .init(qpackMaximumTableCapacity: 100)
         var stateMachine = HTTP3ConnectionStateMachine(settings: testSettings, type: .client)
@@ -708,6 +747,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testIncomingDecoderInstruction() throws {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitializedWithQPACK(
@@ -733,6 +773,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testEncoderStreamReadyAfterShutdown() {
         let localSettings = HTTP3Settings(qpackMaximumTableCapacity: 200)
         let remoteSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
@@ -756,6 +797,7 @@ struct HTTP3ConnectionStateMachineTests {
     // MARK: Stream tests
 
     @Test
+    @available(anyAppleOS 26, *)
     func testStreamError() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -791,6 +833,7 @@ struct HTTP3ConnectionStateMachineTests {
 
     /// When the remote closes the connection with an error, all open bidirectional streams should be cancelled.
     @Test
+    @available(anyAppleOS 26, *)
     func testCaughtRemoteErrorCancelsStreams() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -818,6 +861,7 @@ struct HTTP3ConnectionStateMachineTests {
 
     /// When there are no open streams, `caughtRemoteError` should return an empty list.
     @Test
+    @available(anyAppleOS 26, *)
     func testCaughtRemoteErrorNoStreams() {
         var idGenerator = IDGenerator(type: .client)
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .client, idGenerator: &idGenerator)
@@ -839,6 +883,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testCriticalStreamClosed() {
         var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
         let action1 = stateMachine.initialize()
@@ -864,6 +909,7 @@ struct HTTP3ConnectionStateMachineTests {
 
 // MARK: Test utils
 
+@available(anyAppleOS 26, *)
 extension HTTP3ConnectionStateMachine.IncomingEncoderInstructionAction {
     fileprivate var decoderInstructions: QPACKDecoderInstruction? {
         switch self {
@@ -941,6 +987,7 @@ struct IDGenerator {
     }
 }
 
+@available(anyAppleOS 26, *)
 extension HTTP3ConnectionStateMachine {
     /// Returns a state machine which has already exchanged settings with the 'remote' and created the required streams.
     /// The settings are configured to allow qpack in both directions.

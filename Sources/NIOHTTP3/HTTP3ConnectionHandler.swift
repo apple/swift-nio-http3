@@ -30,6 +30,7 @@ package enum H3InboundStreamInitializer {
 /// This handler should be in a QUIC connection channel pipeline, and thus there should be one instance of this handler per connection.
 /// It expects to be told about any incoming stream channels by calling ``HTTP3ConnectionHandler/inboundStreamReceived(_:)``.
 /// The handler is also able to make outbound streams, see ``HTTP3ConnectionHandler/createRequestStream(streamInitializer:)``.
+@available(anyAppleOS 26, *)
 public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & SendableMetatype>:
     ChannelInboundHandler,
     ChannelOutboundHandler
@@ -185,7 +186,6 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - connection: An instance of ``HTTP3ServerConnection`` which inbound connections can be vended to.
     /// - Returns: A ``HTTP3ConnectionHandler``.
     @_spi(HTTP3AsyncInterface)
-    @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
     public static func server<Output: Sendable>(
         eventLoop: any EventLoop,
         configuration: HTTP3ServerConfiguration,
