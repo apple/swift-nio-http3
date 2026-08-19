@@ -60,9 +60,12 @@ package final class HTTP3OutboundControlStreamHandler: ChannelInboundHandler {
         let action = self.state.channelActive()
         switch action {
         case .sendFrames(var frames):
+            guard !frames.isEmpty else { return }
             while let frame = frames.popFirst() {
-                context.writeAndFlush(self.wrapOutboundOut(frame), promise: nil)
+                context.write(self.wrapOutboundOut(frame), promise: nil)
             }
+            context.flush()
+
         case .none:
             break
         }
