@@ -247,6 +247,11 @@ extension [QUICStreamID: HTTP3DatagramBuffer.DatagramBatch] {
                 {
                     dropped.record(bytes: removed.payload.readableBytes)
                 }
+
+                // Empty: remove the batch from the dictionary.
+                if batch!.isEmpty {
+                    batch = nil
+                }
             }
 
             return dropped
