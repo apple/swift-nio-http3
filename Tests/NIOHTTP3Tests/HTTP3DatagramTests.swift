@@ -95,15 +95,15 @@ struct HTTP3DatagramTests {
 
     @Test
     func writeNonEmptyDatagramToBuffer() throws {
-        let data = ByteBuffer(repeating: 1, count: 1024)
+        let payload = ByteBuffer(repeating: 1, count: 1024)
 
         var buffer = ByteBuffer()
-        let bytesWritten = buffer.writeDatagram(HTTP3Datagram(streamID: 40, payload: data))
+        let bytesWritten = buffer.writeDatagram(HTTP3Datagram(streamID: 40, payload: payload))
         #expect(bytesWritten == 1025)  // 1025 = 1 (streamID) + 1024 (data)
 
         let decoded = try buffer.parseDatagram()
         #expect(decoded.streamID == 40)
-        #expect(decoded.payload == data)
+        #expect(decoded.payload == payload)
     }
 
     @Test(.enableInDebugBuilds)
