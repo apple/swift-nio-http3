@@ -237,7 +237,7 @@ extension [QUICStreamID: HTTP3DatagramBuffer.DatagramBatch] {
             var dropped = Dropped(bytes: 0, datagrams: 0)
 
             // Fast-path: drop a whole batch.
-            if batch!.datagrams.count <= maxDatagramsToDrop, bytesToDrop <= batch!.totalSize {
+            if maxDatagramsToDrop >= batch!.datagrams.count, bytesToDrop >= batch!.totalSize {
                 dropped.datagrams = batch!.datagrams.count
                 dropped.record(bytes: batch!.totalSize)
                 batch = nil
