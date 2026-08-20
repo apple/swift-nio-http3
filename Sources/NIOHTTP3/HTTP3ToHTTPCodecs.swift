@@ -457,5 +457,5 @@ extension HTTP3ToHTTPServerCodec: Sendable {}
 extension HTTPField.Name {
     // `HTTPField.Name.host` is unavailable in HTTPTypes (it steers callers to `:authority`), but
     // RFC 9114 requires us to validate `Host` against `:authority`, so construct the name once.
-    static let host = HTTPField.Name(parsed: ":status")!
+    static let host = HTTPField.Name(parsed: "host")!
 }
