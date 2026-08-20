@@ -29,13 +29,13 @@ public struct HTTP3Datagram: @unchecked Sendable {
         var streamID: QUICStreamID
         var payload: ByteBuffer
 
-        init(streamID: QUICStreamID, data: ByteBuffer) {
+        init(streamID: QUICStreamID, payload: ByteBuffer) {
             self.streamID = streamID
-            self.payload = data
+            self.payload = payload
         }
 
         func copy() -> Storage {
-            Storage(streamID: self.streamID, data: self.payload)
+            Storage(streamID: self.streamID, payload: self.payload)
         }
     }
 
@@ -72,9 +72,9 @@ public struct HTTP3Datagram: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - streamID: The ID of the stream this datagram is associated with.
-    ///   - data: The payload of the datagram.
-    public init(streamID: QUICStreamID, data: ByteBuffer) {
-        self.storage = Storage(streamID: streamID, data: data)
+    ///   - payload: The payload of the datagram.
+    public init(streamID: QUICStreamID, payload: ByteBuffer) {
+        self.storage = Storage(streamID: streamID, payload: payload)
     }
 }
 
@@ -125,8 +125,8 @@ extension ByteBuffer {
         // to have a variant which avoids this given we've validated it here.
         let streamID = QUICStreamID(rawValue: rawStreamID)
 
-        let data = self.readSlice(length: self.readableBytes)!
-        return HTTP3Datagram(streamID: streamID, data: data)
+        let payload = self.readSlice(length: self.readableBytes)!
+        return HTTP3Datagram(streamID: streamID, payload: payload)
     }
 
     @discardableResult

@@ -168,6 +168,6 @@ struct HTTP3DatagramBufferTests {
 
 extension HTTP3Datagram {
     static func zeros(_ count: Int, streamID: QUICStreamID) -> HTTP3Datagram {
-        HTTP3Datagram(streamID: streamID, data: ByteBuffer(repeating: 0, count: count))
+        HTTP3Datagram(streamID: streamID, payload: ByteBuffer(repeating: 0, count: count))
     }
 }
