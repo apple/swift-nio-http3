@@ -64,7 +64,7 @@ extension HTTPRequestPart: HTTPMessagePart {
         let scheme = request.scheme
         let path = request.path
         let authority = request.authority
-        let host = request.headerFields[.init(parsed: "host")!]
+        let host = request.headerFields[.host]
         if request.method != .connect {
             // All HTTP/3 requests MUST include exactly one value for the :method, :scheme, and :path pseudo-header fields, unless the request is a CONNECT request
             guard let scheme else {
@@ -453,3 +453,9 @@ public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
 
 @available(*, unavailable)
 extension HTTP3ToHTTPServerCodec: Sendable {}
+
+extension HTTPField.Name {
+    // `HTTPField.Name.host` is unavailable in HTTPTypes (it steers callers to `:authority`), but
+    // RFC 9114 requires us to validate `Host` against `:authority`, so construct the name once.
+    static let host = HTTPField.Name(parsed: "host")!
+}
