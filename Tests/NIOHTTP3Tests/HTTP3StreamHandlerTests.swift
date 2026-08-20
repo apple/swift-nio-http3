@@ -20,7 +20,7 @@ import NIOConcurrencyHelpers
 import NIOCore
 import NIOEmbedded
 import NIOExtras
-import NIOHTTP3
+@testable import NIOHTTP3
 import NIOQUICHelpers
 import QPACK
 import Testing

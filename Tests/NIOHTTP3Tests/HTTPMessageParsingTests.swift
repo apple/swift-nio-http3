@@ -16,7 +16,7 @@ import HTTP3
 import HTTPTypes
 import NIOCore
 import NIOEmbedded
-import NIOHTTP3
+@testable import NIOHTTP3
 import NIOHTTPTypes
 import Testing
 

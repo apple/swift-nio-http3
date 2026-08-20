@@ -49,8 +49,8 @@ struct HTTP3ToHTTPCodecTests {
         try channel.writeOutbound(
             HTTPRequestPart.head(.init(method: .get, scheme: "https", authority: "test", path: "/"))
         )
-        try channel.writeOutbound(HTTPRequestPart.body(buffer: .init(bytes: [1, 2, 3])))
-        try channel.writeOutbound(HTTPRequestPart.body(buffer: .init(bytes: [4, 5, 6])))
+        try channel.writeOutbound(HTTPRequestPart.body(.init(bytes: [1, 2, 3])))
+        try channel.writeOutbound(HTTPRequestPart.body(.init(bytes: [4, 5, 6])))
         try channel.writeOutbound(HTTPRequestPart.end([.cookie: "test"]))
 
         let events = try framesPromise.futureResult.wait()
@@ -114,8 +114,8 @@ struct HTTP3ToHTTPCodecTests {
         let channel = EmbeddedChannel(handlers: [recorder, handler], loop: eventLoop)
 
         try channel.writeOutbound(HTTPResponsePart.head(.init(status: .ok)))
-        try channel.writeOutbound(HTTPResponsePart.body(buffer: .init(bytes: [1, 2, 3])))
-        try channel.writeOutbound(HTTPResponsePart.body(buffer: .init(bytes: [4, 5, 6])))
+        try channel.writeOutbound(HTTPResponsePart.body(.init(bytes: [1, 2, 3])))
+        try channel.writeOutbound(HTTPResponsePart.body(.init(bytes: [4, 5, 6])))
         try channel.writeOutbound(HTTPResponsePart.end([.cookie: "test"]))
 
         var events = [WriteOrClose<HTTP3Frame>]()

@@ -12,16 +12,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTP3
-package import HTTPTypes
-package import Logging
+import HTTP3
+import HTTPTypes
+import Logging
 package import NIOCore
-package import NIOQUICHelpers
+import NIOQUICHelpers
 
 /// This handler should be added to every incoming and outgoing HTTP/3 stream which carries HTTP frames.
 /// It handles encoding and decoding of these frames.
 /// It will only pass through valid frames, and handles things such as QPACK header decoding.
-package final class HTTP3StreamHandler: ChannelDuplexHandler {
+final class HTTP3StreamHandler: ChannelDuplexHandler {
     package typealias InboundIn = ByteBuffer
     package typealias InboundOut = HTTP3Frame
 

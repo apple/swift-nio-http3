@@ -17,7 +17,7 @@ import HTTPTypes
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
