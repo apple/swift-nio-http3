@@ -21,7 +21,7 @@ let package = Package(
         .macOS(.v13)
     ],
     dependencies: [
-        .package(path: "../"),
+        .package(name: "swift-nio-http3", path: "../"),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.3.0"),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", branch: "main"),
         .package(url: "https://github.com/ordo-one/benchmark.git", from: "1.35.0"),
