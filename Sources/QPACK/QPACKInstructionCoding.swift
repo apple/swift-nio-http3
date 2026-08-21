@@ -12,14 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import struct NIOCore.ByteBuffer
+public import struct NIOCore.ByteBuffer
 
 extension ByteBuffer {
     /// Read a single ``QPACKEncoderInstruction`` from this `ByteBuffer`.
     /// Moves the reader index to the end of the instruction.
     /// If a valid instruction can't be formed, returns nil and leaves the reader index as it was.
     /// - Returns: The instruction, or nil if it cannot be decoded.
-    package mutating func readQPACKEncoderInstruction() throws(IntegerReadingError) -> QPACKEncoderInstruction? {
+    mutating func readQPACKEncoderInstruction() throws(IntegerReadingError) -> QPACKEncoderInstruction? {
         guard let firstByte = self.peekInteger(as: UInt8.self) else {
             return nil
         }
@@ -74,7 +74,7 @@ extension ByteBuffer {
     /// - Parameters:
     ///   - instruction: The instruction to encode.
     ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and more efficient to do so).
-    package mutating func writeQPACKEncoderInstruction(
+    mutating func writeQPACKEncoderInstruction(
         _ instruction: QPACKEncoderInstruction,
         preferHuffmanEncoding: Bool
     ) {
@@ -110,7 +110,7 @@ extension ByteBuffer {
     /// Moves the reader index to the end of the instruction.
     /// If a valid instruction can't be formed, returns nil and leaves the reader index as it was.
     /// - Returns: The instruction, or nil if it cannot be decoded.
-    package mutating func readQPACKDecoderInstruction() throws(IntegerReadingError) -> QPACKDecoderInstruction? {
+    mutating func readQPACKDecoderInstruction() throws(IntegerReadingError) -> QPACKDecoderInstruction? {
         guard let firstByte = self.getInteger(at: self.readerIndex, as: UInt8.self) else {
             return nil
         }
@@ -142,7 +142,7 @@ extension ByteBuffer {
 
     /// Encode a single ``QPACKDecoderInstruction`` into this `ByteBuffer`.
     /// - Parameter instruction: The instruction to encode.
-    package mutating func writeQPACKDecoderInstruction(_ instruction: QPACKDecoderInstruction) {
+    mutating func writeQPACKDecoderInstruction(_ instruction: QPACKDecoderInstruction) {
         switch instruction {
         case .sectionAcknowledgement(let streamID):
             // Start with a 1, then a 7-bit prefix integer
@@ -158,27 +158,37 @@ extension ByteBuffer {
 }
 
 /// Encode qpack encoder instructions.
-package struct QPACKEncoderInstructionEncoder {
+@_spi(PackageInternal)
+public struct QPACKEncoderInstructionEncoder {
+    @_spi(PackageInternal)
+    public typealias OutboundIn = QPACKEncoderInstruction
+
     private let preferHuffmanEncoding: Bool
 
-    package init(preferHuffmanEncoding: Bool) {
+    @_spi(PackageInternal)
+    public init(preferHuffmanEncoding: Bool) {
         self.preferHuffmanEncoding = preferHuffmanEncoding
     }
 
-    package func encode(data: QPACKEncoderInstruction, out: inout ByteBuffer) {
+    @_spi(PackageInternal)
+    public func encode(data: QPACKEncoderInstruction, out: inout ByteBuffer) {
         out.writeQPACKEncoderInstruction(data, preferHuffmanEncoding: self.preferHuffmanEncoding)
     }
 }
 
 /// Decode qpack encoder instructions.
-package struct QPACKEncoderInstructionDecoder {
-    package init() {}
+@_spi(PackageInternal)
+public struct QPACKEncoderInstructionDecoder {
+    @_spi(PackageInternal)
+    public init() {}
 
-    package func decode(buffer: inout ByteBuffer) throws(IntegerReadingError) -> QPACKEncoderInstruction? {
+    @_spi(PackageInternal)
+    public func decode(buffer: inout ByteBuffer) throws(IntegerReadingError) -> QPACKEncoderInstruction? {
         try buffer.readQPACKEncoderInstruction()
     }
 
-    package func decodeLast(
+    @_spi(PackageInternal)
+    public func decodeLast(
         buffer: inout ByteBuffer,
         seenEOF: Bool
     ) throws(IntegerReadingError) -> QPACKEncoderInstruction? {
@@ -187,23 +197,33 @@ package struct QPACKEncoderInstructionDecoder {
 }
 
 /// Encode qpack decoder instructions.
-package struct QPACKDecoderInstructionEncoder {
-    package init() {}
+@_spi(PackageInternal)
+public struct QPACKDecoderInstructionEncoder {
+    @_spi(PackageInternal)
+    public typealias OutboundIn = QPACKDecoderInstruction
 
-    package func encode(data: QPACKDecoderInstruction, out: inout ByteBuffer) {
+    @_spi(PackageInternal)
+    public init() {}
+
+    @_spi(PackageInternal)
+    public func encode(data: QPACKDecoderInstruction, out: inout ByteBuffer) {
         out.writeQPACKDecoderInstruction(data)
     }
 }
 
 /// Decode qpack decoder instructions.
-package struct QPACKDecoderInstructionDecoder {
-    package init() {}
+@_spi(PackageInternal)
+public struct QPACKDecoderInstructionDecoder {
+    @_spi(PackageInternal)
+    public init() {}
 
-    package func decode(buffer: inout ByteBuffer) throws(IntegerReadingError) -> QPACKDecoderInstruction? {
+    @_spi(PackageInternal)
+    public func decode(buffer: inout ByteBuffer) throws(IntegerReadingError) -> QPACKDecoderInstruction? {
         try buffer.readQPACKDecoderInstruction()
     }
 
-    package func decodeLast(
+    @_spi(PackageInternal)
+    public func decodeLast(
         buffer: inout ByteBuffer,
         seenEOF: Bool
     ) throws(IntegerReadingError) -> QPACKDecoderInstruction? {

@@ -22,7 +22,7 @@ import NIOEmbedded
 import NIOExtras
 @testable import NIOHTTP3
 import NIOQUICHelpers
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
 
 struct NIOHTTP3StreamHandlerTests {

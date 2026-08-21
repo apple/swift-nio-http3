@@ -51,7 +51,8 @@ public struct QPACKDecoder {
     /// The number of dynamic table inserts we have acknowledged. See RFC 9204 § 2.1.4.
     private var knownReceivedCount = 0
 
-    package var insertCount: Int {
+    @_spi(PackageInternal)
+    public var insertCount: Int {
         self.dynamicTable.insertCount
     }
 
@@ -228,7 +229,8 @@ public struct QPACKDecoder {
         }
     }
 
-    package func decodeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> FieldSectionPrefix? {
+    @_spi(PackageInternal)
+    public func decodeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> FieldSectionPrefix? {
         prefix.decode(totalInserts: self.insertCount, maxCapacity: self.dynamicTable.maximumCapacity)
     }
 }

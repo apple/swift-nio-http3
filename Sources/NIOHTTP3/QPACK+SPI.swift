@@ -14,7 +14,7 @@
 
 public import HTTPTypes
 public import NIOQUICHelpers
-@_spi(PackageInternal) private import QPACK
+@_spi(PackageInternal) @_spi(Benchmarks) private import QPACK
 
 // QPACK isn't a library product, so add entry points for benchmarks here under SPI.
 @_spi(Benchmarks)
