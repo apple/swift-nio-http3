@@ -15,7 +15,7 @@
 @_spi(PackageInternal) import HTTP3
 import Logging
 import NIOCore
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 import NIOQUICHelpers
 
 import class NIOQUIC.AsyncVerifier

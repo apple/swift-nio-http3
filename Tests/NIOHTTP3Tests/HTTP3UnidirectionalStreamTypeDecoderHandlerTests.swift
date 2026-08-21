@@ -16,7 +16,7 @@
 import Logging
 import NIOCore
 import NIOEmbedded
-import NIOHTTP3
+@testable import NIOHTTP3
 import NIOTestUtils
 import Testing
 

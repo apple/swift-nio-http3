@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@testable import HTTP3
 import Testing
 
 struct StreamIDTrackerTests {
