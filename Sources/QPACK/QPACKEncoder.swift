@@ -105,11 +105,15 @@ struct StreamTracker {
     }
 }
 
-package struct QPACKEncodeResult: Sendable, Hashable {
-    package let fieldSection: FieldSection
-    package let instructions: [QPACKEncoderInstruction]
+@_spi(PackageInternal)
+public struct QPACKEncodeResult: Sendable, Hashable {
+    @_spi(PackageInternal)
+    public let fieldSection: FieldSection
+    @_spi(PackageInternal)
+    public let instructions: [QPACKEncoderInstruction]
 
-    package init(fieldSection: FieldSection, instructions: [QPACKEncoderInstruction]) {
+    @_spi(PackageInternal)
+    public init(fieldSection: FieldSection, instructions: [QPACKEncoderInstruction]) {
         self.fieldSection = fieldSection
         self.instructions = instructions
     }

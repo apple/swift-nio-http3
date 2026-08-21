@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import DequeModule
+public import DequeModule
 public import HTTPTypes
 public import Logging
 public import NIOQUICHelpers
@@ -381,11 +381,13 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: Outbound Streams
 
-    package enum OutboundEncoderStreamReadyAction: Hashable {
+    @_spi(PackageInternal)
+    public enum OutboundEncoderStreamReadyAction: Hashable {
         case sendEncoderInstruction(QPACKEncoderInstruction)
     }
 
-    package mutating func outboundEncoderStreamReady(streamID: QUICStreamID) -> OutboundEncoderStreamReadyAction? {
+    @_spi(PackageInternal)
+    public mutating func outboundEncoderStreamReady(streamID: QUICStreamID) -> OutboundEncoderStreamReadyAction? {
         precondition(streamID.isUnidirectional)
         switch consume self.state {
         case .initialized(var initializedState):
@@ -406,11 +408,13 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum OutboundDecoderStreamReadyAction: Hashable, Sendable {
+    @_spi(PackageInternal)
+    public enum OutboundDecoderStreamReadyAction: Hashable, Sendable {
         case sendDecoderInstructions(Deque<QPACKDecoderInstruction>)
     }
 
-    package mutating func outboundDecoderStreamReady(streamID: QUICStreamID) -> OutboundDecoderStreamReadyAction? {
+    @_spi(PackageInternal)
+    public mutating func outboundDecoderStreamReady(streamID: QUICStreamID) -> OutboundDecoderStreamReadyAction? {
         precondition(streamID.isUnidirectional)
         switch consume self.state {
         case .initialized(var initializedState):
@@ -431,13 +435,15 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum OutboundRequestStreamRequestedAction {
+    @_spi(PackageInternal)
+    public enum OutboundRequestStreamRequestedAction {
         case create
         case failedToCreateStream(HTTP3Error)
     }
 
     /// Call this before making a request stream. It will tell you whether or not you may create it.
-    package mutating func outboundRequestStreamRequested() -> OutboundRequestStreamRequestedAction {
+    @_spi(PackageInternal)
+    public mutating func outboundRequestStreamRequested() -> OutboundRequestStreamRequestedAction {
         switch consume self.state {
         case .initialized(let initializedState):
             switch initializedState.type {
@@ -479,7 +485,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func outboundRequestStreamReady(streamID: QUICStreamID) {
+    @_spi(PackageInternal)
+    public mutating func outboundRequestStreamReady(streamID: QUICStreamID) {
         precondition(streamID.isBidirectional)
         switch consume self.state {
         case .notStarted:
@@ -497,7 +504,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func outboundControlStreamReady(streamID: QUICStreamID) {
+    @_spi(PackageInternal)
+    public mutating func outboundControlStreamReady(streamID: QUICStreamID) {
         precondition(streamID.isUnidirectional)
         switch consume self.state {
         case .notStarted:
@@ -512,7 +520,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: Control stream
 
-    package enum ControlFrameReceivedAction {
+    @_spi(PackageInternal)
+    public enum ControlFrameReceivedAction {
         /// An outbound QPACK encoder instruction stream needs to be created.
         case makeEncoderInstructionStream
         /// A connection error should be emitted
@@ -523,7 +532,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case closeConnection
     }
 
-    package mutating func receivedControlFrame(_ frame: HTTP3Frame) -> ControlFrameReceivedAction? {
+    @_spi(PackageInternal)
+    public mutating func receivedControlFrame(_ frame: HTTP3Frame) -> ControlFrameReceivedAction? {
         switch frame {
         case .settings(let payload):
             let settings = payload.settings
@@ -631,7 +641,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: QPACK
 
-    package enum IncomingEncoderInstructionAction {
+    @_spi(PackageInternal)
+    public enum IncomingEncoderInstructionAction {
         /// The new incoming instruction resulted in previously-blocked headers now being decodable.
         case sendDecoderInstruction(QPACKDecoderInstruction)
         case emitConnectionError(HTTP3Error)
@@ -639,7 +650,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     /// Inform the state machine of a new incoming QPACK encoder instruction. After this, you should call ``checkPendingDecodes()`` because the new instruction
     /// may have unblocked a pending decode.
-    package mutating func receivedIncomingEncoderInstruction(
+    @_spi(PackageInternal)
+    public mutating func receivedIncomingEncoderInstruction(
         _ instruction: QPACKEncoderInstruction
     ) -> IncomingEncoderInstructionAction? {
         switch consume self.state {
@@ -665,11 +677,13 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum IncomingDecoderInstructionAction {
+    @_spi(PackageInternal)
+    public enum IncomingDecoderInstructionAction {
         case emitConnectionError(HTTP3Error)
     }
 
-    package mutating func receivedIncomingDecoderInstruction(
+    @_spi(PackageInternal)
+    public mutating func receivedIncomingDecoderInstruction(
         _ instruction: QPACKDecoderInstruction
     ) -> IncomingDecoderInstructionAction? {
         switch consume self.state {
@@ -692,7 +706,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
+    @_spi(PackageInternal)
+    public mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
         switch consume self.state {
         case .notStarted:
             fatalError("Tried to encode headers before state machine started")

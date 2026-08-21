@@ -29,7 +29,8 @@ public enum QPACKReferenceTable: Sendable, Hashable {
 }
 
 /// Encoder instructions from RFC 9204 § 4.3.
-package enum QPACKEncoderInstruction: Sendable, Hashable {
+@_spi(PackageInternal)
+public enum QPACKEncoderInstruction: Sendable, Hashable {
     /// 4.3.1. Set Dynamic Table Capacity.
     case setDynamicTableCapacity(Int)
     /// 4.3.2. Insert with Name Reference.

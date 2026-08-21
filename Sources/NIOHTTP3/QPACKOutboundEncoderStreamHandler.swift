@@ -13,33 +13,33 @@
 //===----------------------------------------------------------------------===//
 
 package import NIOCore
-package import QPACK
+@_spi(PackageInternal) import QPACK
 
-package final class QPACKOutboundEncoderStreamHandler: ChannelOutboundHandler {
-    package typealias OutboundIn = QPACKEncoderInstruction
-    package typealias OutboundOut = QPACKEncoderInstruction
+final class QPACKOutboundEncoderStreamHandler: ChannelOutboundHandler {
+    typealias OutboundIn = QPACKEncoderInstruction
+    typealias OutboundOut = QPACKEncoderInstruction
 
     private var context: ChannelHandlerContext?
 
-    package init() {}
+    init() {}
 
-    package func handlerAdded(context: ChannelHandlerContext) {
+    func handlerAdded(context: ChannelHandlerContext) {
         assert(self.context == nil)
         self.context = context
     }
 
-    package func channelInactive(context: ChannelHandlerContext) {
+    func channelInactive(context: ChannelHandlerContext) {
         // Break reference cycle
         self.context = nil
         context.fireChannelInactive()
     }
 
-    package func handlerRemoved(context: ChannelHandlerContext) {
+    func handlerRemoved(context: ChannelHandlerContext) {
         // Break reference cycle
         self.context = nil
     }
 
-    package func sendInstructions(_ instructions: some Collection<QPACKEncoderInstruction>) {
+    func sendInstructions(_ instructions: some Collection<QPACKEncoderInstruction>) {
         guard !instructions.isEmpty else { return }
         guard let context = self.context else {
             // This won't happen because we don't use a dynamic QPACK encoder (and therefore don't send instructions) until
@@ -53,7 +53,7 @@ package final class QPACKOutboundEncoderStreamHandler: ChannelOutboundHandler {
         context.flush()
     }
 
-    package func sendInstruction(_ instruction: QPACKEncoderInstruction) {
+    func sendInstruction(_ instruction: QPACKEncoderInstruction) {
         guard let context = self.context else {
             // This won't happen because we don't use a dynamic QPACK encoder (and therefore don't send instructions) until
             // the encoder instruction stream is ready and this handler has been added
