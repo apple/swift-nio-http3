@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOCore
+import NIOCore
 @_spi(PackageInternal) import QPACK
 
 final class QPACKOutboundDecoderStreamHandler: ChannelOutboundHandler {

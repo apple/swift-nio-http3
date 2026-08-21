@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOCore
+import NIOCore
 @_spi(PackageInternal) import QPACK
 
 /// Read encoder instructions from a channel and give them to a callback.
@@ -34,12 +34,12 @@ final class QPACKInboundEncoderStreamHandler: ChannelInboundHandler {
         self.onError = onError
     }
 
-    package func errorCaught(context: ChannelHandlerContext, error: any Error) {
+    func errorCaught(context: ChannelHandlerContext, error: any Error) {
         self.onError(error)
         context.fireErrorCaught(error)
     }
 
-    package func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let instruction = unwrapInboundIn(data)
         self.onReceivedInstruction(instruction)
         context.fireChannelRead(data)

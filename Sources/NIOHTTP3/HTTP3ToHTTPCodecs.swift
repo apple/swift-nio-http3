@@ -187,7 +187,7 @@ extension HTTPResponsePart: HTTPMessagePart {
         }
     }
 
-    package static func end() -> HTTPResponsePart {
+    static func end() -> HTTPResponsePart {
         .end(nil)
     }
 }

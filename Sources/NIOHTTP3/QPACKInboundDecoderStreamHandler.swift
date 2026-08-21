@@ -12,14 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOCore
+import NIOCore
 @_spi(PackageInternal) import QPACK
 
 /// Read decoder instructions from a channel and give them to a callback.
 /// This belongs on the incoming decoder stream.
 /// The decoder instructions come from the remote decoder and should be fed into the local encoder.
 final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
-    package typealias InboundIn = QPACKDecoderInstruction
+    typealias InboundIn = QPACKDecoderInstruction
 
     /// Called when an incoming instruction is successfully read.
     private var onReceivedInstruction: (QPACKDecoderInstruction) -> Void

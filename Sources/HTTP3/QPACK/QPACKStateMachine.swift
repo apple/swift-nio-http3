@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import DequeModule
-package import HTTPTypes
+import DequeModule
+import HTTPTypes
 import Logging
-package import NIOQUICHelpers
+import NIOQUICHelpers
 @_spi(PackageInternal) import QPACK
 
 /// A state machine which holds qpack encoder and decoder.

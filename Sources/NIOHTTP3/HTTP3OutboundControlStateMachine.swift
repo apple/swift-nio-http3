@@ -12,11 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import DequeModule
-package import HTTP3
+import DequeModule
+@_spi(PackageInternal) import HTTP3
 
 /// State machine used by the handler which is on the outbound control stream.
-package struct HTTP3OutboundControlStreamStateMachine: ~Copyable {
+struct HTTP3OutboundControlStreamStateMachine: ~Copyable {
     private enum State: ~Copyable {
         /// The handler isn't active yet. Any frame which we have tried to send so far gets buffered here.
         /// The first of those should be the settings.
@@ -27,7 +27,7 @@ package struct HTTP3OutboundControlStreamStateMachine: ~Copyable {
 
     private let state: State
 
-    package init(settings: HTTP3Settings) {
+    init(settings: HTTP3Settings) {
         // First frame must always be settings
         self.init(state: .inactive(buffer: [.settings(settings)]))
     }
@@ -36,11 +36,11 @@ package struct HTTP3OutboundControlStreamStateMachine: ~Copyable {
         self.state = state
     }
 
-    package enum ChannelActiveAction: Hashable, Sendable {
+    enum ChannelActiveAction: Hashable, Sendable {
         case sendFrames(Deque<HTTP3Frame>)
     }
 
-    package mutating func channelActive() -> ChannelActiveAction? {
+    mutating func channelActive() -> ChannelActiveAction? {
         switch consume self.state {
         case .inactive(let buffer):
             self = .init(state: .active)
@@ -50,11 +50,11 @@ package struct HTTP3OutboundControlStreamStateMachine: ~Copyable {
         }
     }
 
-    package enum SendGoawayAction: Hashable, Sendable {
+    enum SendGoawayAction: Hashable, Sendable {
         case send
     }
 
-    package mutating func sendGoaway(id: HTTP3GoawayID) -> SendGoawayAction? {
+    mutating func sendGoaway(id: HTTP3GoawayID) -> SendGoawayAction? {
         switch consume self.state {
         case .inactive(var buffer):
             // We're not active yet so we have to buffer the goaway (behind the settings, and any other goaways)

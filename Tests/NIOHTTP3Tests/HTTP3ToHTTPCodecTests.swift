@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@_spi(PackageInternal) @testable import HTTP3
 import HTTPTypes
 import NIOConcurrencyHelpers
 import NIOCore

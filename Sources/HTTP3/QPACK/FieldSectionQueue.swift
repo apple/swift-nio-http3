@@ -13,10 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 import HeapModule
-package import NIOQUICHelpers
+import NIOQUICHelpers
 @_spi(PackageInternal) import QPACK
 
-package enum FieldSectionQueueError: Error, Hashable, Sendable {
+enum FieldSectionQueueError: Error, Hashable, Sendable {
     case reachedMaxSize
 }
 
@@ -61,7 +61,7 @@ struct FieldSectionQueue {
     private var entries: Heap<Entry> = .init()
 
     /// Exposed for testing. A list of all the entries in the queue. Not in any particular order.
-    package var _allEntries: [Entry] {
+    var _allEntries: [Entry] {
         self.entries.unordered
     }
 

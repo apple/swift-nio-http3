@@ -12,14 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import struct NIOCore.ByteBuffer
+import struct NIOCore.ByteBuffer
 
 /// Calls the decoder, and buffers bytes until a frame is ready.
 ///
 /// Call readBytes to give the decoder some bytes.
 /// Call decodeNext to get back one HTTP3PartialFrame at a time.
 /// This does not handle QPACK at all, hence returning partial frames.
-package struct HTTP3FrameDecoderStateMachine: ~Copyable {
+struct HTTP3FrameDecoderStateMachine: ~Copyable {
     enum State: ~Copyable {
         /// We have no unprocessed bytes.
         case idle
@@ -73,7 +73,7 @@ package struct HTTP3FrameDecoderStateMachine: ~Copyable {
 
     private let state: State
 
-    package init() {
+    init() {
         self.init(state: .idle)
     }
 
@@ -82,7 +82,7 @@ package struct HTTP3FrameDecoderStateMachine: ~Copyable {
     }
 
     /// Put bytes into the decoder. To get the resulting frames, call decodeNext.
-    package mutating func buffer(_ buffer: ByteBuffer) {
+    mutating func buffer(_ buffer: ByteBuffer) {
         switch consume self.state {
         case .idle:
             let decoder = HTTP3FrameDecoder()
@@ -144,7 +144,7 @@ package struct HTTP3FrameDecoderStateMachine: ~Copyable {
     /// Mark the input as closed.
     /// This consumes the state machine: you cannot do anything after closing the input.
     /// - Returns: True if there were buffered bytes which hadn't been used yet, which have now been lost.
-    package consuming func inputClosed() -> Bool {
+    consuming func inputClosed() -> Bool {
         switch consume self.state {
         case .idle:
             return false
@@ -180,19 +180,19 @@ extension HTTP3FrameDecoderStateMachine {
 
     /// The decoding buffer's `readerIndex`, or `nil` if not in the decoding state.
     /// - Note: This property is only intended to be used in tests.
-    package var _testOnlyBufferReaderIndex: Int? {
+    var _testOnlyBufferReaderIndex: Int? {
         self._testOnlyBuffer?.readerIndex
     }
 
     /// The decoding buffer's `writerIndex`, or `nil` if not in the decoding state.
     /// - Note: This property is only intended to be used in tests.
-    package var _testOnlyBufferWriterIndex: Int? {
+    var _testOnlyBufferWriterIndex: Int? {
         self._testOnlyBuffer?.writerIndex
     }
 
     /// The decoding buffer's `capacity`, or `nil` if not in the decoding state.
     /// - Note: This property is only intended to be used in tests.
-    package var _testOnlyBufferCapacity: Int? {
+    var _testOnlyBufferCapacity: Int? {
         self._testOnlyBuffer?.capacity
     }
 }

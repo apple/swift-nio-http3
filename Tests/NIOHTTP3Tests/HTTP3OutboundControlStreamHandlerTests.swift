@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@_spi(PackageInternal) import HTTP3
 import NIOEmbedded
-import NIOHTTP3
+@testable import NIOHTTP3
 import Testing
 
 struct HTTP3OutboundControlStreamHandlerTests {

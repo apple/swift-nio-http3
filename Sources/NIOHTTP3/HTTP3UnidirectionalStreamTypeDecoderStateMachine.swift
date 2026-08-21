@@ -15,7 +15,7 @@
 import DequeModule
 @_spi(PackageInternal) import HTTP3
 
-package import struct NIOCore.ByteBuffer
+import struct NIOCore.ByteBuffer
 
 /// This state machine helps to decode the type of an incoming unidirectional stream.
 /// The first bytes received on the stream tell us the type of the stream (they form a length-prefixed integer).
@@ -25,7 +25,7 @@ package import struct NIOCore.ByteBuffer
 /// Once you know the type, and have set up downstream handlers accordingly, you must call `unbufferElement` to get the bytes out from this state machines buffers.
 /// `unbufferElement` must be called repeatedly until it returns nil.
 /// Once it returns nil, no method on this state machine should ever be called again, and the handler holding it should be removed from the pipeline.
-package struct HTTP3UnidirectionalStreamTypeDecoderStateMachine: ~Copyable {
+struct HTTP3UnidirectionalStreamTypeDecoderStateMachine: ~Copyable {
     private enum State: ~Copyable {
         /// Nothing has happened yet. We don't know the stream type.
         case idle
@@ -41,7 +41,7 @@ package struct HTTP3UnidirectionalStreamTypeDecoderStateMachine: ~Copyable {
 
     private let state: State
 
-    package init() {
+    init() {
         self.init(state: .idle)
     }
 
@@ -49,7 +49,7 @@ package struct HTTP3UnidirectionalStreamTypeDecoderStateMachine: ~Copyable {
         self.state = state
     }
 
-    package enum UnbufferAction: Hashable {
+    enum UnbufferAction: Hashable {
         /// The given bytebuffer should be fired down the pipeline.
         case release(ByteBuffer)
         /// There is nothing left in the queue. You should not call any method on this state machine again.
@@ -61,7 +61,7 @@ package struct HTTP3UnidirectionalStreamTypeDecoderStateMachine: ~Copyable {
     /// Do not call before stream type is known.
     /// Call this in a loop until .done is returned.
     /// Do not call after .done is returned.
-    package mutating func unbufferElement() -> UnbufferAction {
+    mutating func unbufferElement() -> UnbufferAction {
         switch consume self.state {
         case .readIncompleteStreamType:
             fatalError("Can't unbuffer element before knowing the stream type")
@@ -82,7 +82,7 @@ package struct HTTP3UnidirectionalStreamTypeDecoderStateMachine: ~Copyable {
         }
     }
 
-    package mutating func abortReading() {
+    mutating func abortReading() {
         switch consume self.state {
         case .readIncompleteStreamType:
             fatalError("Can't abort reading before knowing the stream type")

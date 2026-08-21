@@ -22,7 +22,7 @@ import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
+@_spi(PackageInternal) @testable import QPACK
 import Testing
 import X509
 
