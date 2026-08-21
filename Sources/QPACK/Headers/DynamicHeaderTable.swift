@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTPTypes
+import HTTPTypes
 
-package enum DynamicHeaderTableError: Error, Sendable, Hashable {
+enum DynamicHeaderTableError: Error, Sendable, Hashable {
     /// The insert count has been incremented by a value which is too low to be valid.
     case incrementTooLow
     /// The insert count has been incremented by a value which is too high to be valid.
@@ -28,23 +28,23 @@ package enum DynamicHeaderTableError: Error, Sendable, Hashable {
     case capacityTooHigh
 }
 
-package struct DynamicTableLookupResult: Sendable, Hashable {
+struct DynamicTableLookupResult: Sendable, Hashable {
     /// Relative index of the entry in the table.
-    package var relativeIndex: Int
+    var relativeIndex: Int
     /// Absolute index of the entry in the table.
-    package var absoluteIndex: Int
+    var absoluteIndex: Int
     /// Does the entry match the value too. If false, only the name was matched.
-    package var containsValue: Bool
+    var containsValue: Bool
     /// True if this item is old and should be duplicated rather than referencing this existing index.
-    package var isNearingEviction: Bool
+    var isNearingEviction: Bool
     /// True if the entry is known to be received by the peer.
-    package var isKnownReceived: Bool
+    var isKnownReceived: Bool
 }
 
 /// Implements the dynamic part of the QPACK header table, as defined in
 /// [RFC 9204 § 3.2](https://httpwg.org/specs/rfc9204.html#header-table-dynamic).
 @usableFromInline
-package struct DynamicHeaderTable: Sendable {
+struct DynamicHeaderTable: Sendable {
     /// The actual table, with items looked up by index.
     private var storage: HeaderTableStorage
 
@@ -80,14 +80,14 @@ package struct DynamicHeaderTable: Sendable {
     /// E.g. if you set to 0.1, we won't reference anything in the last (oldest) tenth of the table.
     /// This means we avoid references to entries nearing eviction, which can reduce blocking.
     /// This is not a guarantee, if requests come too fast we won't be able to maintain this fraction.
-    package var targetEvictableFraction: Double {
+    var targetEvictableFraction: Double {
         didSet {
             assert(self.targetEvictableFraction >= 0 && self.targetEvictableFraction < 1)
         }
     }
 
     /// Should be true for decoder, false for encoder.
-    package var assumeAllEntriesReceived: Bool
+    var assumeAllEntriesReceived: Bool
 
     /// Entries with absolute index higher than this must not be evicted.
     /// Entries with absolute index equal to or lower than this have been received, and can be evicted as long
@@ -105,7 +105,7 @@ package struct DynamicHeaderTable: Sendable {
         }
     }
 
-    package init(
+    init(
         maximumCapacity: Int,
         initialCapacity: Int,
         targetEvictableFraction: Double,
@@ -120,7 +120,7 @@ package struct DynamicHeaderTable: Sendable {
     }
 
     /// Retrieve an entry with a given relative index (zero-based).
-    package func get(relativeIndex: Int) -> HeaderTableEntry? {
+    func get(relativeIndex: Int) -> HeaderTableEntry? {
         if relativeIndex >= self.count || relativeIndex < 0 {
             return nil
         }
@@ -129,7 +129,7 @@ package struct DynamicHeaderTable: Sendable {
 
     /// Retrieve an entry with a given absolute index (zero-based).
     /// Can return nil if the entry doesn't exist (May have never existed or may have been evicted).
-    package func get(absoluteIndex: Int) -> HeaderTableEntry? {
+    func get(absoluteIndex: Int) -> HeaderTableEntry? {
         guard let firstEntry = self.get(relativeIndex: 0) else {
             return nil
         }
@@ -151,7 +151,7 @@ package struct DynamicHeaderTable: Sendable {
     /// - Returns: A tuple containing the matching relative index and, if a value was specified as a
     ///            parameter, an indication whether that value was also found. Returns `nil`
     ///            if no matching header name could be located.
-    package func findExistingHeader(
+    func findExistingHeader(
         named name: HTTPField.Name,
         value: String?
     ) -> DynamicTableLookupResult? {
@@ -205,7 +205,7 @@ package struct DynamicHeaderTable: Sendable {
     /// - Throws: If the header cannot fit in the storage.
     /// - Returns: The absolute index of the added header.
     @discardableResult
-    package mutating func addHeader(named name: HTTPField.Name, value: String) throws(HeaderTableError) -> Int {
+    mutating func addHeader(named name: HTTPField.Name, value: String) throws(HeaderTableError) -> Int {
         try self.storage.add(
             name: name,
             value: value,
@@ -215,7 +215,7 @@ package struct DynamicHeaderTable: Sendable {
     }
 
     /// Increment `knownReceivedCount` (§ 2.1.4).
-    package mutating func insertCountIncrement(by: Int) throws(DynamicHeaderTableError) {
+    mutating func insertCountIncrement(by: Int) throws(DynamicHeaderTableError) {
         // RFC 9204 § 4.4.3 An encoder that receives an Increment field equal to zero, or one that increases the
         // Known Received Count beyond what the encoder has sent, MUST treat this as a connection error
         guard by > 0 else { throw DynamicHeaderTableError.incrementTooLow }
@@ -228,7 +228,7 @@ package struct DynamicHeaderTable: Sendable {
 
     /// When a section is acknowledged or a stream is closed, all the fields used in that stream are implicitly ack'd.
     /// See RFC 9204 § 2.1.4 for details.
-    package mutating func acknowledgeInsertCount(_ count: Int) throws(DynamicHeaderTableError) {
+    mutating func acknowledgeInsertCount(_ count: Int) throws(DynamicHeaderTableError) {
         guard count > 0 else {
             throw DynamicHeaderTableError.ackCountTooLow
         }
@@ -242,7 +242,7 @@ package struct DynamicHeaderTable: Sendable {
     /// the current maximum length signaled by the peer (RFC 9204 § 4.3.1).
     ///
     /// - Note: This value cannot exceed `self.maximumCapacity`.
-    package mutating func setCurrentCapacity(_ capacity: Int) throws {
+    mutating func setCurrentCapacity(_ capacity: Int) throws {
         guard capacity <= self.maximumCapacity else {
             // This means the remote sent us a "set dynamic table capacity" instruction with a value higher than the value we sent in the SETTINGS frame.
             throw DynamicHeaderTableError.capacityTooHigh
@@ -250,11 +250,11 @@ package struct DynamicHeaderTable: Sendable {
         try self.storage.setTableSize(to: capacity, maximumEvictableAbsoluteIndex: self.maximumEvictableAbsoluteIndex)
     }
 
-    package mutating func addReference(_ absoluteIndex: Int) {
+    mutating func addReference(_ absoluteIndex: Int) {
         self.storage.addReference(absoluteIndex: absoluteIndex)
     }
 
-    package mutating func removeReference(_ absoluteIndex: Int) {
+    mutating func removeReference(_ absoluteIndex: Int) {
         self.storage.removeReference(absoluteIndex: absoluteIndex)
     }
 }

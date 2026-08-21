@@ -13,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
-import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import QPACK
 
 struct IntegerCodingTests {
     private var scratchBuffer = ByteBufferAllocator().buffer(capacity: 11)

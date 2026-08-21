@@ -12,16 +12,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import DequeModule
-package import HTTPTypes
+import DequeModule
+import HTTPTypes
 import Logging
-package import NIOQUICHelpers
-package import QPACK
+import NIOQUICHelpers
+@_spi(PackageInternal) import QPACK
 
 /// A state machine which holds qpack encoder and decoder.
 /// You can ask it to encode/decode things, and inform it of incoming instructions.
 /// It will then return actions to be taken.
-package struct QPACKStateMachine: ~Copyable {
+struct QPACKStateMachine: ~Copyable {
     struct EncoderStateMachine: ~Copyable {
         private enum State: ~Copyable {
             /// The remote side has not yet told us what dynamic table size to use, so we must assume 0, ie use a static encoder.
@@ -284,19 +284,19 @@ package struct QPACKStateMachine: ~Copyable {
     private var decoderQueue: FieldSectionQueue
     private var outboundDecoderInstructionQueue: OutboundDecoderInstructionQueue
 
-    package init(decoderMaxTableSize: Int, decoderMaxBlockedStreams: Int) {
+    init(decoderMaxTableSize: Int, decoderMaxBlockedStreams: Int) {
         self.encoderState = .init()
         self.qpackDecoder = .init(dynamicTableMaxCapacity: decoderMaxTableSize)
         self.decoderQueue = .init(maxItems: decoderMaxBlockedStreams)
         self.outboundDecoderInstructionQueue = .init()
     }
 
-    package enum GotRemoteSettingsAction {
+    enum GotRemoteSettingsAction {
         case makeEncoderInstructionStream
     }
 
     /// Call this when the settings have been received from the remote. This must never be called more than once.
-    package mutating func receivedRemoteSettings(
+    mutating func receivedRemoteSettings(
         maxQueueSize: Int,
         effectiveDynamicTableSize: Int
     ) -> GotRemoteSettingsAction? {
@@ -306,24 +306,24 @@ package struct QPACKStateMachine: ~Copyable {
         )
     }
 
-    package enum OutboundEncoderStreamReadyAction: Hashable, Sendable {
+    enum OutboundEncoderStreamReadyAction: Hashable, Sendable {
         case sendEncoderInstruction(QPACKEncoderInstruction?)
     }
 
     /// Call this when the outbound encoder stream is ready. It is an error to call this when not asked for (via ``GotRemoteSettingsAction``).
     /// It is also an error to call this twice.
-    package mutating func outboundEncoderStreamReady() -> OutboundEncoderStreamReadyAction {
+    mutating func outboundEncoderStreamReady() -> OutboundEncoderStreamReadyAction {
         switch self.encoderState.outboundEncoderStreamReady() {
         case .sendEncoderInstruction(let instruction):
             return .sendEncoderInstruction(instruction)
         }
     }
 
-    package enum OutboundDecoderStreamReadyAction: Hashable, Sendable {
+    enum OutboundDecoderStreamReadyAction: Hashable, Sendable {
         case sendDecoderInstructions(Deque<QPACKDecoderInstruction>)
     }
 
-    package mutating func outboundDecoderStreamReady() -> OutboundDecoderStreamReadyAction? {
+    mutating func outboundDecoderStreamReady() -> OutboundDecoderStreamReadyAction? {
         switch self.outboundDecoderInstructionQueue.outboundDecoderStreamReady() {
         case .sendDecoderInstructions(let instructions):
             return .sendDecoderInstructions(instructions)
@@ -332,11 +332,11 @@ package struct QPACKStateMachine: ~Copyable {
         }
     }
 
-    package mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
+    mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
         self.encoderState.encodeHeaders(headers, forStream: streamID)
     }
 
-    package enum DecodeHeaderAction {
+    enum DecodeHeaderAction {
         /// Send this qpack decode result to the relevant stream.
         case informDecodeResult(InformDecodeResult)
 
@@ -346,13 +346,13 @@ package struct QPACKStateMachine: ~Copyable {
         /// Send a connection-level error.
         case emitConnectionError(HTTP3Error)
 
-        package struct InformDecodeResult: Hashable, Sendable {
-            package var fields: [HTTPField]
-            package var headers: HTTP3PartialFrame.Headers
-            package var streamID: QUICStreamID
-            package var instructionToWrite: QPACKDecoderInstruction?
+        struct InformDecodeResult: Hashable, Sendable {
+            var fields: [HTTPField]
+            var headers: HTTP3PartialFrame.Headers
+            var streamID: QUICStreamID
+            var instructionToWrite: QPACKDecoderInstruction?
 
-            package init(
+            init(
                 fields: [HTTPField],
                 headers: HTTP3PartialFrame.Headers,
                 streamID: QUICStreamID,
@@ -365,12 +365,12 @@ package struct QPACKStateMachine: ~Copyable {
             }
         }
 
-        package struct InformDecodeError {
-            package var error: HTTP3Error
-            package var headers: HTTP3PartialFrame.Headers
-            package var streamID: QUICStreamID
+        struct InformDecodeError {
+            var error: HTTP3Error
+            var headers: HTTP3PartialFrame.Headers
+            var streamID: QUICStreamID
 
-            package init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
+            init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
                 self.error = error
                 self.headers = headers
                 self.streamID = streamID
@@ -378,7 +378,7 @@ package struct QPACKStateMachine: ~Copyable {
         }
     }
 
-    package mutating func decodeHeaders(
+    mutating func decodeHeaders(
         _ headers: HTTP3PartialFrame.Headers,
         forStream streamID: QUICStreamID
     ) -> DecodeHeaderAction? {
@@ -455,7 +455,7 @@ package struct QPACKStateMachine: ~Copyable {
 
     /// Check if any previously-queued decode is now decodable.
     /// This function should be called repeatedly after new input (eg. new incoming instructions) until it returns nil
-    package mutating func checkPendingDecodes() -> DecodeHeaderAction? {
+    mutating func checkPendingDecodes() -> DecodeHeaderAction? {
         guard let entry = self.decoderQueue.popIfDecodable(availableInsertCount: self.qpackDecoder.insertCount) else {
             return nil
         }
@@ -536,7 +536,7 @@ package struct QPACKStateMachine: ~Copyable {
         }
     }
 
-    package enum IncomingEncoderInstructionAction {
+    enum IncomingEncoderInstructionAction {
         /// The new incoming instruction resulted in previously-blocked headers now being decodable.
         case sendDecoderInstruction(QPACKDecoderInstruction)
         case emitConnectionError(HTTP3Error)
@@ -544,7 +544,7 @@ package struct QPACKStateMachine: ~Copyable {
 
     /// Inform the state machine of a new incoming instruction. After this, you should call ``checkPendingDecodes()`` because the new instruction
     /// may have unblocked a pending decode.
-    package mutating func receivedIncomingEncoderInstruction(
+    mutating func receivedIncomingEncoderInstruction(
         _ instruction: QPACKEncoderInstruction
     ) -> IncomingEncoderInstructionAction? {
         @inline(never)
@@ -573,11 +573,11 @@ package struct QPACKStateMachine: ~Copyable {
         }
     }
 
-    package enum IncomingDecoderInstructionAction {
+    enum IncomingDecoderInstructionAction {
         case emitConnectionError(HTTP3Error)
     }
 
-    package mutating func receivedIncomingDecoderInstruction(
+    mutating func receivedIncomingDecoderInstruction(
         _ instruction: QPACKDecoderInstruction
     ) -> IncomingDecoderInstructionAction? {
         switch self.encoderState.receivedIncomingDecoderInstruction(instruction) {
@@ -588,7 +588,7 @@ package struct QPACKStateMachine: ~Copyable {
         }
     }
 
-    package enum RequestStreamClosedAction: Hashable, Sendable {
+    enum RequestStreamClosedAction: Hashable, Sendable {
         case sendDecoderInstruction(QPACKDecoderInstruction)
     }
 
@@ -601,7 +601,7 @@ package struct QPACKStateMachine: ~Copyable {
     ///     knows not to expect acks from any field sections it may have sent on this stream.
     ///     See RFC 9204 § 2.2.2.2 for more info.
     /// - Returns: Actions to take next.
-    package mutating func requestStreamClosed(streamID: QUICStreamID, seenEOF: Bool) -> RequestStreamClosedAction? {
+    mutating func requestStreamClosed(streamID: QUICStreamID, seenEOF: Bool) -> RequestStreamClosedAction? {
         if seenEOF {
             // We currently don't need to do anything for cleanly-closed streams
             return nil

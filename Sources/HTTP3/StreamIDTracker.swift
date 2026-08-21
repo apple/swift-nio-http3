@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOQUICHelpers
+import NIOQUICHelpers
 
 /// Keeps track of what streams are open.
-package struct StreamIDTracker {
+struct StreamIDTracker {
     /// All currently open streams
     private(set) var openStreams = Set<QUICStreamID>()
 
@@ -28,10 +28,10 @@ package struct StreamIDTracker {
     /// So index 0 is client-initiated bidi, index 1 is server-initiated bidi, index 2 is client-initiated uni and index 3 is server-initiated uni.
     private var highestIDSeenByType: [QUICStreamID?] = [nil, nil, nil, nil]
 
-    package init() {}
+    init() {}
 
     /// Call this whenever a new stream (of any type) opens.
-    package mutating func streamOpened(id: QUICStreamID) {
+    mutating func streamOpened(id: QUICStreamID) {
         assert(!self.openStreams.contains(id))
         self.openStreams.insert(id)
 
@@ -49,7 +49,7 @@ package struct StreamIDTracker {
 
     /// Call this when a stream is closed. Returns true if that stream actually existed.
     @discardableResult
-    package mutating func streamClosed(id: QUICStreamID) -> Bool {
+    mutating func streamClosed(id: QUICStreamID) -> Bool {
         if self.openStreams.remove(id) == nil {
             return false
         }
@@ -60,11 +60,11 @@ package struct StreamIDTracker {
     }
 
     /// - Returns: `true` if there are any open bidirectional streams, regardless of initiator
-    package func hasOpenRequestStreams() -> Bool {
+    func hasOpenRequestStreams() -> Bool {
         self.openBidirectionalStreamCount > 0
     }
 
-    package func getOpenStreamIDs(where predicate: (QUICStreamID) -> Bool) -> [QUICStreamID] {
+    func getOpenStreamIDs(where predicate: (QUICStreamID) -> Bool) -> [QUICStreamID] {
         self.openStreams.filter(predicate)
     }
 
@@ -73,7 +73,7 @@ package struct StreamIDTracker {
     ///
     /// If no client-initiated bidirectional streams have been received yet, returns stream ID 0, the lowest possible
     /// client-initiated bidirectional stream ID.
-    package func nextExpectedClientInitiatedBidirectionalStreamID() -> QUICStreamID {
+    func nextExpectedClientInitiatedBidirectionalStreamID() -> QUICStreamID {
         // Index 0 represents client-initiated bidirectional streams in `self.highestIDSeenByType`.
         if let highest = self.highestIDSeenByType[0] {
             return QUICStreamID(rawValue: highest.rawValue + 4)
@@ -83,7 +83,7 @@ package struct StreamIDTracker {
     }
 
     /// - Returns: `true` if the next id of the same type as the provided one would be equal to or greater than the provided one.
-    package func hasExhaustedSameTypeStreams(withIDsLessThan givenID: QUICStreamID) -> Bool {
+    func hasExhaustedSameTypeStreams(withIDsLessThan givenID: QUICStreamID) -> Bool {
         /// The stream type for the id we were given. This is determined by the last 2 bits. See RFC 9000 § 2.1
         let givenIDType = Int(givenID.rawValue & 0b11)
         /// The highest ID that we have seen so far for streams of this type

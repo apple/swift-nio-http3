@@ -12,23 +12,23 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOCore
-package import QPACK
+import NIOCore
+@_spi(PackageInternal) import QPACK
 
-package final class QPACKOutboundDecoderStreamHandler: ChannelOutboundHandler {
-    package typealias OutboundIn = QPACKDecoderInstruction
-    package typealias OutboundOut = QPACKDecoderInstruction
+final class QPACKOutboundDecoderStreamHandler: ChannelOutboundHandler {
+    typealias OutboundIn = QPACKDecoderInstruction
+    typealias OutboundOut = QPACKDecoderInstruction
 
     private var context: ChannelHandlerContext?
 
-    package init() {}
+    init() {}
 
-    package func handlerAdded(context: ChannelHandlerContext) {
+    func handlerAdded(context: ChannelHandlerContext) {
         assert(self.context == nil)
         self.context = context
     }
 
-    package func sendInstruction(_ instruction: QPACKDecoderInstruction) {
+    func sendInstruction(_ instruction: QPACKDecoderInstruction) {
         guard let context = self.context else {
             // This won't happen because the QPACK state machine will buffer outgoing instructions until the stream is ready
             assertionFailure("Tried to send instruction before handler was added")
@@ -37,7 +37,7 @@ package final class QPACKOutboundDecoderStreamHandler: ChannelOutboundHandler {
         context.writeAndFlush(self.wrapOutboundOut(instruction), promise: nil)
     }
 
-    package func sendInstructions(_ instructions: some Collection<QPACKDecoderInstruction>) {
+    func sendInstructions(_ instructions: some Collection<QPACKDecoderInstruction>) {
         guard !instructions.isEmpty else { return }
         guard let context = self.context else {
             // This won't happen because the QPACK state machine will buffer outgoing instructions until the stream is ready

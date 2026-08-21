@@ -12,18 +12,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import DequeModule
-package import HTTPTypes
-package import Logging
-package import NIOQUICHelpers
-package import QPACK
+public import DequeModule
+public import HTTPTypes
+public import Logging
+public import NIOQUICHelpers
+@_spi(PackageInternal) public import QPACK
 
-package enum HTTP3ConnectionType {
+@_spi(PackageInternal)
+public enum HTTP3ConnectionType: Sendable {
     case client
     case server
 }
 
-package struct HTTP3ConnectionStateMachine: ~Copyable {
+@_spi(PackageInternal)
+public struct HTTP3ConnectionStateMachine: ~Copyable {
     struct InboundStreamCreationState: ~Copyable {
         private enum State: ~Copyable {
             case notCreated
@@ -106,7 +108,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     private let state: State
 
-    package init(settings: HTTP3Settings, type: HTTP3ConnectionType) {
+    @_spi(PackageInternal)
+    public init(settings: HTTP3Settings, type: HTTP3ConnectionType) {
         let qpackState = QPACKStateMachine(
             decoderMaxTableSize: Int(clamping: settings.qpackMaximumTableCapacity),
             decoderMaxBlockedStreams: Int(clamping: settings.qpackBlockedStreams)
@@ -120,12 +123,14 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: Initialization
 
-    package enum InitializeAction: Hashable, Sendable {
+    @_spi(PackageInternal)
+    public enum InitializeAction: Hashable, Sendable {
         case createControlAndDecoderStreams
         case createControlStream
     }
 
-    package mutating func initialize() -> InitializeAction? {
+    @_spi(PackageInternal)
+    public mutating func initialize() -> InitializeAction? {
         switch consume self.state {
         case .notStarted(let initializedState):
             let localSettings = initializedState.localSettings
@@ -152,13 +157,15 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: Inbound streams
 
-    package enum InboundRequestStreamReceivedAction {
+    @_spi(PackageInternal)
+    public enum InboundRequestStreamReceivedAction {
         case addHandlers
         case emitStreamError(HTTP3Error)
         case emitConnectionError(HTTP3Error)
     }
 
-    package mutating func inboundRequestStreamReceived(streamID: QUICStreamID) -> InboundRequestStreamReceivedAction {
+    @_spi(PackageInternal)
+    public mutating func inboundRequestStreamReceived(streamID: QUICStreamID) -> InboundRequestStreamReceivedAction {
         precondition(streamID.isBidirectional, "Stream ID \(streamID) was expected to be bidirectional")
         switch consume self.state {
         case .notStarted:
@@ -208,13 +215,15 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum InboundControlStreamReceivedAction {
+    @_spi(PackageInternal)
+    public enum InboundControlStreamReceivedAction {
         case addHandlers
         case emitConnectionError(HTTP3Error)
         case emitStreamError(HTTP3Error)
     }
 
-    package mutating func inboundControlStreamReceived(streamID: QUICStreamID) -> InboundControlStreamReceivedAction {
+    @_spi(PackageInternal)
+    public mutating func inboundControlStreamReceived(streamID: QUICStreamID) -> InboundControlStreamReceivedAction {
         precondition(streamID.isUnidirectional, "Stream ID \(streamID) was expected to be unidirectional")
         switch consume self.state {
         case .notStarted:
@@ -237,12 +246,14 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum InboundPushStreamReceivedAction {
+    @_spi(PackageInternal)
+    public enum InboundPushStreamReceivedAction {
         case emitConnectionError(HTTP3Error)
         case emitStreamError(HTTP3Error)
     }
 
-    package mutating func inboundPushStreamReceived(streamID: QUICStreamID) -> InboundPushStreamReceivedAction {
+    @_spi(PackageInternal)
+    public mutating func inboundPushStreamReceived(streamID: QUICStreamID) -> InboundPushStreamReceivedAction {
         precondition(streamID.isUnidirectional, "Stream ID \(streamID) was expected to be unidirectional")
         switch consume self.state {
         case .notStarted:
@@ -286,14 +297,17 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum InboundQPACKStreamReceivedAction {
+    @_spi(PackageInternal)
+    public enum InboundQPACKStreamReceivedAction {
         case addHandlers
         case emitConnectionError(HTTP3Error)
         case emitStreamError(HTTP3Error)
     }
 
-    package mutating func inboundQPACKDecoderStreamReceived(streamID: QUICStreamID) -> InboundQPACKStreamReceivedAction
-    {
+    @_spi(PackageInternal)
+    public mutating func inboundQPACKDecoderStreamReceived(
+        streamID: QUICStreamID
+    ) -> InboundQPACKStreamReceivedAction {
         precondition(streamID.isUnidirectional, "Stream ID \(streamID) was expected to be unidirectional")
         switch consume self.state {
         case .notStarted:
@@ -316,8 +330,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func inboundQPACKEncoderStreamReceived(streamID: QUICStreamID) -> InboundQPACKStreamReceivedAction
-    {
+    @_spi(PackageInternal)
+    public mutating func inboundQPACKEncoderStreamReceived(streamID: QUICStreamID) -> InboundQPACKStreamReceivedAction {
         precondition(streamID.isUnidirectional, "Stream ID \(streamID) was expected to be unidirectional")
         switch consume self.state {
         case .notStarted:
@@ -340,11 +354,13 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum InboundUnknownStreamAction {
+    @_spi(PackageInternal)
+    public enum InboundUnknownStreamAction {
         case emitStreamError(HTTP3Error)
     }
 
-    package mutating func inboundUnknownStreamReceived(
+    @_spi(PackageInternal)
+    public mutating func inboundUnknownStreamReceived(
         streamID: QUICStreamID,
         streamType: HTTP3StreamType.Unidirectional
     ) -> InboundUnknownStreamAction {
@@ -376,11 +392,13 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: Outbound Streams
 
-    package enum OutboundEncoderStreamReadyAction: Hashable {
+    @_spi(PackageInternal)
+    public enum OutboundEncoderStreamReadyAction: Hashable {
         case sendEncoderInstruction(QPACKEncoderInstruction)
     }
 
-    package mutating func outboundEncoderStreamReady(streamID: QUICStreamID) -> OutboundEncoderStreamReadyAction? {
+    @_spi(PackageInternal)
+    public mutating func outboundEncoderStreamReady(streamID: QUICStreamID) -> OutboundEncoderStreamReadyAction? {
         precondition(streamID.isUnidirectional)
         switch consume self.state {
         case .initialized(var initializedState):
@@ -401,11 +419,13 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum OutboundDecoderStreamReadyAction: Hashable, Sendable {
+    @_spi(PackageInternal)
+    public enum OutboundDecoderStreamReadyAction: Hashable, Sendable {
         case sendDecoderInstructions(Deque<QPACKDecoderInstruction>)
     }
 
-    package mutating func outboundDecoderStreamReady(streamID: QUICStreamID) -> OutboundDecoderStreamReadyAction? {
+    @_spi(PackageInternal)
+    public mutating func outboundDecoderStreamReady(streamID: QUICStreamID) -> OutboundDecoderStreamReadyAction? {
         precondition(streamID.isUnidirectional)
         switch consume self.state {
         case .initialized(var initializedState):
@@ -426,13 +446,15 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum OutboundRequestStreamRequestedAction {
+    @_spi(PackageInternal)
+    public enum OutboundRequestStreamRequestedAction {
         case create
         case failedToCreateStream(HTTP3Error)
     }
 
     /// Call this before making a request stream. It will tell you whether or not you may create it.
-    package mutating func outboundRequestStreamRequested() -> OutboundRequestStreamRequestedAction {
+    @_spi(PackageInternal)
+    public mutating func outboundRequestStreamRequested() -> OutboundRequestStreamRequestedAction {
         switch consume self.state {
         case .initialized(let initializedState):
             switch initializedState.type {
@@ -474,7 +496,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func outboundRequestStreamReady(streamID: QUICStreamID) {
+    @_spi(PackageInternal)
+    public mutating func outboundRequestStreamReady(streamID: QUICStreamID) {
         precondition(streamID.isBidirectional)
         switch consume self.state {
         case .notStarted:
@@ -492,7 +515,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func outboundControlStreamReady(streamID: QUICStreamID) {
+    @_spi(PackageInternal)
+    public mutating func outboundControlStreamReady(streamID: QUICStreamID) {
         precondition(streamID.isUnidirectional)
         switch consume self.state {
         case .notStarted:
@@ -507,7 +531,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: Control stream
 
-    package enum ControlFrameReceivedAction {
+    @_spi(PackageInternal)
+    public enum ControlFrameReceivedAction {
         /// An outbound QPACK encoder instruction stream needs to be created.
         case makeEncoderInstructionStream
         /// A connection error should be emitted
@@ -518,7 +543,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         case closeConnection
     }
 
-    package mutating func receivedControlFrame(_ frame: HTTP3Frame) -> ControlFrameReceivedAction? {
+    @_spi(PackageInternal)
+    public mutating func receivedControlFrame(_ frame: HTTP3Frame) -> ControlFrameReceivedAction? {
         switch frame {
         case .settings(let payload):
             let settings = payload.settings
@@ -626,7 +652,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: QPACK
 
-    package enum IncomingEncoderInstructionAction {
+    @_spi(PackageInternal)
+    public enum IncomingEncoderInstructionAction {
         /// The new incoming instruction resulted in previously-blocked headers now being decodable.
         case sendDecoderInstruction(QPACKDecoderInstruction)
         case emitConnectionError(HTTP3Error)
@@ -634,7 +661,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     /// Inform the state machine of a new incoming QPACK encoder instruction. After this, you should call ``checkPendingDecodes()`` because the new instruction
     /// may have unblocked a pending decode.
-    package mutating func receivedIncomingEncoderInstruction(
+    @_spi(PackageInternal)
+    public mutating func receivedIncomingEncoderInstruction(
         _ instruction: QPACKEncoderInstruction
     ) -> IncomingEncoderInstructionAction? {
         switch consume self.state {
@@ -660,11 +688,13 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum IncomingDecoderInstructionAction {
+    @_spi(PackageInternal)
+    public enum IncomingDecoderInstructionAction {
         case emitConnectionError(HTTP3Error)
     }
 
-    package mutating func receivedIncomingDecoderInstruction(
+    @_spi(PackageInternal)
+    public mutating func receivedIncomingDecoderInstruction(
         _ instruction: QPACKDecoderInstruction
     ) -> IncomingDecoderInstructionAction? {
         switch consume self.state {
@@ -687,7 +717,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
+    @_spi(PackageInternal)
+    public mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
         switch consume self.state {
         case .notStarted:
             fatalError("Tried to encode headers before state machine started")
@@ -700,7 +731,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum DecodeHeaderAction {
+    @_spi(PackageInternal)
+    public enum DecodeHeaderAction {
         /// Send this qpack decode result to the relevant stream.
         case informDecodeResult(InformDecodeResult)
 
@@ -709,13 +741,20 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
         /// Send a connection-level error.
         case emitConnectionError(HTTP3Error)
-        package struct InformDecodeResult: Hashable, Sendable {
-            package var fields: [HTTPField]
-            package var headers: HTTP3PartialFrame.Headers
-            package var streamID: QUICStreamID
-            package var instructionToWrite: QPACKDecoderInstruction?
 
-            package init(
+        @_spi(PackageInternal)
+        public struct InformDecodeResult: Hashable, Sendable {
+            @_spi(PackageInternal)
+            public var fields: [HTTPField]
+            @_spi(PackageInternal)
+            public var headers: HTTP3PartialFrame.Headers
+            @_spi(PackageInternal)
+            public var streamID: QUICStreamID
+            @_spi(PackageInternal)
+            public var instructionToWrite: QPACKDecoderInstruction?
+
+            @_spi(PackageInternal)
+            public init(
                 fields: [HTTPField],
                 headers: HTTP3PartialFrame.Headers,
                 streamID: QUICStreamID,
@@ -728,12 +767,17 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
             }
         }
 
-        package struct InformDecodeError {
-            package var error: HTTP3Error
-            package var headers: HTTP3PartialFrame.Headers
-            package var streamID: QUICStreamID
+        @_spi(PackageInternal)
+        public struct InformDecodeError {
+            @_spi(PackageInternal)
+            public var error: HTTP3Error
+            @_spi(PackageInternal)
+            public var headers: HTTP3PartialFrame.Headers
+            @_spi(PackageInternal)
+            public var streamID: QUICStreamID
 
-            package init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
+            @_spi(PackageInternal)
+            public init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
                 self.error = error
                 self.headers = headers
                 self.streamID = streamID
@@ -759,7 +803,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func decodeHeaders(
+    @_spi(PackageInternal)
+    public mutating func decodeHeaders(
         _ header: HTTP3PartialFrame.Headers,
         forStream streamID: QUICStreamID
     ) -> DecodeHeaderAction? {
@@ -779,7 +824,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     /// Check if any previously-queued decode is now decodable.
     /// This function should be called repeatedly after new input (eg. new incoming instructions) until it returns nil
-    package mutating func checkPendingQPACKDecodes() -> DecodeHeaderAction? {
+    @_spi(PackageInternal)
+    public mutating func checkPendingQPACKDecodes() -> DecodeHeaderAction? {
         switch consume self.state {
         case .notStarted:
             fatalError("Tried to decode headers before state machine started")
@@ -795,20 +841,12 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     // MARK: Shutdown
 
-    package enum CloseAction {
-        /// Send a GOAWAY frame containing ``id`` and close any existing streams with an id in ``idsToCancel``
-        case sendGoaway(id: HTTP3GoawayID, idsToCancel: [QUICStreamID])
-        /// Throw an error: the caller of this function has made a mistake and gave us an invalid id.
-        case throwError(any Error)
-        /// Close the connection immediately.
-        case closeImmediately
-    }
-
     /// Whether a graceful shutdown can be initiated by this endpoint.
     ///
     /// Returns `false` if the connection is not yet open or has already finished, or if a graceful shutdown has already
     /// been initiated.
-    package func canInitiateGracefulShutdown() -> Bool {
+    @_spi(PackageInternal)
+    public func canInitiateGracefulShutdown() -> Bool {
         switch self.state {
         case .notStarted:
             return false
@@ -821,7 +859,18 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func sendGoaway(goawayID newLocalMaxID: HTTP3GoawayID) -> CloseAction? {
+    @_spi(PackageInternal)
+    public enum CloseAction {
+        /// Send a GOAWAY frame containing ``id`` and close any existing streams with an id in ``idsToCancel``
+        case sendGoaway(id: HTTP3GoawayID, idsToCancel: [QUICStreamID])
+        /// Throw an error: the caller of this function has made a mistake and gave us an invalid id.
+        case throwError(any Error)
+        /// Close the connection immediately.
+        case closeImmediately
+    }
+
+    @_spi(PackageInternal)
+    public mutating func sendGoaway(goawayID newLocalMaxID: HTTP3GoawayID) -> CloseAction? {
         switch consume self.state {
         case .notStarted:
             self = .init(state: .finished)
@@ -857,7 +906,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     /// Returns the next expected client-initiated bidirectional stream ID, or `nil` if the connection is not in the
     /// `.initialized` state.
-    package func nextExpectedClientInitiatedBidirectionalStreamID() -> QUICStreamID? {
+    @_spi(PackageInternal)
+    public func nextExpectedClientInitiatedBidirectionalStreamID() -> QUICStreamID? {
         switch self.state {
         case .notStarted:
             return nil
@@ -870,7 +920,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum StreamClosedAction {
+    @_spi(PackageInternal)
+    public enum StreamClosedAction {
         case sendDecoderInstruction(QPACKDecoderInstruction, shouldCloseConnection: Bool)
         case closeConnection
         case emitConnectionError(HTTP3Error)
@@ -882,7 +933,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
     ///   - seenEOF: Whether or not we saw an input close before the stream closed. That means we didn't drop any incoming data.
     ///   - streamType: The type of the stream which was closed.
     /// - Returns: The next action to take.
-    package mutating func streamClosed(
+    @_spi(PackageInternal)
+    public mutating func streamClosed(
         streamID: QUICStreamID,
         seenEOF: Bool,
         streamType: HTTP3StreamType
@@ -975,13 +1027,15 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum ShutdownCompleteAction: Hashable {
+    @_spi(PackageInternal)
+    public enum ShutdownCompleteAction: Hashable {
         /// The connection should be closed now
         case shutdown
     }
 
     /// Call this when the connection has been completely shut down for any reason.
-    package mutating func shutdownConnectionImmediately() -> ShutdownCompleteAction {
+    @_spi(PackageInternal)
+    public mutating func shutdownConnectionImmediately() -> ShutdownCompleteAction {
         // TODO: verify that we really did close all bidi streams?
         // There will still be open streams here if the connection channel was closed suddenly rather than gracefully.
         self = .init(state: .finished)
@@ -989,7 +1043,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
     }
 
     /// Assert that there are no open streams right now.
-    package func assertNoOpenStreams(logger: Logger) {
+    @_spi(PackageInternal)
+    public func assertNoOpenStreams(logger: Logger) {
         switch self.state {
         case .initialized(let initialized):
             let openStreams = initialized.streamIDTracker.openStreams
@@ -1002,13 +1057,15 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum EmitConnectionErrorAction {
+    @_spi(PackageInternal)
+    public enum EmitConnectionErrorAction {
         case emitConnectionError(HTTP3Error)
         case none
     }
 
     /// Call this when a stream wants to emit a connection-level error.
-    package mutating func emitConnectionErrorFromStream(error: HTTP3Error) -> EmitConnectionErrorAction {
+    @_spi(PackageInternal)
+    public mutating func emitConnectionErrorFromStream(error: HTTP3Error) -> EmitConnectionErrorAction {
         switch consume self.state {
         case .finished:
             // We already finished, so emitting a connection error is now pointless.
@@ -1022,13 +1079,15 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum CaughtRemoteErrorAction {
+    @_spi(PackageInternal)
+    public enum CaughtRemoteErrorAction {
         /// Cancel these streams because the remote closed the connection.
         case cancelStreams([QUICStreamID])
     }
 
     /// Call this when the remote sends us an error.
-    package mutating func caughtRemoteError(_: HTTP3Error) -> CaughtRemoteErrorAction? {
+    @_spi(PackageInternal)
+    public mutating func caughtRemoteError(_: HTTP3Error) -> CaughtRemoteErrorAction? {
         switch consume self.state {
         case .initialized(let initializedState):
             let idsToCancel = initializedState.streamIDTracker.getOpenStreamIDs {

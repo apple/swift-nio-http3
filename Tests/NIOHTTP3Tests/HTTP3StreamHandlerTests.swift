@@ -13,17 +13,18 @@
 //===----------------------------------------------------------------------===//
 
 import DequeModule
-import HTTP3
 import HTTPTypes
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
 import NIOEmbedded
 import NIOExtras
-import NIOHTTP3
 import NIOQUICHelpers
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import HTTP3
+@testable import NIOHTTP3
 
 struct NIOHTTP3StreamHandlerTests {
     private var testRequestHeaderFields: [HTTPField] = [

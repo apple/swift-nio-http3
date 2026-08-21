@@ -12,12 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTPTypes
+import HTTPTypes
 
 extension HTTPField.Name {
-    package static var method: HTTPField.Name { .init(parsed: ":method")! }
-    package static var scheme: HTTPField.Name { .init(parsed: ":scheme")! }
-    package static var authority: HTTPField.Name { .init(parsed: ":authority")! }
-    package static var path: HTTPField.Name { .init(parsed: ":path")! }
-    package static var status: HTTPField.Name { .init(parsed: ":status")! }
+    static var method: HTTPField.Name { .init(parsed: ":method")! }
+    static var scheme: HTTPField.Name { .init(parsed: ":scheme")! }
+    static var authority: HTTPField.Name { .init(parsed: ":authority")! }
+    static var path: HTTPField.Name { .init(parsed: ":path")! }
+    static var status: HTTPField.Name { .init(parsed: ":status")! }
 }

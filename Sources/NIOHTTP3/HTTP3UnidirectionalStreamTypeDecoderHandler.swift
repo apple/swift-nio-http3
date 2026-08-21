@@ -12,20 +12,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTP3
-package import Logging
-package import NIOCore
+@_spi(PackageInternal) import HTTP3
+import Logging
+import NIOCore
 import NIOQUICHelpers
 
 /// Read the incoming stream header (the first byte). Inform the callback when the stream type is known.
 /// Buffers all data after the stream type until told to release the queue.
 /// This is only used for unidirectional streams. Bidirectional streams do not send a stream header. Their type is always request.
 /// See RFC 9114 § 6.2 for more information.
-package final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundHandler, RemovableChannelHandler {
-    package typealias InboundIn = ByteBuffer
-    package typealias InboundOut = ByteBuffer
+final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundHandler, RemovableChannelHandler {
+    typealias InboundIn = ByteBuffer
+    typealias InboundOut = ByteBuffer
 
-    package enum DecodeResult {
+    enum DecodeResult {
         /// Return this from the callback when the stream type is valid, and the pipeline is ready to receive data.
         case ready
     }
@@ -40,26 +40,25 @@ package final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundH
     private var state = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
     private var context: ChannelHandlerContext?
 
-    package init(logger: Logger, callback: @escaping (HTTP3StreamType.Unidirectional) -> EventLoopFuture<DecodeResult>)
-    {
+    init(logger: Logger, callback: @escaping (HTTP3StreamType.Unidirectional) -> EventLoopFuture<DecodeResult>) {
         self.logger = logger
         self.callback = callback
     }
 
-    package func handlerAdded(context: ChannelHandlerContext) {
+    func handlerAdded(context: ChannelHandlerContext) {
         guard self.context == nil else {
             fatalError("HTTP3UnidirectionalStreamTypeDecoderHandler must only be added to one Channel")
         }
         self.context = context
     }
 
-    package func channelInactive(context: ChannelHandlerContext) {
+    func channelInactive(context: ChannelHandlerContext) {
         // Break reference cycle
         self.context = nil
         context.fireChannelInactive()
     }
 
-    package func handlerRemoved(context: ChannelHandlerContext) {
+    func handlerRemoved(context: ChannelHandlerContext) {
         // Break reference cycle
         self.context = nil
     }
@@ -106,7 +105,7 @@ package final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundH
         )
     }
 
-    package func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let data = self.unwrapInboundIn(data)
         switch self.state.buffer(data: data) {
         case .none: break

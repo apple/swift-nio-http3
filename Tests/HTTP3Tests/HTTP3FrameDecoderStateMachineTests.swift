@@ -12,10 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
 import NIOCore
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
+
+@testable @_spi(PackageInternal) import HTTP3
 
 struct HTTP3FrameDecoderStateMachineTests {
     private let testDataFrameContent: [UInt8] = [1, 2, 3, 4]

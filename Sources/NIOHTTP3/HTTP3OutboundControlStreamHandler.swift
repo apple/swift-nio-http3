@@ -12,25 +12,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTP3
-package import NIOCore
+@_spi(PackageInternal) import HTTP3
+import NIOCore
 
 /// Handler to be used on the outbound control stream only.
 /// Will send the initial settings frame when the channel is ready.
-package final class HTTP3OutboundControlStreamHandler: ChannelInboundHandler {
-    package typealias OutboundIn = HTTP3Frame
-    package typealias OutboundOut = HTTP3Frame
-    package typealias InboundIn = Never
+final class HTTP3OutboundControlStreamHandler: ChannelInboundHandler {
+    typealias OutboundIn = HTTP3Frame
+    typealias OutboundOut = HTTP3Frame
+    typealias InboundIn = Never
 
     private var context: ChannelHandlerContext?
 
     private var state: HTTP3OutboundControlStreamStateMachine
 
-    package init(settings: HTTP3Settings) {
+    init(settings: HTTP3Settings) {
         self.state = .init(settings: settings)
     }
 
-    package func handlerAdded(context: ChannelHandlerContext) {
+    func handlerAdded(context: ChannelHandlerContext) {
         guard self.context == nil else {
             fatalError("HTTP3OutboundControlStreamHandler must only be added to one Channel")
         }
@@ -40,18 +40,18 @@ package final class HTTP3OutboundControlStreamHandler: ChannelInboundHandler {
         }
     }
 
-    package func channelInactive(context: ChannelHandlerContext) {
+    func channelInactive(context: ChannelHandlerContext) {
         // Break reference cycle
         self.context = nil
         context.fireChannelInactive()
     }
 
-    package func handlerRemoved(context: ChannelHandlerContext) {
+    func handlerRemoved(context: ChannelHandlerContext) {
         // Break reference cycle
         self.context = nil
     }
 
-    package func channelActive(context: ChannelHandlerContext) {
+    func channelActive(context: ChannelHandlerContext) {
         self.handleChannelActive(context: context)
         context.fireChannelActive()
     }
@@ -73,7 +73,7 @@ package final class HTTP3OutboundControlStreamHandler: ChannelInboundHandler {
 
     /// Send a GOAWAY frame to the peer.
     /// - Parameter id: The ID to be sent. If the remote is a client, this should be a client-initiated, bidirectional stream ID. If the remote is a server, this should be a push ID.
-    package func sendGoaway(id: HTTP3GoawayID) {
+    func sendGoaway(id: HTTP3GoawayID) {
         switch self.state.sendGoaway(id: id) {
         case .send:
             guard let context = self.context else {
