@@ -369,7 +369,8 @@ extension ByteBuffer {
     ///   - maxCapacity: The maximum capacity of the dynamic table.
     /// - Returns: The number of bytes written.
     @discardableResult
-    package mutating func writeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> Int {
+    @_spi(PackageInternal)
+    public mutating func writeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> Int {
         var bytesWritten = 0
         bytesWritten += self.writeQPACKPrefixedInteger(
             prefix.encodedRequiredInsertCount,

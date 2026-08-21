@@ -30,15 +30,15 @@ enum DynamicHeaderTableError: Error, Sendable, Hashable {
 
 struct DynamicTableLookupResult: Sendable, Hashable {
     /// Relative index of the entry in the table.
-    package var relativeIndex: Int
+    var relativeIndex: Int
     /// Absolute index of the entry in the table.
-    package var absoluteIndex: Int
+    var absoluteIndex: Int
     /// Does the entry match the value too. If false, only the name was matched.
-    package var containsValue: Bool
+    var containsValue: Bool
     /// True if this item is old and should be duplicated rather than referencing this existing index.
-    package var isNearingEviction: Bool
+    var isNearingEviction: Bool
     /// True if the entry is known to be received by the peer.
-    package var isKnownReceived: Bool
+    var isKnownReceived: Bool
 }
 
 /// Implements the dynamic part of the QPACK header table, as defined in

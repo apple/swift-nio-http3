@@ -14,7 +14,7 @@
 
 import Foundation
 import NIOCore
-import QPACK
+@testable import QPACK
 import Testing
 
 struct HuffmanCodingTests {

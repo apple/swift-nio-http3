@@ -12,17 +12,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTPTypes
-package import NIOQUICHelpers
+public import HTTPTypes
+public import NIOQUICHelpers
 
-package enum QPACKDecoderError: Error, Sendable, Hashable {
+@_spi(PackageInternal)
+public enum QPACKDecoderError: Error, Sendable, Hashable {
     case invalidHeaderName
     case invalidReference
     case invalidFieldSection
 }
 
 /// The result of decoding a field section, plus the instruction which need to be sent back, if any.
-package enum QPACKFullDecodeResult: Sendable {
+@_spi(PackageInternal)
+public enum QPACKFullDecodeResult: Sendable {
     /// The section cannot not be decoded because we don't have the required insert count. You can try again later.
     case missingInsertCount
     /// The section has been decoded with the given result. Also, an instruction may need to be sent to the remote.
@@ -32,7 +34,7 @@ package enum QPACKFullDecodeResult: Sendable {
 }
 
 /// The result of decoding a field section.
-package enum QPACKDecodeResult: Sendable {
+enum QPACKDecodeResult: Sendable {
     /// The section cannot not be decoded because we don't have the required insert count. You can try again later.
     case missingInsertCount
     /// The section has been decoded with the given result.
@@ -41,7 +43,8 @@ package enum QPACKDecodeResult: Sendable {
     case error(any Error)
 }
 
-package struct QPACKDecoder {
+@_spi(PackageInternal)
+public struct QPACKDecoder {
     private var dynamicTable: DynamicHeaderTable
     /// Makes decisions on when and how to sync state with the encoder.
     private var stateSynchronizer: QPACKStateSynchronizer
@@ -53,7 +56,8 @@ package struct QPACKDecoder {
     }
 
     /// - Parameter dynamicTableMaxCapacity: The max the encoder can set the dynamic table capacity to (RFC 9204 § 3.2.3).
-    package init(dynamicTableMaxCapacity: Int) {
+    @_spi(PackageInternal)
+    public init(dynamicTableMaxCapacity: Int) {
         self.stateSynchronizer = QPACKStateSynchronizer()
         // RFC 9204 § 3.2.2 The initial capacity of the dynamic table is zero
         // Target evictable is irrelevant to the decoder
@@ -66,8 +70,10 @@ package struct QPACKDecoder {
     }
 
     /// Process an encoder instruction and (maybe) emit a decoder instruction to send back.
-    package mutating func processInstruction(_ instruction: QPACKEncoderInstruction) throws -> QPACKDecoderInstruction?
-    {
+    @_spi(PackageInternal)
+    public mutating func processInstruction(
+        _ instruction: QPACKEncoderInstruction
+    ) throws -> QPACKDecoderInstruction? {
         switch instruction {
         case .setDynamicTableCapacity(let capacity):
             try self.dynamicTable.setCurrentCapacity(capacity)
@@ -120,7 +126,8 @@ package struct QPACKDecoder {
         return nil
     }
 
-    package func cancelStream(streamID: QUICStreamID) -> QPACKDecoderInstruction? {
+    @_spi(PackageInternal)
+    public func cancelStream(streamID: QUICStreamID) -> QPACKDecoderInstruction? {
         if self.dynamicTable.maximumCapacity == 0 {
             // A decoder with a maximum dynamic table capacity equal to zero MAY omit sending Stream
             // Cancellations, because the encoder cannot have any dynamic table references.
@@ -132,7 +139,8 @@ package struct QPACKDecoder {
 
     /// Return a list of headers for a FieldSection, if the required insert count is met.
     /// Otherwise, return ``QPACKDecodeResult/missingInsertCount``.
-    package mutating func decodeFieldSection(
+    @_spi(PackageInternal)
+    public mutating func decodeFieldSection(
         prefix: FieldSectionPrefix,
         lines: [FieldLine],
         streamID: QUICStreamID

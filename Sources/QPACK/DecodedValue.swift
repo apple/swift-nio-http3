@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-package struct Decoded<Value: Sendable & Hashable>: Sendable, Hashable {
+struct Decoded<Value: Sendable & Hashable>: Sendable, Hashable {
     var value: Value
     var bytesRead: Int
 }
