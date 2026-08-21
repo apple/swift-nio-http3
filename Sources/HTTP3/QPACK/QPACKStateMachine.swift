@@ -366,11 +366,11 @@ struct QPACKStateMachine: ~Copyable {
         }
 
         struct InformDecodeError {
-            package var error: HTTP3Error
-            package var headers: HTTP3PartialFrame.Headers
-            package var streamID: QUICStreamID
+            var error: HTTP3Error
+            var headers: HTTP3PartialFrame.Headers
+            var streamID: QUICStreamID
 
-            package init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
+            init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
                 self.error = error
                 self.headers = headers
                 self.streamID = streamID
