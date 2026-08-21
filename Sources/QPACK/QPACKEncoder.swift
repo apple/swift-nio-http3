@@ -518,7 +518,7 @@ public struct DynamicQPACKEncoder {
 public struct StaticQPACKEncoder {
     @_spi(PackageInternal)
     public init() {}
-    
+
     @_spi(PackageInternal)
     public func encode(headers: [HTTPField]) -> FieldSection {
         let base = 0  // base 0 is the cheapest way when no dynamic entries

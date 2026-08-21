@@ -40,8 +40,7 @@ final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundHandler, 
     private var state = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
     private var context: ChannelHandlerContext?
 
-    init(logger: Logger, callback: @escaping (HTTP3StreamType.Unidirectional) -> EventLoopFuture<DecodeResult>)
-    {
+    init(logger: Logger, callback: @escaping (HTTP3StreamType.Unidirectional) -> EventLoopFuture<DecodeResult>) {
         self.logger = logger
         self.callback = callback
     }

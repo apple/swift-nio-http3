@@ -13,10 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 @_spi(PackageInternal) import HTTP3
-@testable import NIOHTTP3
 import Testing
 
 import struct NIOCore.ByteBuffer
+
+@testable import NIOHTTP3
 
 struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
     @Test

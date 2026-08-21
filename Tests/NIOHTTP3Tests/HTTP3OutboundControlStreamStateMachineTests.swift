@@ -13,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 @_spi(PackageInternal) import HTTP3
-@testable import NIOHTTP3
 import Testing
+
+@testable import NIOHTTP3
 
 struct HTTP3OutboundControlStreamStateMachineTests {
     @Test

@@ -12,9 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-@testable import HTTP3
 import NIOCore
 import Testing
+
+@testable import HTTP3
 
 struct HTTP3SettingsTests {
     @Test

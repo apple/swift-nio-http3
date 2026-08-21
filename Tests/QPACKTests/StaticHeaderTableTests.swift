@@ -13,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
-@testable import QPACK
 import Testing
+
+@testable import QPACK
 
 struct StaticHeaderTableTests {
     @Test

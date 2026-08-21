@@ -12,10 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) @testable import HTTP3
 import NIOQUICHelpers
 @_spi(PackageInternal) import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import HTTP3
 
 struct QPACKStateMachineTests {
     @Test

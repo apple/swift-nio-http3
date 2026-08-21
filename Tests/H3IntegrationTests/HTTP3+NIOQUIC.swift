@@ -15,7 +15,6 @@
 @_spi(PackageInternal) import HTTP3
 import Logging
 import NIOCore
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 import NIOQUICHelpers
 
 import class NIOQUIC.AsyncVerifier
@@ -23,6 +22,8 @@ import class NIOQUIC.Authenticator
 import struct NIOQUIC.QUICConfiguration
 import class NIOQUIC.QUICHandler
 import struct NIOQUIC.QUICStreamCreator
+
+@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 
 typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator>
 

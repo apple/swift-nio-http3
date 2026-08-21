@@ -12,12 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) @testable import HTTP3
 import HTTPTypes
 import NIOCore
 import NIOQUICHelpers
 @_spi(PackageInternal) import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3StreamStateMachineTests {
     private let testDataFrame = HTTP3Frame.data(.init(bytes: [1, 2, 3, 4]))

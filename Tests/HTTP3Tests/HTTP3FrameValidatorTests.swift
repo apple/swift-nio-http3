@@ -12,8 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) @testable import HTTP3
 import Testing
+
+@_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3FrameValidatorTests {
     static func validRequestHeaders() -> HTTP3Frame {

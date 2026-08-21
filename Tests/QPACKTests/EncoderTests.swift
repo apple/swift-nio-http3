@@ -13,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
-@_spi(PackageInternal) @testable import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import QPACK
 
 struct EncoderTests {
     /// Dynamic table is disabled, literal should be sent as a literal.

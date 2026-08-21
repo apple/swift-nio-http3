@@ -16,7 +16,6 @@ import HTTP3
 import HTTPTypes
 import Logging
 import NIOCore
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 import NIOHTTPTypes
 import NIOPosix
 import Testing
@@ -24,6 +23,8 @@ import X509
 
 import struct NIOQUIC.QUICConfiguration
 import struct NIOQUIC.QUICStreamCreator
+
+@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 
 struct AsyncEndToEndTests {
     private let eventLoopGroup = MultiThreadedEventLoopGroup.singleton

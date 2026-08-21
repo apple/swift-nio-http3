@@ -12,19 +12,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) @testable import HTTP3
 import HTTPTypes
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
 import NIOQUICHelpers
-@_spi(PackageInternal) @testable import QPACK
 import Testing
 import X509
+
+@_spi(PackageInternal) @testable import HTTP3
+@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
+@_spi(PackageInternal) @testable import QPACK
 
 /// Buffers incoming body data until end. Then echoes it all back with a 200 status header.
 final class EchoHTTPServerHandler: ChannelInboundHandler {

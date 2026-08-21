@@ -16,12 +16,13 @@
 import Logging
 import NIOCore
 import NIOEmbedded
-@testable import NIOHTTP3
 import NIOTestUtils
 import Testing
 
 import struct NIOQUICHelpers.QUICApplicationErrorCode
 import struct NIOQUICHelpers.QUICStopSendingEvent
+
+@testable import NIOHTTP3
 
 /// - Warning: Only access on eventloop!
 private final class RecorderHandler: ChannelInboundHandler {

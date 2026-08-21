@@ -14,8 +14,9 @@
 
 import HTTPTypes
 import NIOCore
-@_spi(PackageInternal) @testable import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import QPACK
 
 /// Tests for encoding and decoding the `decoder instructions`.
 struct DecoderInstructionCoderTests {
