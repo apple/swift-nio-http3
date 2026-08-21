@@ -72,7 +72,7 @@ extension ByteBuffer {
     /// - prefix: The number of bits in the first byte leave before starting the string
     /// - prefixBits: The bits to use in the first byte before the string begins.
     @discardableResult
-    package mutating func writeQPACKEncodedString(
+    mutating func writeQPACKEncodedString(
         _ string: String,
         preferHuffmanEncoding: Bool,
         prefix: Int,
