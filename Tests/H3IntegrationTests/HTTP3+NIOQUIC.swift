@@ -24,6 +24,7 @@ import struct NIOQUIC.QUICConfiguration
 import class NIOQUIC.QUICHandler
 import struct NIOQUIC.QUICStreamCreator
 
+@available(anyAppleOS 26, *)
 typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator>
 
 // MARK: Configure with async interface

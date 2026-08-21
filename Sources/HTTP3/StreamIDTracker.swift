@@ -15,6 +15,7 @@
 package import NIOQUICHelpers
 
 /// Keeps track of what streams are open.
+@available(anyAppleOS 26, *)
 package struct StreamIDTracker {
     /// All currently open streams
     private(set) var openStreams = Set<QUICStreamID>()
@@ -26,7 +27,7 @@ package struct StreamIDTracker {
     /// We store the highest id we've ever seen for each type of stream. When we see a new id, we store it at index calculated by taking the last 2 bits of the id.
     /// The last 2 bits are what determine the type, see RFC 9000 § 2.1.
     /// So index 0 is client-initiated bidi, index 1 is server-initiated bidi, index 2 is client-initiated uni and index 3 is server-initiated uni.
-    private var highestIDSeenByType: [QUICStreamID?] = [nil, nil, nil, nil]
+    private var highestIDSeenByType: InlineArray<4, QUICStreamID?> = [nil, nil, nil, nil]
 
     package init() {}
 

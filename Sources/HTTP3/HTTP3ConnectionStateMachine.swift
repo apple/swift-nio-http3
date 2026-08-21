@@ -23,6 +23,7 @@ package enum HTTP3ConnectionType {
     case server
 }
 
+@available(anyAppleOS 26, *)
 package struct HTTP3ConnectionStateMachine: ~Copyable {
     struct InboundStreamCreationState: ~Copyable {
         private enum State: ~Copyable {
