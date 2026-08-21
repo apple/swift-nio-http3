@@ -14,7 +14,7 @@
 
 import HTTPTypes
 import NIOCore
-import QPACK
+@testable import QPACK
 import Testing
 
 struct DynamicHeaderTableTests {
