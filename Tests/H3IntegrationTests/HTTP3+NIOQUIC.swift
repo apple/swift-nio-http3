@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@_spi(PackageInternal) import HTTP3
 import Logging
 import NIOCore
 @_spi(HTTP3AsyncInterface) import NIOHTTP3

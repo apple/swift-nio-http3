@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
 
 struct EncoderTests {

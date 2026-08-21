@@ -17,7 +17,8 @@ package struct Decoded<Value: Sendable & Hashable>: Sendable, Hashable {
     var bytesRead: Int
 }
 
-package enum IntegerReadingError: Error, Hashable {
+@_spi(PackageInternal)
+public enum IntegerReadingError: Error, Hashable {
     /// The integer cannot be represented in the desired type.
     case unrepresentable
 }

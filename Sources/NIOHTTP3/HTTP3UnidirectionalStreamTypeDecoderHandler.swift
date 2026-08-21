@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTP3
+@_spi(PackageInternal) package import HTTP3
 package import Logging
 package import NIOCore
 import NIOQUICHelpers

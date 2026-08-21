@@ -41,7 +41,8 @@ public struct HTTP3Error: Error, Sendable {
     /// The location from which this error was thrown.
     public var location: SourceLocation
 
-    package init(
+    @_spi(PackageInternal)
+    public init(
         code: Code,
         message: String,
         cause: (any Error)?,
@@ -296,7 +297,8 @@ extension HTTP3Error {
             self.line = line
         }
 
-        package static func here(function: String = #function, file: String = #fileID, line: Int = #line) -> Self {
+        @_spi(PackageInternal)
+        public static func here(function: String = #function, file: String = #fileID, line: Int = #line) -> Self {
             SourceLocation(function: function, file: file, line: line)
         }
     }

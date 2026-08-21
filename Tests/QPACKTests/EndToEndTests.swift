@@ -15,7 +15,7 @@
 import HTTPTypes
 import NIOCore
 import NIOQUICHelpers
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
 
 struct EndToEndTests {

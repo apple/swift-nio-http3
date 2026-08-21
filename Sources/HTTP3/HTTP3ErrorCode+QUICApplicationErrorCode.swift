@@ -12,13 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIOQUICHelpers
+public import NIOQUICHelpers
 
 extension QUICApplicationErrorCode {
     /// Create a ``QUICApplicationErrorCode`` from an ``HTTP3ErrorCode``.
     ///
     /// HTTP/3 error codes are small constants (max `0x0202`) so this conversion is always valid.
-    package init(_ errorCode: HTTP3ErrorCode) {
+    @_spi(PackageInternal)
+    public init(_ errorCode: HTTP3ErrorCode) {
         self = QUICApplicationErrorCode(errorCode.rawValue)!
     }
 }

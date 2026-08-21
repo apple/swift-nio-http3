@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@testable @_spi(PackageInternal) import HTTP3
 import NIOCore
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
 
 struct HTTP3FrameDecoderStateMachineTests {

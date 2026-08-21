@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@_spi(PackageInternal) @testable import HTTP3
 import HTTPTypes
 import Logging
 import NIOConcurrencyHelpers
@@ -22,7 +22,7 @@ import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
 import NIOQUICHelpers
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
 import X509
 

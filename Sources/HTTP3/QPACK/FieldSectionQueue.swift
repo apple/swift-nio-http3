@@ -14,7 +14,7 @@
 
 import HeapModule
 package import NIOQUICHelpers
-package import QPACK
+@_spi(PackageInternal) import QPACK
 
 package enum FieldSectionQueueError: Error, Hashable, Sendable {
     case reachedMaxSize

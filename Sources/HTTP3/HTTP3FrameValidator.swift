@@ -608,7 +608,7 @@ package enum HTTP3FrameValidator: ~Copyable {
         }
     }
 
-    package init(streamType: HTTP3StreamType.Framed, incoming: Bool) {
+    init(streamType: HTTP3StreamType.Framed, incoming: Bool) {
         switch (streamType, incoming) {
         case (.control, true): self = .incomingControlStream(.init())
         case (.request, true): self = .incomingRequestStream(.init())

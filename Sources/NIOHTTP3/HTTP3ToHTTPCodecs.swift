@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTP3
+@_spi(PackageInternal) public import HTTP3
 import HTTPTypes
 public import NIOCore
 public import NIOHTTPTypes

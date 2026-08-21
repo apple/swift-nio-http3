@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
-import QPACK
+@_spi(PackageInternal) @testable import QPACK
 import Testing
 
 struct FieldLineCodingTests {

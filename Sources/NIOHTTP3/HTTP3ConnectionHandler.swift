@@ -12,13 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTP3
+@_spi(PackageInternal) public import HTTP3
 public import Logging
 public import NIOCore
 public import NIOQUICHelpers
 
 /// What to do when a new stream comes inbound.
-package enum H3InboundStreamInitializer {
+enum H3InboundStreamInitializer {
     /// Call yield on a multiplexer to give it the new stream channel.
     case multiplexer(any StreamMultiplexerContinuation)
     /// Call a closure with the new stream channel.

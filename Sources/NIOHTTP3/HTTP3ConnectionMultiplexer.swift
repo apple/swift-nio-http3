@@ -138,7 +138,7 @@ public struct HTTP3ClientConnection<
 /// Internal type to abstract away the `Output` type of the multiplexer. This means we are going through an existential
 /// in the `HTTP3ConnectionHandler` when yielding a new `Channel`. However, this is okay for now otherwise
 /// we would need to make the handler generic as well.
-package protocol StreamMultiplexerContinuation: Sendable {
+protocol StreamMultiplexerContinuation: Sendable {
     /// We have to do a bit of an awkward dance here to carry the `Output` between the initializer and the continuation where
     /// we yield to. That's why we are using `Any` here to avoid making the handler generic.
     func initialize(parameters: HTTP3StreamInitializerParameters) -> EventLoopFuture<any Sendable>

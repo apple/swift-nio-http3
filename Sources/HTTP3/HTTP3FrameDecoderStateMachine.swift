@@ -97,7 +97,7 @@ package struct HTTP3FrameDecoderStateMachine: ~Copyable {
         }
     }
 
-    package enum DecodeAction {
+    enum DecodeAction {
         /// A frame has been read from the incoming bytes. You should call decodeNext() again to check if there are more frames available.
         case returnFrame(HTTP3PartialFrame)
         /// A frame of unknown type has been read from the incoming bytes. You should call decodeNext() again to check if there are more frames available.
@@ -112,7 +112,7 @@ package struct HTTP3FrameDecoderStateMachine: ~Copyable {
 
     /// Read out one decoded frame from the bytes previously put into the decoder.
     /// Call this in a loop to get all frames, until it returns none.
-    package mutating func decodeNext() -> DecodeAction {
+    mutating func decodeNext() -> DecodeAction {
         switch consume self.state {
         case .decoding(var decodingState):
             do {

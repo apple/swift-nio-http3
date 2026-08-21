@@ -458,7 +458,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
 
     private let state: State
 
-    package init(
+    @_spi(PackageInternal)
+    public init(
         streamType: HTTP3StreamType.Framed,
         incoming: Bool,
         preferHuffmanEncoding: Bool
@@ -474,7 +475,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         self.state = state
     }
 
-    package enum WriteFrameAction {
+    @_spi(PackageInternal)
+    public enum WriteFrameAction {
         /// The frame's bytes were appended to the buffer you provided.
         case wroteBytes
         /// You should encode the given headers and call back with the result.
@@ -490,7 +492,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     /// Write out a frame by appending its encoded bytes to `buffer`.
-    package mutating func writeFrame(frame: HTTP3Frame, into buffer: inout ByteBuffer) -> WriteFrameAction {
+    @_spi(PackageInternal)
+    public mutating func writeFrame(frame: HTTP3Frame, into buffer: inout ByteBuffer) -> WriteFrameAction {
         switch self.state {
         case .idle(var idleState):
             guard idleState.readState.checkCanWrite() else {
@@ -528,7 +531,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    package enum HeaderEncodeResultAction {
+    @_spi(PackageInternal)
+    public enum HeaderEncodeResultAction {
         /// The header's bytes were appended to the buffer you provided.
         case wroteBytes
         /// This header can't be encoded because the stream is already in an error state.
@@ -537,7 +541,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         case alreadyClosed
     }
 
-    package mutating func gotHeaderEncodeResult(
+    @_spi(PackageInternal)
+    public mutating func gotHeaderEncodeResult(
         _ result: HTTP3PartialFrame.Headers,
         from: [HTTPField],
         into buffer: inout ByteBuffer
@@ -564,7 +569,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     /// Tell the machine about incoming bytes.
-    package mutating func buffer(_ buffer: ByteBuffer) {
+    @_spi(PackageInternal)
+    public mutating func buffer(_ buffer: ByteBuffer) {
         // Buffer the bytes into the decoder as long as we didn't already hit an error
         switch self.state {
         case .idle(var idleState):
@@ -578,7 +584,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    package enum DecodeNextAction {
+    @_spi(PackageInternal)
+    public enum DecodeNextAction {
         /// A full frame is ready.
         case returnFrame(HTTP3Frame)
         /// An error happened at the connection level.
@@ -615,7 +622,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     /// Read out the next frame if it is ready. This may ask you to run qpack on some partial headers.
     ///
     /// - Returns: The next action to be performed.
-    package mutating func decodeNext() -> DecodeNextAction {
+    @_spi(PackageInternal)
+    public mutating func decodeNext() -> DecodeNextAction {
         switch self.state {
         case .idle(var idleState):
             let readStateResult = idleState.readState.decodeNext()
@@ -693,7 +701,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
 
     /// Inform the state machine of a qpack decode result that has been previously been asked for.
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
-    package mutating func gotHeaderDecodeResult(_ decoded: [HTTPField], from: HTTP3PartialFrame.Headers) {
+    @_spi(PackageInternal)
+    public mutating func gotHeaderDecodeResult(_ decoded: [HTTPField], from: HTTP3PartialFrame.Headers) {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore
@@ -709,7 +718,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     /// Inform the state machine of a qpack decode error for a header that the machine previously asked to decode.
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
     /// This error will fail the stream. Connection-level errors should not be sent here.
-    package mutating func gotHeaderDecodeError(_ error: HTTP3Error, from: HTTP3PartialFrame.Headers) {
+    @_spi(PackageInternal)
+    public mutating func gotHeaderDecodeError(_ error: HTTP3Error, from: HTTP3PartialFrame.Headers) {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore

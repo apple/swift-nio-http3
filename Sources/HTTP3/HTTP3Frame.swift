@@ -13,31 +13,40 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
-package import QPACK
+@_spi(PackageInternal) public import QPACK
 
 public import struct NIOCore.ByteBuffer
 
 /// Represents a HTTP3 frame which has not been through the qpack decoder yet.
 ///
 /// The types are identical to ``HTTP3Frame`` except that the ``HTTP3PartialFrame/headers(_:)`` and ``HTTP3PartialFrame/pushPromise(_:)`` cases hold encoded field sections instead of fields.
-package enum HTTP3PartialFrame: Hashable {
+@_spi(PackageInternal)
+public enum HTTP3PartialFrame: Hashable {
     /// A headers frame for which we don't have the dynamic table references yet.
     /// Pass this to a QPACK decoder to get the full HTTP3Frame.
-    package struct Headers: Hashable, Sendable {
-        package let fieldSection: FieldSection
+    @_spi(PackageInternal)
+    public struct Headers: Hashable, Sendable {
+        @_spi(PackageInternal)
+        public let fieldSection: FieldSection
 
-        package init(fieldSection: FieldSection) {
+        @_spi(PackageInternal)
+        public init(fieldSection: FieldSection) {
             self.fieldSection = fieldSection
         }
     }
 
     /// A push promise frame for which we don't have the dynamic table references yet.
     /// Pass this to a QPACK decoder to get the full HTTP3Frame.
-    package struct PushPromise: Hashable, Sendable {
-        package let pushID: HTTP3PushID
-        package let fieldSection: FieldSection
+    @_spi(PackageInternal)
+    public struct PushPromise: Hashable, Sendable {
+        @_spi(PackageInternal)
+        public let pushID: HTTP3PushID
 
-        package init(pushID: HTTP3PushID, fieldSection: FieldSection) {
+        @_spi(PackageInternal)
+        public let fieldSection: FieldSection
+
+        @_spi(PackageInternal)
+        init(pushID: HTTP3PushID, fieldSection: FieldSection) {
             self.pushID = pushID
             self.fieldSection = fieldSection
         }
@@ -281,23 +290,23 @@ public enum HTTP3Frame: Hashable, Sendable {
 // because they are impossible to evolve, hence having structs in the first place.
 
 extension HTTP3PartialFrame {
-    package static func data(_ payload: ByteBuffer) -> Self {
+    static func data(_ payload: ByteBuffer) -> Self {
         .data(.init(payload: payload))
     }
 
-    package static func settings(_ settings: HTTP3Settings) -> Self {
+    static func settings(_ settings: HTTP3Settings) -> Self {
         .settings(.init(settings: settings))
     }
 
-    package static func cancelPush(_ id: HTTP3PushID) -> Self {
+    static func cancelPush(_ id: HTTP3PushID) -> Self {
         .cancelPush(.init(pushID: id))
     }
 
-    package static func maxPushID(_ id: HTTP3PushID) -> Self {
+    static func maxPushID(_ id: HTTP3PushID) -> Self {
         .maxPushID(.init(id: id))
     }
 
-    package static func goaway(_ id: HTTP3GoawayID) -> Self {
+    static func goaway(_ id: HTTP3GoawayID) -> Self {
         .goaway(.init(id: id))
     }
 }

@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import DequeModule
-package import HTTP3
+@_spi(PackageInternal) import HTTP3
 
 package import struct NIOCore.ByteBuffer
 
@@ -97,13 +97,13 @@ package struct HTTP3UnidirectionalStreamTypeDecoderStateMachine: ~Copyable {
         }
     }
 
-    package enum ChannelReadAction: Hashable {
+    enum ChannelReadAction: Hashable {
         /// Stream type should be sent to the callback.
         case gotStreamType(HTTP3StreamType.Unidirectional)
     }
 
     /// The handler has received data.
-    package mutating func buffer(data: ByteBuffer) -> ChannelReadAction? {
+    mutating func buffer(data: ByteBuffer) -> ChannelReadAction? {
         switch consume self.state {
         case .idle:
             // No existing queue, no existing stream type. Try to get it.

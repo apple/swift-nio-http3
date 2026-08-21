@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTP3
+@_spi(PackageInternal) @testable import HTTP3
 import Testing
 
 struct HTTP3FrameValidatorTests {
@@ -575,7 +575,7 @@ extension HTTP3FrameValidator {
 }
 
 extension HTTP3FrameValidator.ProcessFrameAction: Equatable {
-    package static func == (lhs: Self, rhs: Self) -> Bool {
+    static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
         case (.forwardFrame(let l), .forwardFrame(let r)): return l == r
         case (.previousError, .previousError): return true
@@ -614,7 +614,7 @@ extension HTTP3FrameValidator.ProcessFrameAction: Equatable {
 }
 
 extension HTTP3FrameValidator.UnknownFrameAction: Equatable {
-    package static func == (lhs: Self, rhs: Self) -> Bool {
+    static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
         case (.dropFrame, .dropFrame): return true
         case (.previousError, .previousError): return true

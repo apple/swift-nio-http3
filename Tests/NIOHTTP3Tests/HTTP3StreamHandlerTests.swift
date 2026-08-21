@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import DequeModule
-import HTTP3
+@_spi(PackageInternal) @testable import HTTP3
 import HTTPTypes
 import Logging
 import NIOConcurrencyHelpers

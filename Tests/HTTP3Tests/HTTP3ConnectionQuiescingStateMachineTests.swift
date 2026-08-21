@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-@testable import HTTP3
+@_spi(PackageInternal) @testable import HTTP3
 import NIOQUICHelpers
 import Testing
 

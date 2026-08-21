@@ -13,17 +13,19 @@
 //===----------------------------------------------------------------------===//
 
 package import DequeModule
-package import HTTPTypes
-package import Logging
-package import NIOQUICHelpers
-package import QPACK
+public import HTTPTypes
+public import Logging
+public import NIOQUICHelpers
+@_spi(PackageInternal) public import QPACK
 
-package enum HTTP3ConnectionType {
+@_spi(PackageInternal)
+public enum HTTP3ConnectionType: Sendable {
     case client
     case server
 }
 
-package struct HTTP3ConnectionStateMachine: ~Copyable {
+@_spi(PackageInternal)
+public struct HTTP3ConnectionStateMachine: ~Copyable {
     struct InboundStreamCreationState: ~Copyable {
         private enum State: ~Copyable {
             case notCreated
@@ -106,7 +108,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
     private let state: State
 
-    package init(settings: HTTP3Settings, type: HTTP3ConnectionType) {
+    @_spi(PackageInternal)
+    public init(settings: HTTP3Settings, type: HTTP3ConnectionType) {
         let qpackState = QPACKStateMachine(
             decoderMaxTableSize: Int(clamping: settings.qpackMaximumTableCapacity),
             decoderMaxBlockedStreams: Int(clamping: settings.qpackBlockedStreams)
@@ -340,11 +343,13 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum InboundUnknownStreamAction {
+    @_spi(PackageInternal)
+    public enum InboundUnknownStreamAction {
         case emitStreamError(HTTP3Error)
     }
 
-    package mutating func inboundUnknownStreamReceived(
+    @_spi(PackageInternal)
+    public mutating func inboundUnknownStreamReceived(
         streamID: QUICStreamID,
         streamType: HTTP3StreamType.Unidirectional
     ) -> InboundUnknownStreamAction {
@@ -700,7 +705,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum DecodeHeaderAction {
+    @_spi(PackageInternal)
+    public enum DecodeHeaderAction {
         /// Send this qpack decode result to the relevant stream.
         case informDecodeResult(InformDecodeResult)
 
@@ -709,13 +715,20 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
 
         /// Send a connection-level error.
         case emitConnectionError(HTTP3Error)
-        package struct InformDecodeResult: Hashable, Sendable {
-            package var fields: [HTTPField]
-            package var headers: HTTP3PartialFrame.Headers
-            package var streamID: QUICStreamID
-            package var instructionToWrite: QPACKDecoderInstruction?
 
-            package init(
+        @_spi(PackageInternal)
+        public struct InformDecodeResult: Hashable, Sendable {
+            @_spi(PackageInternal)
+            public var fields: [HTTPField]
+            @_spi(PackageInternal)
+            public var headers: HTTP3PartialFrame.Headers
+            @_spi(PackageInternal)
+            public var streamID: QUICStreamID
+            @_spi(PackageInternal)
+            public var instructionToWrite: QPACKDecoderInstruction?
+
+            @_spi(PackageInternal)
+            public init(
                 fields: [HTTPField],
                 headers: HTTP3PartialFrame.Headers,
                 streamID: QUICStreamID,
@@ -728,12 +741,17 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
             }
         }
 
-        package struct InformDecodeError {
-            package var error: HTTP3Error
-            package var headers: HTTP3PartialFrame.Headers
-            package var streamID: QUICStreamID
+        @_spi(PackageInternal)
+        public struct InformDecodeError {
+            @_spi(PackageInternal)
+            public var error: HTTP3Error
+            @_spi(PackageInternal)
+            public var headers: HTTP3PartialFrame.Headers
+            @_spi(PackageInternal)
+            public var streamID: QUICStreamID
 
-            package init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
+            @_spi(PackageInternal)
+            public init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
                 self.error = error
                 self.headers = headers
                 self.streamID = streamID
@@ -759,7 +777,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package mutating func decodeHeaders(
+    @_spi(PackageInternal)
+    public mutating func decodeHeaders(
         _ header: HTTP3PartialFrame.Headers,
         forStream streamID: QUICStreamID
     ) -> DecodeHeaderAction? {
@@ -870,7 +889,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
-    package enum StreamClosedAction {
+    @_spi(PackageInternal)
+    public enum StreamClosedAction {
         case sendDecoderInstruction(QPACKDecoderInstruction, shouldCloseConnection: Bool)
         case closeConnection
         case emitConnectionError(HTTP3Error)
@@ -882,7 +902,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
     ///   - seenEOF: Whether or not we saw an input close before the stream closed. That means we didn't drop any incoming data.
     ///   - streamType: The type of the stream which was closed.
     /// - Returns: The next action to take.
-    package mutating func streamClosed(
+    @_spi(PackageInternal)
+    public mutating func streamClosed(
         streamID: QUICStreamID,
         seenEOF: Bool,
         streamType: HTTP3StreamType
@@ -989,7 +1010,8 @@ package struct HTTP3ConnectionStateMachine: ~Copyable {
     }
 
     /// Assert that there are no open streams right now.
-    package func assertNoOpenStreams(logger: Logger) {
+    @_spi(PackageInternal)
+    public func assertNoOpenStreams(logger: Logger) {
         switch self.state {
         case .initialized(let initialized):
             let openStreams = initialized.streamIDTracker.openStreams

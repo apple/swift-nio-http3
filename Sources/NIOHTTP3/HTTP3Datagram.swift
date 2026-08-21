@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-internal import HTTP3
+@_spi(PackageInternal) import HTTP3
 public import NIOCore
 public import NIOQUICHelpers
 
