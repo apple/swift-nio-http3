@@ -32,6 +32,8 @@ protocol HTTP3StreamDelegate {
     ///
     /// - Parameters:
     ///     - sawEOF: `true` if we read an EOF before closure. That means no incoming frames were dropped.
+    ///     - streamID: The closed stream's ID
+    ///     - streamType: The closed stream's type
     func onStreamClosed(_ sawEOF: Bool, streamID: QUICStreamID, streamType: HTTP3StreamType.Framed)
 
     /// Ask the connection coordinator to send connection-level error to the remote peer.

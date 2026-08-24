@@ -116,7 +116,7 @@ struct HTTP3FrameDecoder: ~Copyable {
                 // We know length must fit in an Int now.
                 self.nextStep = .skipBytes(length: Int(length))
                 return .returnFrame(.unknown)
-            default:
+            case .cancelPush, .goaway, .headers, .maxPushID, .pushPromise, .settings:
                 self.nextStep = .decodePayload(type: type, length: length)
             }
             return .continueDecodeLoop
