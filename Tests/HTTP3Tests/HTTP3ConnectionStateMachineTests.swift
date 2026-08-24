@@ -944,7 +944,25 @@ struct HTTP3ConnectionStateMachineTests {
     @Test
     func testReceivedDatagramBeforeStartedWithoutLocalSupport() {
         let stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
-        #expect(stateMachine.receivedDatagram(streamID: 0).isDiscard)
+        stateMachine.expectReceivingDatagramIsConnectionError(streamID: 0, code: .datagramsNotNegotiated)
+    }
+
+    @Test
+    func testEmitConnectionErrorBeforeStarted() {
+        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
+        let testError = HTTP3Error(
+            code: .datagramsNotNegotiated,
+            message: "test",
+            cause: nil,
+            errorCode: .generalProtocolError,
+            location: .here()
+        )
+
+        let action = stateMachine.emitConnectionErrorFromStream(error: testError, allowNotStarted: true)
+        guard case .emitConnectionError = action else {
+            Issue.record("Unexpected action \(action)")
+            return
+        }
     }
 
     @Test

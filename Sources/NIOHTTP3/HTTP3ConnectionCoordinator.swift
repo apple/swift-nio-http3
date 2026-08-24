@@ -848,7 +848,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     func receivedInvalidDatagram(_ error: HTTP3Error) {
         self.eventLoop.assertInEventLoop()
         self.logger.debug("Emitting connection error", metadata: [LoggingKeys.error: "\(error)"])
-        switch self.connectionStateMachine.emitConnectionErrorFromStream(error: error) {
+        switch self.connectionStateMachine.emitConnectionErrorFromStream(error: error, allowNotStarted: true) {
         case .emitConnectionError(let error):
             self.connection?.emitConnectionError(error)
         case .none:

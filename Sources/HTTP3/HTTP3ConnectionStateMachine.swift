@@ -168,14 +168,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case connectionError(HTTP3Error)
 
         @inline(never)
-        static func connectionError(
-            code: HTTP3Error.Code,
-            message: String,
-            location: HTTP3Error.SourceLocation
-        ) -> Self {
+        static func datagramsNotNegotiated(location: HTTP3Error.SourceLocation) -> Self {
             let error = HTTP3Error(
-                code: code,
-                message: message,
+                code: .datagramsNotNegotiated,
+                message: "Received an HTTP datagram without having advertised 'SETTINGS_H3_DATAGRAM'",
                 cause: nil,
                 errorCode: .generalProtocolError,
                 location: location
@@ -188,17 +184,16 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
     public func receivedDatagram(streamID: QUICStreamID) -> ReceivedDatagramAction {
         switch self.state {
         case .notStarted(let notStarted):
-            // Buffer if the local peer is willing to receive datagrams.
-            return notStarted.localSettings.h3Datagram ? .buffer : .discard
+            if notStarted.localSettings.h3Datagram {
+                return .buffer
+            } else {
+                return .datagramsNotNegotiated(location: .here())
+            }
 
         case .initialized(let initialized):
-            // Didn't advertise 'SETTINGS_H3_DATAGRAM', discard it.
+            // Didn't advertise 'SETTINGS_H3_DATAGRAM': emit an error.
             guard initialized.localAllowsDatagrams else {
-                return .connectionError(
-                    code: .datagramsNotNegotiated,
-                    message: "Received an HTTP datagram without having advertised 'SETTINGS_H3_DATAGRAM'",
-                    location: .here()
-                )
+                return .datagramsNotNegotiated(location: .here())
             }
 
             // If the connection is quiescing then the datagram may never be allowed on some streams.
@@ -1219,7 +1214,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     /// Call this when a stream wants to emit a connection-level error.
     @_spi(PackageInternal)
-    public mutating func emitConnectionErrorFromStream(error: HTTP3Error) -> EmitConnectionErrorAction {
+    public mutating func emitConnectionErrorFromStream(
+        error: HTTP3Error,
+        allowNotStarted: Bool = false
+    ) -> EmitConnectionErrorAction {
         switch consume self.state {
         case .finished:
             // We already finished, so emitting a connection error is now pointless.
@@ -1229,7 +1227,12 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             self = .init(state: .finished)
             return .emitConnectionError(error)
         case .notStarted:
-            fatalError("Stream emitted connection error before started")
+            if allowNotStarted {
+                self = .init(state: .finished)
+                return .emitConnectionError(error)
+            } else {
+                fatalError("Stream emitted connection error before started")
+            }
         }
     }
 
