@@ -669,7 +669,7 @@ struct EndToEndTests {
         // Write a settings frame, which is illegal on the request stream
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler
         _ = requestStreamChannel.eventLoop.submit {
-            let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(type: HTTP3StreamHandler.self)
+            let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(type: HTTP3StreamHandler<HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>>.self)
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             var buffer = ByteBuffer()
             buffer.writeHTTP3PartialFrame(.settings(HTTP3Settings()), preferHuffmanEncoding: false)
@@ -900,7 +900,7 @@ struct EndToEndTests {
         // Write a malformed header, which can't decode.
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler.
         _ = requestStreamChannel.eventLoop.submit {
-            let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(type: HTTP3StreamHandler.self)
+            let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(type: HTTP3StreamHandler<HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>>.self)
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             var buffer = ByteBuffer()
             buffer.writeHTTP3PartialFrame(

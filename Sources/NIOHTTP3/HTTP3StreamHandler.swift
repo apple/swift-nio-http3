@@ -18,10 +18,28 @@ import Logging
 import NIOCore
 import NIOQUICHelpers
 
+/// This is an internal protocol that shall only be implemented by HTTP3ConnectionCoordinator
+/// It exists to enable testing of `HTTP3StreamHandler` in isolation.
+protocol HTTP3StreamDelegate {
+    /// Ask the connection coordinator to encode some fields into a partial header.
+    /// It will handle sending any necessary instructions to the remote, on the dedicated QPACK stream.
+    func encodeHeaders(_: [HTTPField], forStream streamID: QUICStreamID) -> HTTP3PartialFrame.Headers
+
+    /// Tell the connection coordinator that we want to decode a header. It will handle queueing and call back into us when it has a result.
+    func decodeHeaders(_: HTTP3PartialFrame.Headers, forStream streamID: QUICStreamID)
+
+    /// Tell the connection state when this stream becomes inactive.
+    /// - Parameter sawEOF: `true` if we read an EOF before closure. That means no incoming frames were dropped.
+    func onStreamClosed(_ sawEOF: Bool, streamID: QUICStreamID, streamType: HTTP3StreamType.Framed)
+
+    /// Ask the connection coordinator to send connection-level error to the remote peer.
+    func onConnectionError(_ error: HTTP3Error)
+}
+
 /// This handler should be added to every incoming and outgoing HTTP/3 stream which carries HTTP frames.
 /// It handles encoding and decoding of these frames.
 /// It will only pass through valid frames, and handles things such as QPACK header decoding.
-final class HTTP3StreamHandler: ChannelDuplexHandler {
+final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>: ChannelDuplexHandler {
     typealias InboundIn = ByteBuffer
     typealias InboundOut = HTTP3Frame
 
@@ -31,16 +49,7 @@ final class HTTP3StreamHandler: ChannelDuplexHandler {
     private let streamID: QUICStreamID
     private let streamType: HTTP3StreamType.Framed
 
-    /// Ask the connection coordinator to encode some fields into a partial header.
-    /// It will handle sending any necessary instructions to the remote, on the dedicated QPACK stream.
-    private let qpackEncoder: ([HTTPField], QUICStreamID) -> HTTP3PartialFrame.Headers
-    /// Tell the connection coordinator that we want to decode a header. It will handle queueing and call back into us when it has a result.
-    private let qpackDecoder: (HTTP3PartialFrame.Headers, QUICStreamID) -> Void
-    /// Tell the connection state when this stream becomes inactive.
-    /// - Parameter sawEOF: `true` if we read an EOF before closure. That means no incoming frames were dropped.
-    private let onStreamClosed: (_ sawEOF: Bool, QUICStreamID, HTTP3StreamType.Framed) -> Void
-    /// Ask the connection coordinator to send connection-level error to the remote peer.
-    private let onConnectionError: (HTTP3Error) -> Void
+    private let delegate: Delegate
 
     /// The channel context. This handler can only be in one channel at a time.
     private var context: ChannelHandlerContext?
@@ -60,19 +69,13 @@ final class HTTP3StreamHandler: ChannelDuplexHandler {
         stateMachine: consuming HTTP3StreamStateMachine,
         streamID: QUICStreamID,
         streamType: HTTP3StreamType.Framed,
-        qpackEncoder: @escaping ([HTTPField], QUICStreamID) -> HTTP3PartialFrame.Headers,
-        qpackDecoder: @escaping (HTTP3PartialFrame.Headers, QUICStreamID) -> Void,
-        onStreamClosed: @escaping (Bool, QUICStreamID, HTTP3StreamType.Framed) -> Void,
-        onConnectionError: @escaping (HTTP3Error) -> Void,
+        delegate: Delegate,
         logger: Logger
     ) {
         self.streamID = streamID
         self.streamType = streamType
         self.stateMachine = stateMachine
-        self.qpackEncoder = qpackEncoder
-        self.qpackDecoder = qpackDecoder
-        self.onStreamClosed = onStreamClosed
-        self.onConnectionError = onConnectionError
+        self.delegate = delegate
         self.logger = logger
     }
 
@@ -142,7 +145,7 @@ final class HTTP3StreamHandler: ChannelDuplexHandler {
                     // ignore that now
                     break
                 case .emitConnectionError(let error):
-                    self.onConnectionError(error)
+                    self.delegate.onConnectionError(error)
                 case .alreadyClosed, .needMoreBytes, .previousError, .callAgain:
                     fatalError("Action shouldn't have been buffered")
                 }
@@ -150,7 +153,7 @@ final class HTTP3StreamHandler: ChannelDuplexHandler {
             if didFireChannelRead {
                 context.fireChannelReadComplete()
             }
-            self.onStreamClosed(seenEOF, self.streamID, self.streamType)
+            self.delegate.onStreamClosed(seenEOF, streamID: self.streamID, streamType: self.streamType)
         }
         // Cleanup reference to avoid leaks.
         self.context = nil
@@ -210,7 +213,7 @@ final class HTTP3StreamHandler: ChannelDuplexHandler {
                 didFireChannelRead = true
             case .decodeHeader(let partialHeader):
                 self.logger.trace("HTTP3StreamHandler waiting for QPACK decode")
-                self.qpackDecoder(partialHeader, self.streamID)
+                self.delegate.decodeHeaders(partialHeader, forStream: self.streamID)
             case .emitStreamError(let error):
                 context.triggerUserOutboundEvent(
                     QUICStopSendingEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
@@ -218,7 +221,7 @@ final class HTTP3StreamHandler: ChannelDuplexHandler {
                 )
                 context.fireErrorCaught(error)
             case .emitConnectionError(let error):
-                self.onConnectionError(error)
+                self.delegate.onConnectionError(error)
             }
         }
         // If we didn't read anything in this loop then we should also not fire the read complete
@@ -261,7 +264,7 @@ final class HTTP3StreamHandler: ChannelDuplexHandler {
             context.fireErrorCaught(error)
             promise?.fail(error)
         case .encodeHeaders(let fields):
-            let encoded = self.qpackEncoder(fields, self.streamID)
+            let encoded = self.delegate.encodeHeaders(fields, forStream: self.streamID)
             let action = self.stateMachine.gotHeaderEncodeResult(encoded, from: fields, into: &self.pendingBytes!)
 
             switch action {
