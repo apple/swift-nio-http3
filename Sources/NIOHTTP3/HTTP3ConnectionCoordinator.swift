@@ -543,7 +543,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             stateMachine: .init(
                 streamType: streamType,
                 incoming: incoming,
-                preferHuffmanEncoding: preferHuffmanEncoding
+                preferHuffmanEncoding: self.preferHuffmanEncoding
             ),
             streamID: streamID,
             streamType: streamType,

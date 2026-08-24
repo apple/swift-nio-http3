@@ -25,58 +25,80 @@ public struct HTTP3ErrorCode: Hashable, Sendable {
     public var rawValue: UInt64
 
     /// Create an ``HTTP3ErrorCode`` from its raw value.
+    @inlinable
     public init(rawValue: UInt64) {
         self.rawValue = rawValue
     }
 
     /// No error. This is used when the connection or stream needs to be closed, but there is no error to signal.
-    public static let noError = HTTP3ErrorCode(rawValue: 0x0100)
+    @inlinable
+    public static var noError: HTTP3ErrorCode { Self(rawValue: 0x0100) }
     /// Peer violated protocol requirements in a way that does not match a more specific error code or endpoint declines to use the more specific error code.
-    public static let generalProtocolError = HTTP3ErrorCode(rawValue: 0x0101)
+    @inlinable
+    public static var generalProtocolError: HTTP3ErrorCode { Self(rawValue: 0x0101) }
     /// An internal error has occurred in the HTTP stack.
-    public static let internalError = HTTP3ErrorCode(rawValue: 0x0102)
+    @inlinable
+    public static var internalError: HTTP3ErrorCode { Self(rawValue: 0x0102) }
     /// The endpoint detected that its peer created a stream that it will not accept.
-    public static let streamCreationError = HTTP3ErrorCode(rawValue: 0x0103)
+    @inlinable
+    public static var streamCreationError: HTTP3ErrorCode { Self(rawValue: 0x0103) }
     /// A stream required by the HTTP/3 connection was closed or reset.
-    public static let closedCriticalStream = HTTP3ErrorCode(rawValue: 0x0104)
+    @inlinable
+    public static var closedCriticalStream: HTTP3ErrorCode { Self(rawValue: 0x0104) }
     /// A frame was received that was not permitted in the current state or on the current stream.
-    public static let frameUnexpected = HTTP3ErrorCode(rawValue: 0x0105)
+    @inlinable
+    public static var frameUnexpected: HTTP3ErrorCode { Self(rawValue: 0x0105) }
     /// A frame that fails to satisfy layout requirements or with an invalid size was received.
-    public static let frameError = HTTP3ErrorCode(rawValue: 0x0106)
+    @inlinable
+    public static var frameError: HTTP3ErrorCode { Self(rawValue: 0x0106) }
     /// The endpoint detected that its peer is exhibiting a behavior that might be generating excessive load.
-    public static let excessiveLoad = HTTP3ErrorCode(rawValue: 0x0107)
+    @inlinable
+    public static var excessiveLoad: HTTP3ErrorCode { Self(rawValue: 0x0107) }
     /// A stream ID or push ID was used incorrectly, such as exceeding a limit, reducing a limit, or being reused.
-    public static let idError = HTTP3ErrorCode(rawValue: 0x0108)
+    @inlinable
+    public static var idError: HTTP3ErrorCode { Self(rawValue: 0x0108) }
     /// An endpoint detected an error in the payload of a SETTINGS frame.
-    public static let settingsError = HTTP3ErrorCode(rawValue: 0x0109)
+    @inlinable
+    public static var settingsError: HTTP3ErrorCode { Self(rawValue: 0x0109) }
     /// No SETTINGS frame was received at the beginning of the control stream.
-    public static let missingSettings = HTTP3ErrorCode(rawValue: 0x010a)
+    @inlinable
+    public static var missingSettings: HTTP3ErrorCode { Self(rawValue: 0x010a) }
     /// A server rejected a request without performing any application processing.
-    public static let requestRejected = HTTP3ErrorCode(rawValue: 0x010b)
+    @inlinable
+    public static var requestRejected: HTTP3ErrorCode { Self(rawValue: 0x010b) }
     /// The request or its response (including pushed response) is cancelled.
-    public static let requestCancelled = HTTP3ErrorCode(rawValue: 0x010c)
+    @inlinable
+    public static var requestCancelled: HTTP3ErrorCode { Self(rawValue: 0x010c) }
     /// The client's stream terminated without containing a fully formed request.
-    public static let requestIncomplete = HTTP3ErrorCode(rawValue: 0x010d)
+    @inlinable
+    public static var requestIncomplete: HTTP3ErrorCode { Self(rawValue: 0x010d) }
     /// An HTTP message was malformed and cannot be processed.
-    public static let messageError = HTTP3ErrorCode(rawValue: 0x010e)
+    @inlinable
+    public static var messageError: HTTP3ErrorCode { Self(rawValue: 0x010e) }
     /// The TCP connection established in response to a CONNECT request was reset or abnormally closed.
-    public static let connectError = HTTP3ErrorCode(rawValue: 0x010f)
+    @inlinable
+    public static var connectError: HTTP3ErrorCode { Self(rawValue: 0x010f) }
     /// The requested operation cannot be served over HTTP/3. The peer should retry over HTTP/1.1.
-    public static let versionFallback = HTTP3ErrorCode(rawValue: 0x0110)
+    @inlinable
+    public static var versionFallback: HTTP3ErrorCode { Self(rawValue: 0x0110) }
 
     // MARK: QPACK (RFC 9204)
 
     /// The decoder failed to interpret an encoded field section and is not able to continue decoding that field section.
-    public static let qpackDecompressionFailed = HTTP3ErrorCode(rawValue: 0x0200)
+    @inlinable
+    public static var qpackDecompressionFailed: HTTP3ErrorCode { Self(rawValue: 0x0200) }
     /// The decoder failed to interpret an encoder instruction received on the encoder stream.
-    public static let qpackEncoderStreamError = HTTP3ErrorCode(rawValue: 0x0201)
+    @inlinable
+    public static var qpackEncoderStreamError: HTTP3ErrorCode { Self(rawValue: 0x0201) }
     /// The encoder failed to interpret a decoder instruction received on the decoder stream.
-    public static let qpackDecoderStreamError = HTTP3ErrorCode(rawValue: 0x0202)
+    @inlinable
+    public static var qpackDecoderStreamError: HTTP3ErrorCode { Self(rawValue: 0x0202) }
 
     // MARK: Datagrams and Capsule (RFC 9297)
 
     /// Datagram or Capsule protocol parse error.
-    public static let datagramError = HTTP3ErrorCode(rawValue: 0x33)
+    @inlinable
+    public static var datagramError: HTTP3ErrorCode { Self(rawValue: 0x33) }
 }
 
 extension HTTP3ErrorCode: CustomDebugStringConvertible {
