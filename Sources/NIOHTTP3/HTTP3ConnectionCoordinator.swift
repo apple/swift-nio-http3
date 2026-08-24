@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import DequeModule
 @_spi(PackageInternal) import HTTP3
 import HTTPTypes
 import Logging
