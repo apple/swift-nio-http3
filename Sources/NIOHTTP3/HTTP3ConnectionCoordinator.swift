@@ -34,7 +34,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     private let preferHuffmanEncoding: Bool
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.
-    private var streamHandlers = [QUICStreamID: HTTP3StreamHandler]()
+    private var streamHandlers = [QUICStreamID: HTTP3StreamHandler<HTTP3ConnectionCoordinator<QUICStreamCreator>>]()
 
     init(
         eventLoop: any EventLoop,
@@ -547,12 +547,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             ),
             streamID: streamID,
             streamType: streamType,
-            qpackEncoder: self.encodeHeaders,
-            qpackDecoder: self.decodeHeaders,
-            onStreamClosed: { seenEOF, streamID, streamType in
-                self.onStreamClosed(streamID: streamID, seenEOF: seenEOF, streamType: .init(streamType))
-            },
-            onConnectionError: self.emitConnectionErrorFromStream,
+            delegate: self,
             logger: logger
         )
         try streamChannel.pipeline.syncOperations.addHandler(streamHandler)
@@ -561,14 +556,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
     // MARK: Actions
 
-    private func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> HTTP3PartialFrame.Headers {
+    func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> HTTP3PartialFrame.Headers {
         self.eventLoop.assertInEventLoop()
         let result = self.connectionStateMachine.encodeHeaders(headers, forStream: streamID)
         self.outboundQPACKEncoderHandler.sendInstructions(result.instructions)
         return HTTP3PartialFrame.Headers(fieldSection: result.fieldSection)
     }
 
-    private func decodeHeaders(_ headers: HTTP3PartialFrame.Headers, forStream streamID: QUICStreamID) {
+    func decodeHeaders(_ headers: HTTP3PartialFrame.Headers, forStream streamID: QUICStreamID) {
         self.eventLoop.assertInEventLoop()
         let action = self.connectionStateMachine.decodeHeaders(headers, forStream: streamID)
         switch action {
@@ -793,4 +788,16 @@ extension Channel {
         buffer.writeEncodedInteger(streamType.rawValue, strategy: .quic)
         self.writeAndFlush(buffer, promise: nil)
     }
+}
+
+extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
+    func onStreamClosed(_ sawEOF: Bool, streamID: NIOQUICHelpers.QUICStreamID, streamType: HTTP3.HTTP3StreamType.Framed)
+    {
+        self.onStreamClosed(streamID: streamID, seenEOF: sawEOF, streamType: .init(streamType))
+    }
+
+    func onConnectionError(_ error: HTTP3.HTTP3Error) {
+        self.emitConnectionErrorFromStream(error)
+    }
+
 }
