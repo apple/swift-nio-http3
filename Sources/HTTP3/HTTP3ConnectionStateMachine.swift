@@ -165,6 +165,23 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case buffer
         case forward
         case discard
+        case connectionError(HTTP3Error)
+
+        @inline(never)
+        static func connectionError(
+            code: HTTP3Error.Code,
+            message: String,
+            location: HTTP3Error.SourceLocation
+        ) -> Self {
+            let error = HTTP3Error(
+                code: code,
+                message: message,
+                cause: nil,
+                errorCode: .generalProtocolError,
+                location: location
+            )
+            return .connectionError(error)
+        }
     }
 
     @_spi(PackageInternal)
@@ -176,7 +193,13 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
         case .initialized(let initialized):
             // Didn't advertise 'SETTINGS_H3_DATAGRAM', discard it.
-            guard initialized.localAllowsDatagrams else { return .discard }
+            guard initialized.localAllowsDatagrams else {
+                return .connectionError(
+                    code: .datagramsNotNegotiated,
+                    message: "Received an HTTP datagram without having advertised 'SETTINGS_H3_DATAGRAM'",
+                    location: .here()
+                )
+            }
 
             // If the connection is quiescing then the datagram may never be allowed on some streams.
             if initialized.type == .server {

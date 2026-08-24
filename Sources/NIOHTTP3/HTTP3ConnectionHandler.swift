@@ -345,10 +345,14 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             return
         }
 
-        let forward = self.coordinator.receivedDatagram(datagram)
-
-        if forward {
+        switch self.coordinator.receivedDatagram(datagram) {
+        case .deliver:
             context.fireChannelRead(self.wrapInboundOut(datagram))
+        case .drop:
+            ()  // Buffered or dropped by the coordinator.
+        case .closeConnection(let error):
+            self.coordinator.receivedInvalidDatagram(error)
+            context.fireErrorCaught(error)
         }
     }
 

@@ -83,25 +83,33 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
     // MARK: Datagram
 
-    /// Returns whether the connection should forward the given datagram.
+    enum ReceivedDatagramAction {
+        /// Deliver the datagram to the connection channel.
+        case deliver
+        /// Don't deliver the datagram: it was either buffered or dropped.
+        case drop
+        /// Close the connection with the given error.
+        case closeConnection(HTTP3Error)
+    }
+
+    /// Returns what the connection should do with the given datagram.
     ///
     /// Datagrams may be buffered if the stream isn't open yet or dropped if the connection
     /// isn't in a state to receive datagrams.
-    func receivedDatagram(_ datagram: HTTP3Datagram) -> Bool {
+    func receivedDatagram(_ datagram: HTTP3Datagram) -> ReceivedDatagramAction {
         self.eventLoop.assertInEventLoop()
-        let forward: Bool
 
         switch self.connectionStateMachine.receivedDatagram(streamID: datagram.streamID) {
         case .forward:
-            forward = true
+            return .deliver
         case .buffer:
             self.datagramBuffer.append(datagram)
-            forward = false
+            return .drop
         case .discard:
-            forward = false
+            return .drop
+        case .connectionError(let error):
+            return .closeConnection(error)
         }
-
-        return forward
     }
 
     /// Whether a datagram associated with the given stream may be sent to the remote.
@@ -835,7 +843,8 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         }
     }
 
-    /// Call this when the remote sends a datagram which can't be parsed.
+    /// Call this when the remote sends a datagram which can't be accepted, i.e. it can't be parsed
+    /// or wasn't negotiated.
     func receivedInvalidDatagram(_ error: HTTP3Error) {
         self.eventLoop.assertInEventLoop()
         self.logger.debug("Emitting connection error", metadata: [LoggingKeys.error: "\(error)"])

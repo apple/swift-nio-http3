@@ -875,14 +875,14 @@ struct HTTP3ConnectionStateMachineTests {
             localSettings: HTTP3Settings(h3Datagram: true)
         )
 
-        #expect(stateMachine.receivedDatagram(streamID: 0) == .buffer)
+        #expect(stateMachine.receivedDatagram(streamID: 0).isBuffer)
 
         let streamID = idGenerator.inboundBidi()
         #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
-        #expect(stateMachine.receivedDatagram(streamID: streamID) == .forward)
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
 
         _ = stateMachine.streamClosed(streamID: streamID, seenEOF: true, streamType: .request)
-        #expect(stateMachine.receivedDatagram(streamID: streamID) == .discard)
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isDiscard)
     }
 
     @Test
@@ -898,15 +898,15 @@ struct HTTP3ConnectionStateMachineTests {
         #expect(stateMachine.sendGoaway(goawayID: 4)?.isSendGoaway == true)
 
         // Stream 0 is below the GOAWAY ID so it can still open.
-        #expect(stateMachine.receivedDatagram(streamID: 0) == .buffer)
+        #expect(stateMachine.receivedDatagram(streamID: 0).isBuffer)
 
         // Stream 4 will never open, so there's no point buffering its datagrams.
-        #expect(stateMachine.receivedDatagram(streamID: 4) == .discard)
+        #expect(stateMachine.receivedDatagram(streamID: 4).isDiscard)
 
         // A rejected stream is tracked as open until its stream channel closes, so openness alone
         // isn't enough to tell that its datagrams can't be delivered.
         #expect(stateMachine.inboundRequestStreamReceived(streamID: 4).isEmitStreamError)
-        #expect(stateMachine.receivedDatagram(streamID: 4) == .discard)
+        #expect(stateMachine.receivedDatagram(streamID: 4).isDiscard)
     }
 
     @Test
@@ -924,7 +924,7 @@ struct HTTP3ConnectionStateMachineTests {
 
         let streamID = idGenerator.outboundBidi()
         stateMachine.outboundRequestStreamReady(streamID: streamID)
-        #expect(stateMachine.receivedDatagram(streamID: streamID) == .forward)
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
     }
 
     @Test
@@ -934,8 +934,17 @@ struct HTTP3ConnectionStateMachineTests {
 
         let streamID = idGenerator.inboundBidi()
         #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
-        #expect(stateMachine.receivedDatagram(streamID: streamID) == .discard)
-        #expect(stateMachine.receivedDatagram(streamID: 0) == .discard)
+        stateMachine.expectReceivingDatagramIsConnectionError(
+            streamID: streamID,
+            code: .datagramsNotNegotiated
+        )
+        stateMachine.expectReceivingDatagramIsConnectionError(streamID: 0, code: .datagramsNotNegotiated)
+    }
+
+    @Test
+    func testReceivedDatagramBeforeStartedWithoutLocalSupport() {
+        let stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
+        #expect(stateMachine.receivedDatagram(streamID: 0).isDiscard)
     }
 
     @Test
@@ -1018,6 +1027,29 @@ extension HTTP3ConnectionStateMachine.InboundRequestStreamReceivedAction {
         switch self {
         case .emitStreamError: return true
         case .addHandlers, .emitConnectionError: return false
+        }
+    }
+}
+
+extension HTTP3ConnectionStateMachine.ReceivedDatagramAction {
+    fileprivate var isBuffer: Bool {
+        switch self {
+        case .buffer: return true
+        case .forward, .discard, .connectionError: return false
+        }
+    }
+
+    fileprivate var isForward: Bool {
+        switch self {
+        case .forward: return true
+        case .buffer, .discard, .connectionError: return false
+        }
+    }
+
+    fileprivate var isDiscard: Bool {
+        switch self {
+        case .discard: return true
+        case .buffer, .forward, .connectionError: return false
         }
     }
 }
@@ -1119,6 +1151,22 @@ extension HTTP3ConnectionStateMachine {
             Issue.record("Datagram for stream \(streamID) was not rejected", sourceLocation: sourceLocation)
         case .drop(let error):
             error.expect(code: code, h3ErrorCode: nil, sourceLocation: sourceLocation)
+        }
+    }
+
+    func expectReceivingDatagramIsConnectionError(
+        streamID: QUICStreamID,
+        code: HTTP3Error.Code,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        switch self.receivedDatagram(streamID: streamID) {
+        case .buffer, .forward, .discard:
+            Issue.record(
+                "Datagram for stream \(streamID) didn't close the connection",
+                sourceLocation: sourceLocation
+            )
+        case .connectionError(let error):
+            error.expect(code: code, h3ErrorCode: .generalProtocolError, sourceLocation: sourceLocation)
         }
     }
 
