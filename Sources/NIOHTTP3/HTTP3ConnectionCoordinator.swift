@@ -791,10 +791,11 @@ extension Channel {
 }
 
 extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
-    func onStreamClosed(_ sawEOF: Bool, streamID: NIOQUICHelpers.QUICStreamID, streamType: HTTP3.HTTP3StreamType.Framed) {
+    func onStreamClosed(_ sawEOF: Bool, streamID: NIOQUICHelpers.QUICStreamID, streamType: HTTP3.HTTP3StreamType.Framed)
+    {
         self.onStreamClosed(streamID: streamID, seenEOF: sawEOF, streamType: .init(streamType))
     }
-    
+
     func onConnectionError(_ error: HTTP3.HTTP3Error) {
         self.emitConnectionErrorFromStream(error)
     }

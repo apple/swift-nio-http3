@@ -53,9 +53,11 @@ final class TestDelegate: HTTP3StreamDelegate {
     let _onConnectionError: (HTTP3Error) -> Void
 
     init(
-        encodeHeaders: @escaping ([HTTPField], QUICStreamID) -> HTTP3PartialFrame.Headers = TestDelegate.makeStaticEncoder(),
+        encodeHeaders: @escaping ([HTTPField], QUICStreamID) -> HTTP3PartialFrame.Headers =
+            TestDelegate.makeStaticEncoder(),
         decodeHeaders: @escaping (HTTP3PartialFrame.Headers, QUICStreamID) -> Void,
-        onStreamClosed: @escaping (Bool, QUICStreamID, HTTP3StreamType.Framed) -> Void = TestDelegate.makeUnexpectedStreamClose(),
+        onStreamClosed: @escaping (Bool, QUICStreamID, HTTP3StreamType.Framed) -> Void =
+            TestDelegate.makeUnexpectedStreamClose(),
         onConnectionError: @escaping (HTTP3Error) -> Void = TestDelegate.makeUnexpectedConnectionError()
     ) {
         self._encodeHeaders = encodeHeaders
