@@ -27,7 +27,7 @@ extension ByteBuffer {
     /// - Returns: Returns the number of bytes used to encode the integer.
     @discardableResult
     @inlinable
-    package mutating func writeQPACKPrefixedInteger<Integer: FixedWidthInteger>(
+    mutating func writeQPACKPrefixedInteger<Integer: FixedWidthInteger>(
         _ value: Integer,
         prefix: Int,
         prefixBits: UInt8 = 0
@@ -74,7 +74,7 @@ extension ByteBuffer {
     /// If no integer can be read, returns nil and leaves the index as it was.
     /// - Precondition: The prefix MUST be between 1 and 8 inclusive.
     /// - Throws: IntegerReadingError if the result doesn't fit in the requested type.
-    package mutating func readQPACKPrefixedInteger<Integer: FixedWidthInteger & Sendable>(
+    mutating func readQPACKPrefixedInteger<Integer: FixedWidthInteger & Sendable>(
         as: Integer.Type = Integer.self,
         withPrefix prefix: Int
     ) throws(IntegerReadingError) -> Integer? {

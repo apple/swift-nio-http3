@@ -12,11 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIOCore
-package import QPACK
+public import NIOCore
+@_spi(PackageInternal) public import QPACK
 
 extension QPACKDecoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 extension QPACKEncoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 
+@_spi(PackageInternal)
 extension QPACKDecoderInstructionEncoder: MessageToByteEncoder {}
+
+@_spi(PackageInternal)
 extension QPACKEncoderInstructionEncoder: MessageToByteEncoder {}

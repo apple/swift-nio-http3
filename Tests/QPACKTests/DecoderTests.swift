@@ -15,8 +15,9 @@
 import HTTPTypes
 import NIOCore
 import NIOQUICHelpers
-import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import QPACK
 
 struct DecoderTests {
     @Test

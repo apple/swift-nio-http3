@@ -13,9 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 import NIOEmbedded
-import NIOHTTP3
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
+
+@testable import NIOHTTP3
 
 struct QPACKOutboundDecoderStreamHandlerTests {
     @Test

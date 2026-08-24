@@ -14,14 +14,14 @@
 
 /// Decides when to send a section acknowledgment (RFC 9204 § 4.4.1).
 /// This allows us to conform to RFC 9204 § 2.2.2.
-package struct QPACKStateSynchronizer {
+struct QPACKStateSynchronizer {
     private var lastCountAcknowledged: Int = 0
 
-    package init() {}
+    init() {}
 
     /// Called when a field section has been processed.
     /// - Parameter insertCount: The required insert count of the processed section as per RFC 9204 § 4.5.1.
-    package mutating func sectionProcessed(withRequiredInsertCount insertCount: Int) {
+    mutating func sectionProcessed(withRequiredInsertCount insertCount: Int) {
         if self.lastCountAcknowledged < insertCount {
             self.lastCountAcknowledged = insertCount
         }
@@ -30,7 +30,7 @@ package struct QPACKStateSynchronizer {
     /// Called when a new header has been added to the dynamic table of the decoder.
     /// - Parameter insertCount: The total number of dynamic-table inserts that have been performed so far.
     /// - Returns: true if an `insert count increment decoder instruction` (RFC 9204 § 4.4.3) should be sent.
-    package mutating func dynamicTableEntryAdded(insertCount: Int) -> Bool {
+    mutating func dynamicTableEntryAdded(insertCount: Int) -> Bool {
         if self.lastCountAcknowledged < insertCount {
             self.lastCountAcknowledged = insertCount
             return true

@@ -70,21 +70,24 @@ extension HTTP3Setting {
         /// The default value is zero. This is the equivalent of the `SETTINGS_HEADER_TABLE_SIZE` from HTTP/2.
         ///
         /// See [RFC 9204 § 5](https://datatracker.ietf.org/doc/html/rfc9204#name-configuration)
-        public static let qpackMaximumTableCapacity = Self(extensionSetting: 0x01)!
+        @inlinable
+        public static var qpackMaximumTableCapacity: HTTP3Setting.Identifier { Self(extensionSetting: 0x01)! }
 
         /// Corresponds to `HTTP3_SETTINGS_MAX_FIELD_SECTION_SIZE`.
         ///
         /// The default value is unlimited, there is no limit on the field section size..
         ///
         /// See [RFC 9114 § 7.2.4.1](https://www.rfc-editor.org/rfc/rfc9114.html#section-7.2.4.1)
-        public static let maximumFieldSectionSize = Self(extensionSetting: 0x06)!
+        @inlinable
+        public static var maximumFieldSectionSize: HTTP3Setting.Identifier { Self(extensionSetting: 0x06)! }
 
         /// Corresponds to `SETTINGS_QPACK_BLOCKED_STREAMS`.
         ///
         /// The default value is zero.
         ///
         /// See [RFC 9204 § 5](https://datatracker.ietf.org/doc/html/rfc9204#name-configuration)
-        public static let qpackBlockedStreams = Self(extensionSetting: 0x07)!
+        @inlinable
+        public static var qpackBlockedStreams: HTTP3Setting.Identifier { Self(extensionSetting: 0x07)! }
 
         /// Corresponds to `SETTINGS_H3_DATAGRAM`.
         ///
@@ -92,6 +95,7 @@ extension HTTP3Setting {
         /// that the sender is willing to receive HTTP datagrams.
         ///
         /// See [RFC 9297 § 2.1.1](https://www.rfc-editor.org/rfc/rfc9297.html#section-2.1.1)
-        public static let h3Datagram = Self(extensionSetting: 0x33)!
+        @inlinable
+        public static var h3Datagram: HTTP3Setting.Identifier { Self(extensionSetting: 0x33)! }
     }
 }

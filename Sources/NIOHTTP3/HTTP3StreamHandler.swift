@@ -12,21 +12,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTP3
-package import HTTPTypes
-package import Logging
-package import NIOCore
-package import NIOQUICHelpers
+@_spi(PackageInternal) import HTTP3
+import HTTPTypes
+import Logging
+import NIOCore
+import NIOQUICHelpers
 
 /// This handler should be added to every incoming and outgoing HTTP/3 stream which carries HTTP frames.
 /// It handles encoding and decoding of these frames.
 /// It will only pass through valid frames, and handles things such as QPACK header decoding.
-package final class HTTP3StreamHandler: ChannelDuplexHandler {
-    package typealias InboundIn = ByteBuffer
-    package typealias InboundOut = HTTP3Frame
+final class HTTP3StreamHandler: ChannelDuplexHandler {
+    typealias InboundIn = ByteBuffer
+    typealias InboundOut = HTTP3Frame
 
-    package typealias OutboundIn = HTTP3Frame
-    package typealias OutboundOut = ByteBuffer
+    typealias OutboundIn = HTTP3Frame
+    typealias OutboundOut = ByteBuffer
 
     private let streamID: QUICStreamID
     private let streamType: HTTP3StreamType.Framed
@@ -56,7 +56,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
 
     private let logger: Logger
 
-    package init(
+    init(
         stateMachine: consuming HTTP3StreamStateMachine,
         streamID: QUICStreamID,
         streamType: HTTP3StreamType.Framed,
@@ -76,14 +76,14 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         self.logger = logger
     }
 
-    package func handlerAdded(context: ChannelHandlerContext) {
+    func handlerAdded(context: ChannelHandlerContext) {
         guard self.context == nil else {
             fatalError("HTTP3StreamHandler must only be added to one Channel")
         }
         self.context = context
     }
 
-    package func channelInactive(context: ChannelHandlerContext) {
+    func channelInactive(context: ChannelHandlerContext) {
         self.logger.trace("HTTP3StreamHandler.channelInactive")
 
         // Don't leak the pending promise.
@@ -157,7 +157,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         context.fireChannelInactive()
     }
 
-    package func handlerRemoved(context: ChannelHandlerContext) {
+    func handlerRemoved(context: ChannelHandlerContext) {
         // Don't leak the pending promise.
         self.pendingBytes = nil
         self.pendingPromise.take()?.fail(ChannelError.ioOnClosedChannel)
@@ -166,13 +166,13 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         self.context = nil
     }
 
-    package func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let bytes = self.unwrapInboundIn(data)
         self.logger.trace("HTTP3StreamHandler.channelRead", metadata: [LoggingKeys.bytes: "\(bytes.readableBytes)"])
         self.stateMachine.buffer(bytes)
     }
 
-    package func channelReadComplete(context: ChannelHandlerContext) {
+    func channelReadComplete(context: ChannelHandlerContext) {
         self.logger.trace("HTTP3StreamHandler.channelReadComplete")
         // In channelRead, we buffer bytes into the state machine.
         // Now it's time to try and read out as many full frames as possible.
@@ -227,7 +227,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         }
     }
 
-    package func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
+    func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
         let frame = self.unwrapOutboundIn(data)
         self.logger.trace("HTTP3StreamHandler.write", metadata: [LoggingKeys.h3FrameType: "\(frame.type)"])
 
@@ -283,12 +283,12 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         }
     }
 
-    package func flush(context: ChannelHandlerContext) {
+    func flush(context: ChannelHandlerContext) {
         self.emitPendingBytes(context: context)
         context.flush()
     }
 
-    package func close(
+    func close(
         context: ChannelHandlerContext,
         mode: CloseMode,
         promise: EventLoopPromise<Void>?
@@ -310,7 +310,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         }
     }
 
-    package func errorCaught(context: ChannelHandlerContext, error: any Error) {
+    func errorCaught(context: ChannelHandlerContext, error: any Error) {
         switch error {
         case let error as QUICStreamResetError:
             self.logger.trace("Caught RESET_STREAM")
@@ -347,7 +347,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
     }
 
     /// Call this when `header` has been decoded.
-    package func onQPACKDecodeResult(fields: [HTTPField], forHeaders headers: HTTP3PartialFrame.Headers) {
+    func onQPACKDecodeResult(fields: [HTTPField], forHeaders headers: HTTP3PartialFrame.Headers) {
         self.logger.trace("HTTP3StreamHandler.onQPACKDecodeResult")
         guard let context = self.context else {
             // The stream must have been created and registered to get QPACK events and thus already have
@@ -361,7 +361,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
     }
 
     /// Call this if an error is encountered whilst trying to decode `header`.
-    package func onQPACKDecodeError(_ error: HTTP3Error, forHeaders headers: HTTP3PartialFrame.Headers) {
+    func onQPACKDecodeError(_ error: HTTP3Error, forHeaders headers: HTTP3PartialFrame.Headers) {
         guard let context = self.context else {
             // The stream must have been created an registered to get QPACK events and thus already have
             // the context available. Since pending decodes are dropped when the stream closes it must
@@ -373,7 +373,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
         self.channelReadComplete(context: context)
     }
 
-    package func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         if (event as? ChannelEvent) == ChannelEvent.inputClosed {
             // We don't pass this through immediately, we buffer it behind any buffered reads to prevent overtaking.
             self.logger.trace("HTTP3StreamHandler intercepted inputClosed")
@@ -386,7 +386,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
 
     /// A GOAWAY frame was sent with an ID lower than or equal to that of this stream.
     /// I.e., we will NOT process this stream, and we should just close it.
-    package func cancelStreamDueToSendingGoaway() {
+    func cancelStreamDueToSendingGoaway() {
         guard let context = self.context else {
             assertionFailure("Tried to send cancel stream before handler was added")
             return
@@ -414,7 +414,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
 
     /// A GOAWAY frame was received with an ID lower than or equal to that of this stream.
     /// I.e., the remote will NOT process this stream, and we should just close it.
-    package func cancelStreamDueToReceivedGoaway() {
+    func cancelStreamDueToReceivedGoaway() {
         guard let context = self.context else {
             assertionFailure("Tried to propagate stream cancelation before handler was added")
             return
@@ -440,7 +440,7 @@ package final class HTTP3StreamHandler: ChannelDuplexHandler {
     }
 
     /// The remote closed the connection (CONNECTION_CLOSE). All active streams must be cancelled.
-    package func cancelStreamDueToConnectionClose() {
+    func cancelStreamDueToConnectionClose() {
         guard let context = self.context else {
             assertionFailure("Tried to cancel stream before handler was added")
             return

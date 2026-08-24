@@ -12,21 +12,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOCore
-package import QPACK
+import NIOCore
+@_spi(PackageInternal) import QPACK
 
 /// Read decoder instructions from a channel and give them to a callback.
 /// This belongs on the incoming decoder stream.
 /// The decoder instructions come from the remote decoder and should be fed into the local encoder.
-package final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
-    package typealias InboundIn = QPACKDecoderInstruction
+final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
+    typealias InboundIn = QPACKDecoderInstruction
 
     /// Called when an incoming instruction is successfully read.
     private var onReceivedInstruction: (QPACKDecoderInstruction) -> Void
     /// Called when an error is caught on this channel.
     private var onError: (any Error) -> Void
 
-    package init(
+    init(
         onReceivedInstruction: @escaping (QPACKDecoderInstruction) -> Void,
         onError: @escaping (any Error) -> Void
     ) {
@@ -34,12 +34,12 @@ package final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
         self.onError = onError
     }
 
-    package func errorCaught(context: ChannelHandlerContext, error: any Error) {
+    func errorCaught(context: ChannelHandlerContext, error: any Error) {
         self.onError(error)
         context.fireErrorCaught(error)
     }
 
-    package func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let instruction = unwrapInboundIn(data)
         self.onReceivedInstruction(instruction)
         context.fireChannelRead(data)

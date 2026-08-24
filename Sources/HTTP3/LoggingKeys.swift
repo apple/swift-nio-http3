@@ -13,12 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 package enum LoggingKeys {
-    package static let h3StreamType = "h3.stream.type"
-    package static let h3Frame = "h3.frame"
-    package static let h3FrameType = "h3.frame.type"
-    package static let quicStreamID = "quic.stream.id"
-    package static let error = "error"
-    package static let bytes = "bytes"
-    package static let goawayID = "h3.goaway.id"
-    package static let reason = "reason"
+    package static var h3StreamType: String { "h3.stream.type" }
+    package static var h3Frame: String { "h3.frame" }
+    package static var h3FrameType: String { "h3.frame.type" }
+    package static var quicStreamID: String { "quic.stream.id" }
+    package static var error: String { "error" }
+    package static var bytes: String { "bytes" }
+    package static var goawayID: String { "h3.goaway.id" }
+    package static var reason: String { "reason" }
 }

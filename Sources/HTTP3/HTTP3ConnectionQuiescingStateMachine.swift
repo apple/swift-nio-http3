@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOQUICHelpers
+import NIOQUICHelpers
 
-package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
+struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
     private enum State: ~Copyable {
         /// Neither side has started quiescing yet.
         case notQuiesced(NotQuiesced)
@@ -111,11 +111,11 @@ package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
         self.state = state
     }
 
-    package init(type: HTTP3ConnectionType) {
+    init(type: HTTP3ConnectionType) {
         self.init(state: .notQuiesced(.init(type: type)))
     }
 
-    package enum ReceivedGoawayAction {
+    enum ReceivedGoawayAction {
         /// Streams with ids equal to or above the given id should be cancelled. If there are no such streams, the connection should be closed.
         case cancelStreamsOrCloseIfNone(lowestIDToCancel: QUICStreamID)
         case emitConnectionError(HTTP3Error)
@@ -155,7 +155,7 @@ package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
         }
     }
 
-    package mutating func receivedGoaway(newGoawayID: HTTP3GoawayID) -> ReceivedGoawayAction? {
+    mutating func receivedGoaway(newGoawayID: HTTP3GoawayID) -> ReceivedGoawayAction? {
         @inline(never)
         func invalidGoawayStreamIDError(location: HTTP3Error.SourceLocation) -> HTTP3Error {
             HTTP3Error(
@@ -262,14 +262,14 @@ package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
         }
     }
 
-    package enum SendGoawayAction {
+    enum SendGoawayAction {
         /// Write a GOAWAY frame
         case sendGoaway(id: HTTP3GoawayID)
         /// Throw an error: the caller of this function has made a mistake and gave us an invalid id.
         case throwError(HTTP3Error)
     }
 
-    package mutating func sendGoaway(goawayID: HTTP3GoawayID) -> SendGoawayAction {
+    mutating func sendGoaway(goawayID: HTTP3GoawayID) -> SendGoawayAction {
         switch self.connectionType {
         case .client:
             // We are sending the server a goaway, so the id represents a push id.
@@ -326,7 +326,7 @@ package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
         }
     }
 
-    package enum ShouldCloseConnectionAction: Hashable {
+    enum ShouldCloseConnectionAction: Hashable {
         /// The connection should be closed if there are no open streams.
         case closeIfNoOpenStreams
         /// The connection should be closed if there are no open streams AND there can be no more streams below maxID (we already exhausted all the numbers).
@@ -337,7 +337,7 @@ package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
 
     /// Determines whether or not to close the connection, and under which conditions.
     /// Call this whenever a request stream closes. It might be that it was the last one we were waiting for before closing the connection.
-    package func shouldCloseConnection() -> ShouldCloseConnectionAction {
+    func shouldCloseConnection() -> ShouldCloseConnectionAction {
         switch self.state {
         case .notQuiesced:
             // Neither side has quiesced, so there is nothing to do
@@ -384,7 +384,7 @@ package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
         }
     }
 
-    package func inboundRequestStreamAllowed(incomingStreamID: QUICStreamID) -> Bool {
+    func inboundRequestStreamAllowed(incomingStreamID: QUICStreamID) -> Bool {
         switch self.state {
         case .notQuiesced: return true
         case .remotelyQuiesced: return true
@@ -396,12 +396,12 @@ package struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
         }
     }
 
-    package enum CreateOutboundRequestStreamAction {
+    enum CreateOutboundRequestStreamAction {
         case create
         case failToCreate(HTTP3Error)
     }
 
-    package func createOutboundRequestStream() -> CreateOutboundRequestStreamAction {
+    func createOutboundRequestStream() -> CreateOutboundRequestStreamAction {
         switch self.state {
         case .notQuiesced: return .create
         case .locallyQuiesced: return .create

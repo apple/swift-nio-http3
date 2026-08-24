@@ -12,8 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIOHTTP3
 import Testing
+
+@testable import NIOHTTP3
 
 struct StreamClosedHandlerTests {
     @Test

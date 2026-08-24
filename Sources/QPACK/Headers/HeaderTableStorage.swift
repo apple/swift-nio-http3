@@ -13,20 +13,20 @@
 //===----------------------------------------------------------------------===//
 
 import DequeModule
-package import HTTPTypes
+import HTTPTypes
 
-package struct HeaderTableEntry: Sendable, Hashable {
+struct HeaderTableEntry: Sendable, Hashable {
     /// The actual field (name and value).
     private var field: HTTPField
     /// The absolute index, which is fixed for the lifetime of the entry as per RFC 9204 § 3.2.4.
-    package var absoluteIndex: Int
+    var absoluteIndex: Int
     /// The name of the field.
-    package var name: HTTPField.Name {
+    var name: HTTPField.Name {
         self.field.name
     }
 
     /// The value of the field.
-    package var value: String {
+    var value: String {
         self.field.value
     }
 
@@ -49,7 +49,7 @@ package struct HeaderTableEntry: Sendable, Hashable {
     }
 }
 
-package enum HeaderTableError: Error, Hashable, Sendable {
+enum HeaderTableError: Error, Hashable, Sendable {
     case insufficientStorage
     case cannotPurge
 }

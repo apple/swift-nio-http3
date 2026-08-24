@@ -12,10 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@_spi(PackageInternal) import HTTP3
 import NIOEmbedded
-import NIOHTTP3
 import Testing
+
+@testable import NIOHTTP3
 
 struct HTTP3OutboundControlStreamHandlerTests {
     let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)

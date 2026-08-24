@@ -202,9 +202,9 @@ typealias HuffmanDecodeEntry = (state: UInt8, flags: HuffmanDecoderFlags, sym: U
 internal struct HuffmanDecoderFlags: OptionSet {
     var rawValue: UInt8
 
-    static let accepted = HuffmanDecoderFlags(rawValue: 0b001)
-    static let symbol = HuffmanDecoderFlags(rawValue: 0b010)
-    static let failure = HuffmanDecoderFlags(rawValue: 0b100)
+    static var accepted: HuffmanDecoderFlags { Self(rawValue: 0b001) }
+    static var symbol: HuffmanDecoderFlags { Self(rawValue: 0b010) }
+    static var failure: HuffmanDecoderFlags { Self(rawValue: 0b100) }
 }
 
 /// This was described nicely by `@Lukasa` in his Python implementation:

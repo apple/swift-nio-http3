@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
@@ -20,6 +19,7 @@ import NIOEmbedded
 import NIOQUICHelpers
 import Testing
 
+@_spi(PackageInternal) @testable import HTTP3
 @testable import NIOHTTP3
 
 struct HTTP3GracefulShutdownTests {

@@ -18,7 +18,7 @@ extension ByteBuffer {
     /// Read one QPACK encoded string from this ByteBuffer.
     /// Will move the reader index to the end of the string.
     /// If a qpack encoded string cannot be read, nil will be returned and the index will be left where it was.
-    package mutating func readQPACKEncodedString(withPrefix prefix: Int) throws(IntegerReadingError) -> String? {
+    mutating func readQPACKEncodedString(withPrefix prefix: Int) throws(IntegerReadingError) -> String? {
         guard let result = try self.getQPACKEncodedString(at: self.readerIndex, withPrefix: prefix) else {
             return nil
         }
@@ -27,7 +27,7 @@ extension ByteBuffer {
     }
 
     /// Get one QPACK encoded string from this ByteBuffer without moving the reader index.
-    package func getQPACKEncodedString(
+    func getQPACKEncodedString(
         at: Int,
         withPrefix prefix: Int
     ) throws(IntegerReadingError) -> Decoded<String>? {
@@ -72,7 +72,7 @@ extension ByteBuffer {
     /// - prefix: The number of bits in the first byte leave before starting the string
     /// - prefixBits: The bits to use in the first byte before the string begins.
     @discardableResult
-    package mutating func writeQPACKEncodedString(
+    mutating func writeQPACKEncodedString(
         _ string: String,
         preferHuffmanEncoding: Bool,
         prefix: Int,

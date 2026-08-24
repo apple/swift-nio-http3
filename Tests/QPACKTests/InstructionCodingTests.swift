@@ -13,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
-import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import QPACK
 
 struct InstructionCodingTests {
     @Test

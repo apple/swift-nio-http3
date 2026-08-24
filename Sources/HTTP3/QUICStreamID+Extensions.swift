@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOQUICHelpers
+public import NIOQUICHelpers
 
 extension QUICStreamID {
-    package var isUnidirectional: Bool {
+    var isUnidirectional: Bool {
         switch self.type {
         case .clientInitiatedUnidirectional, .serverInitiatedUnidirectional:
             return true
@@ -24,11 +24,12 @@ extension QUICStreamID {
         }
     }
 
-    package var isBidirectional: Bool {
+    @_spi(PackageInternal)
+    public var isBidirectional: Bool {
         !self.isUnidirectional
     }
 
-    package var isClientInitiated: Bool {
+    var isClientInitiated: Bool {
         switch self.type {
         case .clientInitiatedUnidirectional, .clientInitiatedBidirectional:
             return true
@@ -37,7 +38,7 @@ extension QUICStreamID {
         }
     }
 
-    package var isServerInitiated: Bool {
+    var isServerInitiated: Bool {
         !self.isClientInitiated
     }
 }

@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 /// Validates incoming and outgoing frames to be a valid sequence for a given stream type.
-package enum HTTP3FrameValidator: ~Copyable {
+enum HTTP3FrameValidator: ~Copyable {
     case incomingControlStream(IncomingControlStreamValidator)
     case outgoingControlStream(OutgoingControlStreamValidator)
     case incomingPushStream(IncomingPushStreamValidator)
@@ -24,7 +24,7 @@ package enum HTTP3FrameValidator: ~Copyable {
     /// Checks the order of frames is valid for a control stream.
     /// I.e. first the settings, and then anything but settings after that.
     /// This works for outbound and inbound streams.
-    package struct ControlStreamSequenceValidator: ~Copyable {
+    struct ControlStreamSequenceValidator: ~Copyable {
         private enum State: ~Copyable {
             case awaitingSettings
             case gotSettings
@@ -128,7 +128,7 @@ package enum HTTP3FrameValidator: ~Copyable {
     /// Checks the order of frames is valid for a push stream.
     /// TODO: https://github.com/apple/swift-nio-http3/issues/1
     /// Not implemented yet,  only validates the frame types. This works for outbound and inbound streams.
-    package struct PushStreamSequenceValidator: ~Copyable {
+    struct PushStreamSequenceValidator: ~Copyable {
         private enum State: ~Copyable {
             case none
             case previousError
@@ -453,7 +453,7 @@ package enum HTTP3FrameValidator: ~Copyable {
     }
 
     /// The action to take when the inbound side of a stream closes.
-    package enum InboundClosedAction {
+    enum InboundClosedAction {
         /// We received the full request or response before the inbound closed. As such, there is nothing to do.
         case doNothing
 
@@ -466,54 +466,54 @@ package enum HTTP3FrameValidator: ~Copyable {
         case resetStream(HTTP3Error)
     }
 
-    package struct ServerRequestStreamValidator: ~Copyable {
+    struct ServerRequestStreamValidator: ~Copyable {
         private var underlying = RequestStreamValidator()
 
         /// Validates an inbound request frame.
-        package mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             self.underlying.processRequestFrame(frame)
         }
 
         /// Validates an outbound response frame.
-        package mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             self.underlying.processResponseFrame(frame)
         }
 
         /// Records that the inbound request stream has closed.
-        package mutating func processInboundClosed() -> InboundClosedAction {
+        mutating func processInboundClosed() -> InboundClosedAction {
             self.underlying.processInboundRequestStreamClosed()
         }
     }
 
-    package struct ClientRequestStreamValidator: ~Copyable {
+    struct ClientRequestStreamValidator: ~Copyable {
         private var underlying = RequestStreamValidator()
 
         /// Validates an inbound response frame.
-        package mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             self.underlying.processResponseFrame(frame)
         }
 
         /// Validates an outbound request frame.
-        package mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             self.underlying.processRequestFrame(frame)
         }
 
         /// Records that the inbound response stream has closed.
-        package func processInboundClosed() -> InboundClosedAction {
+        func processInboundClosed() -> InboundClosedAction {
             self.underlying.processInboundResponseStreamClosed()
         }
     }
 
     /// Checks that incoming frames are in the right order for a control stream, and that there are no outgoing frames.
-    package struct IncomingControlStreamValidator: ~Copyable {
+    struct IncomingControlStreamValidator: ~Copyable {
         private var sequenceValidator = ControlStreamSequenceValidator()
 
-        package mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             // The only thing to check is the ordering, we don't need to do anything more than the sequence validator
             self.sequenceValidator.processNextFrame(frame)
         }
 
-        package mutating func processOutboundFrame(_: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processOutboundFrame(_: HTTP3Frame) -> ProcessFrameAction {
             .emitConnectionError(
                 HTTP3Error(
                     code: .invalidStream,
@@ -525,16 +525,16 @@ package enum HTTP3FrameValidator: ~Copyable {
             )
         }
 
-        package mutating func processInboundUnknownFrame() -> UnknownFrameAction {
+        mutating func processInboundUnknownFrame() -> UnknownFrameAction {
             self.sequenceValidator.processUnknownFrame()
         }
     }
 
     /// Checks that outgoing frames are in the right order for a control stream, and there are no incoming frames.
-    package struct OutgoingControlStreamValidator: ~Copyable {
+    struct OutgoingControlStreamValidator: ~Copyable {
         private var sequenceValidator = ControlStreamSequenceValidator()
 
-        package mutating func processInboundFrame(_: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processInboundFrame(_: HTTP3Frame) -> ProcessFrameAction {
             .emitConnectionError(
                 HTTP3Error(
                     code: .invalidStream,
@@ -546,12 +546,12 @@ package enum HTTP3FrameValidator: ~Copyable {
             )
         }
 
-        package mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             // The only thing to check is the ordering, we don't need to do anything more than the sequence validator
             self.sequenceValidator.processNextFrame(frame)
         }
 
-        package mutating func processInboundUnknownFrame() -> UnknownFrameAction {
+        mutating func processInboundUnknownFrame() -> UnknownFrameAction {
             .emitConnectionError(
                 HTTP3Error(
                     code: .invalidStream,
@@ -565,15 +565,15 @@ package enum HTTP3FrameValidator: ~Copyable {
     }
 
     /// Checks that incoming frames are in the right order for a push stream, and there are no outgoing frames.
-    package struct IncomingPushStreamValidator: ~Copyable {
+    struct IncomingPushStreamValidator: ~Copyable {
         private var sequenceValidator = PushStreamSequenceValidator()
 
-        package mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             // The only thing to check is the ordering, we don't need to do anything more than the sequence validator
             self.sequenceValidator.processNextFrame(frame)
         }
 
-        package mutating func processOutboundFrame(_: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processOutboundFrame(_: HTTP3Frame) -> ProcessFrameAction {
             .emitConnectionError(
                 HTTP3Error(
                     code: .invalidStream,
@@ -587,10 +587,10 @@ package enum HTTP3FrameValidator: ~Copyable {
     }
 
     /// Checks that outgoing frames are in the right order for a push stream, and there are no incoming frames.
-    package struct OutgoingPushStreamValidator: ~Copyable {
+    struct OutgoingPushStreamValidator: ~Copyable {
         private var sequenceValidator = PushStreamSequenceValidator()
 
-        package mutating func processInboundFrame(_: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processInboundFrame(_: HTTP3Frame) -> ProcessFrameAction {
             .emitConnectionError(
                 HTTP3Error(
                     code: .invalidStream,
@@ -602,13 +602,13 @@ package enum HTTP3FrameValidator: ~Copyable {
             )
         }
 
-        package mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+        mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
             // The only thing to check is the ordering, we don't need to do anything more than the sequence validator
             self.sequenceValidator.processNextFrame(frame)
         }
     }
 
-    package init(streamType: HTTP3StreamType.Framed, incoming: Bool) {
+    init(streamType: HTTP3StreamType.Framed, incoming: Bool) {
         switch (streamType, incoming) {
         case (.control, true): self = .incomingControlStream(.init())
         case (.request, true): self = .incomingRequestStream(.init())
@@ -619,14 +619,14 @@ package enum HTTP3FrameValidator: ~Copyable {
         }
     }
 
-    package enum ProcessFrameAction {
+    enum ProcessFrameAction {
         case forwardFrame(HTTP3Frame)
         case emitConnectionError(HTTP3Error)
         case emitStreamError(HTTP3Error)
         case previousError
     }
 
-    package mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+    mutating func processInboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
         switch consume self {
         case .incomingControlStream(var v):
             let result = v.processInboundFrame(frame)
@@ -655,7 +655,7 @@ package enum HTTP3FrameValidator: ~Copyable {
         }
     }
 
-    package mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
+    mutating func processOutboundFrame(_ frame: HTTP3Frame) -> ProcessFrameAction {
         switch consume self {
         case .incomingControlStream(var v):
             let result = v.processOutboundFrame(frame)
@@ -684,13 +684,13 @@ package enum HTTP3FrameValidator: ~Copyable {
         }
     }
 
-    package enum UnknownFrameAction {
+    enum UnknownFrameAction {
         case dropFrame
         case emitConnectionError(HTTP3Error)
         case previousError
     }
 
-    package mutating func processInboundUnknownFrame() -> UnknownFrameAction {
+    mutating func processInboundUnknownFrame() -> UnknownFrameAction {
         // Only the control stream cares about unknown frames, the other streams can just drop it.
         switch consume self {
         case .incomingControlStream(var v):
@@ -717,7 +717,7 @@ package enum HTTP3FrameValidator: ~Copyable {
     }
 
     /// Records that the inbound side of the stream has closed.
-    package mutating func processInboundClosed() -> InboundClosedAction {
+    mutating func processInboundClosed() -> InboundClosedAction {
         switch self {
         case .incomingRequestStream(var validator):
             let result = validator.processInboundClosed()
@@ -749,7 +749,8 @@ package enum HTTP3FrameValidator: ~Copyable {
 }
 
 extension HTTP3Frame {
-    package var type: HTTP3FrameType {
+    @_spi(PackageInternal)
+    public var type: HTTP3FrameType {
         switch self {
         case .headers: return .headers
         case .data: return .data

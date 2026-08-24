@@ -15,7 +15,7 @@
 import Logging
 import NIOCore
 
-package struct StreamClosedHandlerStateMachine: ~Copyable {
+struct StreamClosedHandlerStateMachine: ~Copyable {
     private enum State: ~Copyable {
         // We have never been active.
         case notActive
@@ -31,16 +31,16 @@ package struct StreamClosedHandlerStateMachine: ~Copyable {
         self.state = state
     }
 
-    package init() {
+    init() {
         self.init(state: .notActive)
     }
 
-    package enum ChannelInactiveAction: Hashable {
+    enum ChannelInactiveAction: Hashable {
         case callOnStreamClosed
         case none
     }
 
-    package mutating func channelInactive() -> ChannelInactiveAction {
+    mutating func channelInactive() -> ChannelInactiveAction {
         switch consume self.state {
         case .active:
             // We were active and now we're not, so we're closed.
@@ -56,7 +56,7 @@ package struct StreamClosedHandlerStateMachine: ~Copyable {
         }
     }
 
-    package mutating func handlerAdded(isChannelActive: Bool) {
+    mutating func handlerAdded(isChannelActive: Bool) {
         switch consume self.state {
         case .active:
             assertionFailure("Handler added after channel active")
@@ -73,7 +73,7 @@ package struct StreamClosedHandlerStateMachine: ~Copyable {
         }
     }
 
-    package mutating func channelActive() {
+    mutating func channelActive() {
         switch consume self.state {
         case .active:
             assertionFailure("Handler active twice")
@@ -86,12 +86,12 @@ package struct StreamClosedHandlerStateMachine: ~Copyable {
         }
     }
 
-    package enum HandlerRemovedAction: Hashable {
+    enum HandlerRemovedAction: Hashable {
         case callOnStreamClosed
         case none
     }
 
-    package mutating func handlerRemoved() -> HandlerRemovedAction {
+    mutating func handlerRemoved() -> HandlerRemovedAction {
         switch consume self.state {
         case .notActive:
             // We were never active, and we've been removed, so we're 'closed'.

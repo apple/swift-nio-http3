@@ -13,31 +13,40 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
-package import QPACK
+@_spi(PackageInternal) public import QPACK
 
 public import struct NIOCore.ByteBuffer
 
 /// Represents a HTTP3 frame which has not been through the qpack decoder yet.
 ///
 /// The types are identical to ``HTTP3Frame`` except that the ``HTTP3PartialFrame/headers(_:)`` and ``HTTP3PartialFrame/pushPromise(_:)`` cases hold encoded field sections instead of fields.
-package enum HTTP3PartialFrame: Hashable {
+@_spi(PackageInternal)
+public enum HTTP3PartialFrame: Hashable {
     /// A headers frame for which we don't have the dynamic table references yet.
     /// Pass this to a QPACK decoder to get the full HTTP3Frame.
-    package struct Headers: Hashable, Sendable {
-        package let fieldSection: FieldSection
+    @_spi(PackageInternal)
+    public struct Headers: Hashable, Sendable {
+        @_spi(PackageInternal)
+        public let fieldSection: FieldSection
 
-        package init(fieldSection: FieldSection) {
+        @_spi(PackageInternal)
+        public init(fieldSection: FieldSection) {
             self.fieldSection = fieldSection
         }
     }
 
     /// A push promise frame for which we don't have the dynamic table references yet.
     /// Pass this to a QPACK decoder to get the full HTTP3Frame.
-    package struct PushPromise: Hashable, Sendable {
-        package let pushID: HTTP3PushID
-        package let fieldSection: FieldSection
+    @_spi(PackageInternal)
+    public struct PushPromise: Hashable, Sendable {
+        @_spi(PackageInternal)
+        public let pushID: HTTP3PushID
 
-        package init(pushID: HTTP3PushID, fieldSection: FieldSection) {
+        @_spi(PackageInternal)
+        public let fieldSection: FieldSection
+
+        @_spi(PackageInternal)
+        init(pushID: HTTP3PushID, fieldSection: FieldSection) {
             self.pushID = pushID
             self.fieldSection = fieldSection
         }
@@ -80,13 +89,15 @@ package enum HTTP3PartialFrame: Hashable {
 }
 
 /// A representation of a single HTTP/3 frame type.
-package enum HTTP3FrameType: Hashable {
+@_spi(PackageInternal)
+public enum HTTP3FrameType: Hashable, Sendable {
     /// Attempts to parse a frame type.
     /// RFC 9114 § 7.2.8: Frame types that were used in HTTP/2 where there is no corresponding HTTP/3 frame have also been reserved (Section 11.2.1).
     /// These frame types MUST NOT be sent, and their receipt MUST be treated as a connection error of type H3\_FRAME\_UNEXPECTED.
     /// - Precondition: The value must be a QUIC-encodable integer, that means it must be between 1 and 2^62-1. Otherwise, this function will trap.
     /// - Throws: If given a forbidden frame type.
-    package init(rawValue: UInt64) throws(HTTP3Error) {
+    @_spi(PackageInternal)
+    public init(rawValue: UInt64) throws(HTTP3Error) {
         precondition(rawValue <= QUICEncodableInteger.maxValue, "Invalid frame type \(rawValue)")
         @inline(never)
         func forbiddenTypeError(
@@ -117,7 +128,8 @@ package enum HTTP3FrameType: Hashable {
         }
     }
 
-    package var rawValue: UInt64 {
+    @_spi(PackageInternal)
+    public var rawValue: UInt64 {
         switch self {
         case .data: return 0x00
         case .headers: return 0x01
@@ -281,23 +293,23 @@ public enum HTTP3Frame: Hashable, Sendable {
 // because they are impossible to evolve, hence having structs in the first place.
 
 extension HTTP3PartialFrame {
-    package static func data(_ payload: ByteBuffer) -> Self {
+    static func data(_ payload: ByteBuffer) -> Self {
         .data(.init(payload: payload))
     }
 
-    package static func settings(_ settings: HTTP3Settings) -> Self {
+    static func settings(_ settings: HTTP3Settings) -> Self {
         .settings(.init(settings: settings))
     }
 
-    package static func cancelPush(_ id: HTTP3PushID) -> Self {
+    static func cancelPush(_ id: HTTP3PushID) -> Self {
         .cancelPush(.init(pushID: id))
     }
 
-    package static func maxPushID(_ id: HTTP3PushID) -> Self {
+    static func maxPushID(_ id: HTTP3PushID) -> Self {
         .maxPushID(.init(id: id))
     }
 
-    package static func goaway(_ id: HTTP3GoawayID) -> Self {
+    static func goaway(_ id: HTTP3GoawayID) -> Self {
         .goaway(.init(id: id))
     }
 }
@@ -309,7 +321,8 @@ extension HTTP3Frame.Headers {
     /// status code.
     ///
     /// - SeeAlso: https://www.rfc-editor.org/rfc/rfc9110.html#section-15.2.
-    package var representsInterimResponse: Bool {
+    @_spi(PackageInternal)
+    public var representsInterimResponse: Bool {
         guard let status = self.fields.first(where: { $0.name == .status })?.value, let code = Int(status) else {
             return false
         }
@@ -318,27 +331,33 @@ extension HTTP3Frame.Headers {
 }
 
 extension HTTP3Frame {
-    package static func data(_ payload: ByteBuffer) -> Self {
+    @_spi(PackageInternal)
+    public static func data(_ payload: ByteBuffer) -> Self {
         .data(.init(payload: payload))
     }
 
-    package static func headers(_ fields: [HTTPField]) -> Self {
+    @_spi(PackageInternal)
+    public static func headers(_ fields: [HTTPField]) -> Self {
         .headers(.init(fields: fields))
     }
 
-    package static func settings(_ settings: HTTP3Settings) -> Self {
+    @_spi(PackageInternal)
+    public static func settings(_ settings: HTTP3Settings) -> Self {
         .settings(.init(settings: settings))
     }
 
-    package static func cancelPush(_ id: HTTP3PushID) -> Self {
+    @_spi(PackageInternal)
+    public static func cancelPush(_ id: HTTP3PushID) -> Self {
         .cancelPush(CancelPush(pushID: id))
     }
 
-    package static func maxPushID(_ id: HTTP3PushID) -> Self {
+    @_spi(PackageInternal)
+    public static func maxPushID(_ id: HTTP3PushID) -> Self {
         .maxPushID(.init(id: id))
     }
 
-    package static func goaway(_ id: HTTP3GoawayID) -> Self {
+    @_spi(PackageInternal)
+    public static func goaway(_ id: HTTP3GoawayID) -> Self {
         .goaway(.init(id: id))
     }
 }

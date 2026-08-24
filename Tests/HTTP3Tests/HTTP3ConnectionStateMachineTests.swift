@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@_spi(PackageInternal) import HTTP3
 import NIOQUICHelpers
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
 
 struct HTTP3ConnectionStateMachineTests {

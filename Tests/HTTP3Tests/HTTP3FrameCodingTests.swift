@@ -12,11 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
 import HTTPTypes
 import NIOCore
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3FrameCodingTests {
     @Test

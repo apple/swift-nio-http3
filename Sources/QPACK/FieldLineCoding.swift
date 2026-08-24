@@ -12,20 +12,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-import struct NIOCore.ByteBuffer
+public import struct NIOCore.ByteBuffer
 
 /// Represents a FieldSectionPrefix as per RFC 9204 § 4.5.1.
-package struct FieldSectionPrefix: Sendable, Hashable {
-    package let requiredInsertCount: Int
-    package let base: Int
+@_spi(PackageInternal)
+public struct FieldSectionPrefix: Sendable, Hashable {
+    @_spi(PackageInternal)
+    public let requiredInsertCount: Int
+    @_spi(PackageInternal)
+    public let base: Int
 
-    package init(requiredInsertCount: Int, base: Int) {
+    @_spi(PackageInternal)
+    public init(requiredInsertCount: Int, base: Int) {
         precondition(base >= 0)
         self.requiredInsertCount = requiredInsertCount
         self.base = base
     }
 
-    package func encode(maxCapacity: Int) -> EncodedFieldSectionPrefix {
+    @_spi(PackageInternal)
+    public func encode(maxCapacity: Int) -> EncodedFieldSectionPrefix {
         // 4.5.1.1.
         // The encoder transforms the Required Insert Count as follows before encoding:
         // if ReqInsertCount == 0:
@@ -54,19 +59,25 @@ package struct FieldSectionPrefix: Sendable, Hashable {
 /// Represents an EncodedFieldSectionPrefix as per RFC 9204 § 4.5.1.
 /// Here, the requiredInsertCount is stored with an encoding as per RFC 9204 § 4.5.1.1.
 /// The deltaBase can be used to get the base relative to the decoded requiredInsertCount.
-package struct EncodedFieldSectionPrefix: Sendable, Hashable {
-    package let encodedRequiredInsertCount: Int
-    package let deltaBase: Int
+@_spi(PackageInternal)
+public struct EncodedFieldSectionPrefix: Sendable, Hashable {
+    @_spi(PackageInternal)
+    public let encodedRequiredInsertCount: Int
+    @_spi(PackageInternal)
+    public let deltaBase: Int
     /// If true, the base is encodedRequiredInsertCount - deltaBase - 1. Otherwise base is encodedRequiredInsertCount + deltaBase.
-    package let signBit: Bool
+    @_spi(PackageInternal)
+    public let signBit: Bool
 
-    package init(encodedRequiredInsertCount: Int, deltaBase: Int, signBit: Bool) {
+    @_spi(PackageInternal)
+    public init(encodedRequiredInsertCount: Int, deltaBase: Int, signBit: Bool) {
         self.encodedRequiredInsertCount = encodedRequiredInsertCount
         self.deltaBase = deltaBase
         self.signBit = signBit
     }
 
-    package func decode(totalInserts: Int, maxCapacity: Int) -> FieldSectionPrefix? {
+    @_spi(PackageInternal)
+    public func decode(totalInserts: Int, maxCapacity: Int) -> FieldSectionPrefix? {
         // 4.5.1.1.
         // FullRange = 2 * MaxEntries
         // if EncodedInsertCount == 0:
@@ -131,7 +142,8 @@ package struct EncodedFieldSectionPrefix: Sendable, Hashable {
 }
 
 /// Represents a single field line as per RFC 9204 § 4.5.
-package enum FieldLine: Sendable, Hashable {
+@_spi(PackageInternal)
+public enum FieldLine: Sendable, Hashable {
     /// 4.5.2. Indexed Field Line.
     case indexed(QPACKReferenceTable, index: Int)
     /// 4.5.3. Indexed Field Line with Post-Base Index.
@@ -150,13 +162,17 @@ package enum FieldLine: Sendable, Hashable {
 }
 
 /// Represents a full field section as per RFC 9204 § 4.5.
-package struct FieldSection: Sendable, Hashable {
+@_spi(PackageInternal)
+public struct FieldSection: Sendable, Hashable {
     /// The field section prefix.
-    package var prefix: EncodedFieldSectionPrefix
+    @_spi(PackageInternal)
+    public var prefix: EncodedFieldSectionPrefix
     /// Each line of the field section. A line represents a header.
-    package var lines: [FieldLine]
+    @_spi(PackageInternal)
+    public var lines: [FieldLine]
 
-    package init(prefix: EncodedFieldSectionPrefix, lines: [FieldLine]) {
+    @_spi(PackageInternal)
+    public init(prefix: EncodedFieldSectionPrefix, lines: [FieldLine]) {
         self.prefix = prefix
         self.lines = lines
     }
@@ -165,7 +181,7 @@ package struct FieldSection: Sendable, Hashable {
 extension ByteBuffer {
     /// Read a single ``FieldLine`` from this `ByteBuffer`.
     /// - Returns: The instruction, or nil if it cannot be decoded.
-    package mutating func readFieldLine() throws(IntegerReadingError) -> FieldLine? {
+    mutating func readFieldLine() throws(IntegerReadingError) -> FieldLine? {
         guard let result = try self.getFieldLine(at: self.readerIndex) else { return nil }
         self.moveReaderIndex(forwardBy: result.bytesRead)
         return result.value
@@ -264,7 +280,8 @@ extension ByteBuffer {
     ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and where it would be more efficient to do so).
     /// - Returns: The number of bytes written.
     @discardableResult
-    package mutating func writeFieldLine(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) -> Int {
+    @_spi(PackageInternal)
+    public mutating func writeFieldLine(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) -> Int {
         switch fieldLine {
         case .indexed(let table, let index):
             // First bit is 1. Then T. Then index
@@ -305,7 +322,7 @@ extension ByteBuffer {
 
     /// Read a single ``FieldSectionPrefix`` from this `ByteBuffer`.
     /// - Returns: The section, or nil if it cannot be decoded.
-    package mutating func readFieldSectionPrefix() throws(IntegerReadingError) -> EncodedFieldSectionPrefix? {
+    mutating func readFieldSectionPrefix() throws(IntegerReadingError) -> EncodedFieldSectionPrefix? {
         guard let result = try self.getFieldSectionPrefix(at: self.readerIndex) else { return nil }
         self.moveReaderIndex(forwardBy: result.bytesRead)
         return result.value
@@ -352,7 +369,8 @@ extension ByteBuffer {
     ///   - maxCapacity: The maximum capacity of the dynamic table.
     /// - Returns: The number of bytes written.
     @discardableResult
-    package mutating func writeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> Int {
+    @_spi(PackageInternal)
+    public mutating func writeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> Int {
         var bytesWritten = 0
         bytesWritten += self.writeQPACKPrefixedInteger(
             prefix.encodedRequiredInsertCount,
@@ -363,7 +381,8 @@ extension ByteBuffer {
         return bytesWritten
     }
 
-    package mutating func readFieldSection() throws(IntegerReadingError) -> FieldSection? {
+    @_spi(PackageInternal)
+    public mutating func readFieldSection() throws(IntegerReadingError) -> FieldSection? {
         guard let prefix = try self.readFieldSectionPrefix() else {
             return nil
         }

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import NIOQUICHelpers
+import NIOQUICHelpers
 
 /// A struct representing the payload of a GOAWAY frame.
 ///
@@ -47,11 +47,11 @@ extension HTTP3GoawayID: CustomDebugStringConvertible {
 /// We need to be able to compare goaways internally, but we'll not conform to Comparable publicly.
 /// That is because comparing goaways is weird because a goaway id could represent a stream id or a push id and we don't know which it is.
 extension HTTP3GoawayID {
-    package static func < (lhs: HTTP3GoawayID, rhs: HTTP3GoawayID) -> Bool {
+    static func < (lhs: HTTP3GoawayID, rhs: HTTP3GoawayID) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
 
-    package static func <= (lhs: HTTP3GoawayID, rhs: HTTP3GoawayID) -> Bool {
+    static func <= (lhs: HTTP3GoawayID, rhs: HTTP3GoawayID) -> Bool {
         lhs.rawValue <= rhs.rawValue
     }
 }
@@ -66,14 +66,14 @@ extension HTTP3GoawayID {
 
 extension QUICStreamID {
     /// A goaway ID sent from a server to a client represents a ``QUICStreamID``.
-    package init(goawayID: HTTP3GoawayID) {
+    init(goawayID: HTTP3GoawayID) {
         self.init(rawValue: goawayID.rawValue)
     }
 }
 
 extension HTTP3PushID {
     /// A goaway ID sent from a client to a server represents an ``HTTP3PushID``.
-    package init(goawayID: HTTP3GoawayID) {
+    init(goawayID: HTTP3GoawayID) {
         self.init(rawValue: goawayID.rawValue)
     }
 }
