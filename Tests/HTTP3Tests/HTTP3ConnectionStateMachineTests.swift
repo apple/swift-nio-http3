@@ -12,10 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) import HTTP3
 import NIOQUICHelpers
 @_spi(PackageInternal) import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3ConnectionStateMachineTests {
     // MARK: Initialization
@@ -511,12 +512,14 @@ struct HTTP3ConnectionStateMachineTests {
 
         // And then send a goaway with id 4. It should cancel the streams >= that id
         let action2 = stateMachine.sendGoaway(goawayID: 4)
-        guard case .sendGoaway(let idToSend, let idsToCancel) = action2 else {
+        guard case .sendGoaway(let idToSend, let idsToCancel, let firstRejectedStreamID) = action2 else {
             Issue.record("Unexpected action \(String(describing: action2))")
             return
         }
         #expect(idToSend == 4)
         #expect(idsToCancel.sorted() == [4, 8])
+        // Servers reject streams at or above the ID they send.
+        #expect(firstRejectedStreamID == 4)
 
         // Those streams got cancelled successfuly
         let action3 = stateMachine.streamClosed(streamID: 8, seenEOF: true, streamType: .request)
@@ -860,6 +863,136 @@ struct HTTP3ConnectionStateMachineTests {
             expectedMessage: "The server-initiated control stream was closed"
         )
     }
+
+    // MARK: Datagrams
+
+    @Test
+    func testReceivedDatagram() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .server,
+            idGenerator: &idGenerator,
+            localSettings: HTTP3Settings(h3Datagram: true)
+        )
+
+        #expect(stateMachine.receivedDatagram(streamID: 0) == .buffer)
+
+        let streamID = idGenerator.inboundBidi()
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+        #expect(stateMachine.receivedDatagram(streamID: streamID) == .forward)
+
+        _ = stateMachine.streamClosed(streamID: streamID, seenEOF: true, streamType: .request)
+        #expect(stateMachine.receivedDatagram(streamID: streamID) == .discard)
+    }
+
+    @Test
+    func testReceivedDatagramForStreamRejectedByGoaway() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .server,
+            idGenerator: &idGenerator,
+            localSettings: HTTP3Settings(h3Datagram: true)
+        )
+
+        // Streams at or above ID 4 are rejected from here on.
+        #expect(stateMachine.sendGoaway(goawayID: 4)?.isSendGoaway == true)
+
+        // Stream 0 is below the GOAWAY ID so it can still open.
+        #expect(stateMachine.receivedDatagram(streamID: 0) == .buffer)
+
+        // Stream 4 will never open, so there's no point buffering its datagrams.
+        #expect(stateMachine.receivedDatagram(streamID: 4) == .discard)
+
+        // A rejected stream is tracked as open until its stream channel closes, so openness alone
+        // isn't enough to tell that its datagrams can't be delivered.
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: 4).isEmitStreamError)
+        #expect(stateMachine.receivedDatagram(streamID: 4) == .discard)
+    }
+
+    @Test
+    func testClientGoawayDoesNotDiscardDatagrams() {
+        var idGenerator = IDGenerator(type: .client)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .client,
+            idGenerator: &idGenerator,
+            localSettings: HTTP3Settings(h3Datagram: true)
+        )
+
+        // A client's GOAWAY carries a push ID, so it says nothing about which request streams the
+        // server may send datagrams for.
+        #expect(stateMachine.sendGoaway(goawayID: 0)?.isSendGoaway == true)
+
+        let streamID = idGenerator.outboundBidi()
+        stateMachine.outboundRequestStreamReady(streamID: streamID)
+        #expect(stateMachine.receivedDatagram(streamID: streamID) == .forward)
+    }
+
+    @Test
+    func testReceivedDatagramWithoutLocalSupport() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
+
+        let streamID = idGenerator.inboundBidi()
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+        #expect(stateMachine.receivedDatagram(streamID: streamID) == .discard)
+        #expect(stateMachine.receivedDatagram(streamID: 0) == .discard)
+    }
+
+    @Test
+    func testReceiveDatagramBeforeSettings() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
+        stateMachine.expectSendingDatagramIsDropped(streamID: 0, code: .datagramsNotNegotiated)
+
+        _ = stateMachine.initialize()
+        let streamID = idGenerator.inboundBidi()
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+
+        // The stream is open but no SETTINGS frame has been received to advertise support.
+        stateMachine.expectSendingDatagramIsDropped(streamID: streamID, code: .datagramsNotNegotiated)
+    }
+
+    @Test
+    func testSendDatagram() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .server,
+            idGenerator: &idGenerator,
+            remoteSettings: HTTP3Settings(h3Datagram: true)
+        )
+
+        let streamID = idGenerator.inboundBidi()
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+        #expect(stateMachine.sendDatagram(streamID: streamID).isSend)
+
+        _ = stateMachine.streamClosed(streamID: streamID, seenEOF: true, streamType: .request)
+        stateMachine.expectSendingDatagramIsDropped(streamID: streamID, code: .invalidStream)
+
+        #expect(stateMachine.shutdownConnectionImmediately() == .shutdown)
+        stateMachine.expectSendingDatagramIsDropped(streamID: streamID, code: .connectionClosed)
+    }
+
+    @Test
+    func testSendDatagramWithoutRemoteSupport() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
+
+        let streamID = idGenerator.inboundBidi()
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+        stateMachine.expectSendingDatagramIsDropped(streamID: streamID, code: .datagramsNotNegotiated)
+    }
+
+    // 1 = server-init bidi, 2 = client-init uni, 3 = server-init uni
+    @Test(arguments: [1, 2, 3])
+    func testSendDatagramOnInvalidStream(streamID: QUICStreamID) {
+        var idGenerator = IDGenerator(type: .server)
+        let stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .server,
+            idGenerator: &idGenerator,
+            remoteSettings: HTTP3Settings(h3Datagram: true)
+        )
+        stateMachine.expectSendingDatagramIsDropped(streamID: streamID, code: .invalidStream)
+    }
 }
 
 // MARK: Test utils
@@ -869,6 +1002,40 @@ extension HTTP3ConnectionStateMachine.IncomingEncoderInstructionAction {
         switch self {
         case .sendDecoderInstruction(let decoderInstruction): return decoderInstruction
         case .emitConnectionError: return nil
+        }
+    }
+}
+
+extension HTTP3ConnectionStateMachine.InboundRequestStreamReceivedAction {
+    fileprivate var isAddHandlers: Bool {
+        switch self {
+        case .addHandlers: return true
+        case .emitStreamError, .emitConnectionError: return false
+        }
+    }
+
+    fileprivate var isEmitStreamError: Bool {
+        switch self {
+        case .emitStreamError: return true
+        case .addHandlers, .emitConnectionError: return false
+        }
+    }
+}
+
+extension HTTP3ConnectionStateMachine.SendDatagramAction {
+    fileprivate var isSend: Bool {
+        switch self {
+        case .send: return true
+        case .drop: return false
+        }
+    }
+}
+
+extension HTTP3ConnectionStateMachine.CloseAction {
+    fileprivate var isSendGoaway: Bool {
+        switch self {
+        case .sendGoaway: return true
+        case .throwError, .closeImmediately: return false
         }
     }
 }
@@ -942,6 +1109,19 @@ struct IDGenerator {
 }
 
 extension HTTP3ConnectionStateMachine {
+    func expectSendingDatagramIsDropped(
+        streamID: QUICStreamID,
+        code: HTTP3Error.Code,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        switch self.sendDatagram(streamID: streamID) {
+        case .send:
+            Issue.record("Datagram for stream \(streamID) was not rejected", sourceLocation: sourceLocation)
+        case .drop(let error):
+            error.expect(code: code, h3ErrorCode: nil, sourceLocation: sourceLocation)
+        }
+    }
+
     /// Returns a state machine which has already exchanged settings with the 'remote' and created the required streams.
     /// The settings are configured to allow qpack in both directions.
     static func makeInitializedWithQPACK(
