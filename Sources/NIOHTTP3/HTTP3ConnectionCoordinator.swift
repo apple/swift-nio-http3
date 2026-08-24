@@ -123,6 +123,8 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     /// buffering datagrams for it, otherwise datagrams can be delivered out of order.
     private func emitBufferedDatagrams(forStream streamID: QUICStreamID) {
         self.eventLoop.assertInEventLoop()
+        assert(self.connectionStateMachine.isStreamOpen(streamID))
+        assert(self.connection != nil)
         if let datagrams = self.datagramBuffer.unbufferDatagrams(forStream: streamID) {
             self.connection?.emitDatagrams(datagrams)
         }

@@ -293,6 +293,28 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
+    // Only used for an assertion.
+    @_spi(PackageInternal)
+    package func isStreamOpen(_ id: QUICStreamID) -> Bool {
+        let isOpen: Bool
+
+        switch self.state {
+        case .notStarted:
+            isOpen = false
+        case .initialized(let state):
+            switch state.streamIDTracker.opennessOfStream(withID: id) {
+            case .open:
+                isOpen = true
+            case .notYetOpen, .closed:
+                isOpen = false
+            }
+        case .finished:
+            isOpen = false
+        }
+
+        return isOpen
+    }
+
     // MARK: Inbound streams
 
     @_spi(PackageInternal)
