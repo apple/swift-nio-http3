@@ -12,13 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
 import HTTPTypes
 import NIOCore
 import NIOEmbedded
-import NIOHTTP3
 import NIOHTTPTypes
 import Testing
+
+@_spi(PackageInternal) @testable import HTTP3
+@testable import NIOHTTP3
 
 struct HTTPMessageParsingTests {
     let validRequestHead: HTTP3Frame = .headers([

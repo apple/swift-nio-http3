@@ -12,12 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
+@_spi(PackageInternal) import HTTP3
 import HTTPTypes
 import Logging
 import NIOCore
 import NIOQUICHelpers
-import QPACK
+@_spi(PackageInternal) import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
@@ -30,7 +30,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     private let streamCreator: QUICStreamCreator
     /// Send the connection error out to the peer. We should only call this if the connection state machine says so.
     /// If we want to send a connection error, it needs to go through the connection state machine first.
-    package var emitConnectionError: (HTTP3Error) -> Void
+    var emitConnectionError: (HTTP3Error) -> Void
     private let preferHuffmanEncoding: Bool
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.

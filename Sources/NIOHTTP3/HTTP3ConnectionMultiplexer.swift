@@ -138,7 +138,7 @@ public struct HTTP3ClientConnection<
 /// Internal type to abstract away the `Output` type of the multiplexer. This means we are going through an existential
 /// in the `HTTP3ConnectionHandler` when yielding a new `Channel`. However, this is okay for now otherwise
 /// we would need to make the handler generic as well.
-package protocol StreamMultiplexerContinuation: Sendable {
+protocol StreamMultiplexerContinuation: Sendable {
     /// We have to do a bit of an awkward dance here to carry the `Output` between the initializer and the continuation where
     /// we yield to. That's why we are using `Any` here to avoid making the handler generic.
     func initialize(parameters: HTTP3StreamInitializerParameters) -> EventLoopFuture<any Sendable>
@@ -148,15 +148,15 @@ package protocol StreamMultiplexerContinuation: Sendable {
 
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
 extension HTTP3ServerConnection: StreamMultiplexerContinuation {
-    package func initialize(parameters: HTTP3StreamInitializerParameters) -> EventLoopFuture<any Sendable> {
+    func initialize(parameters: HTTP3StreamInitializerParameters) -> EventLoopFuture<any Sendable> {
         self.inboundStreamInitializer(parameters).map { $0 as any Sendable }
     }
 
-    package func yield(output: any Sendable) {
+    func yield(output: any Sendable) {
         self.inboundStreamsContinuation.yield(output as! Output)
     }
 
-    package func finish() {
+    func finish() {
         self.inboundStreamsContinuation.finish()
     }
 }
@@ -284,7 +284,7 @@ public struct HTTP3ClientConnectionMultiplexer<
     ///   - connectionInitializer: Use this to add handlers to the outgoing connection channel.
     ///   - inboundPushStreamInitializer: Called for each incoming push stream.
     /// - Returns: The future containing the result of the connection initializer, and the underlying connection channel.
-    package func createConnection<Output>(
+    func createConnection<Output>(
         serverName: String,
         remoteAddress: SocketAddress,
         connectionInitializer: (@Sendable (any Channel) -> EventLoopFuture<Void>)?,
@@ -307,7 +307,7 @@ public struct HTTP3ClientConnectionMultiplexer<
         }
     }
 
-    package func createConnectionChannel(
+    func createConnectionChannel(
         serverName: String,
         remoteAddress: SocketAddress,
         connectionInitializer: (@Sendable (any Channel) -> EventLoopFuture<Void>)?

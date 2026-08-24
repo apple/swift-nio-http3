@@ -14,8 +14,9 @@
 
 import Foundation
 import NIOCore
-import QPACK
 import Testing
+
+@testable import QPACK
 
 struct HuffmanCodingTests {
     var scratchBuffer: ByteBuffer = ByteBufferAllocator().buffer(capacity: 4096)

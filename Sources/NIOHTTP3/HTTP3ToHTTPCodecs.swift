@@ -12,12 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTP3
-package import HTTPTypes
+@_spi(PackageInternal) public import HTTP3
+import HTTPTypes
 public import NIOCore
 public import NIOHTTPTypes
 
-package protocol HTTPMessagePart {
+protocol HTTPMessagePart {
     static func head(fields: [HTTPField]) throws(HTTP3Error) -> Self
     static func body(buffer: ByteBuffer) -> Self
     static func end(trailers: [HTTPField]) throws(HTTP3Error) -> Self
@@ -40,7 +40,7 @@ private func invalidHeadersError(message: String, location: HTTP3Error.SourceLoc
 }
 
 extension HTTPRequestPart: HTTPMessagePart {
-    package static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
+    static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
         let request: HTTPRequest
         do {
             request = try HTTPRequest(parsed: fields)
@@ -115,11 +115,11 @@ extension HTTPRequestPart: HTTPMessagePart {
         return .head(request)
     }
 
-    package static func body(buffer: ByteBuffer) -> HTTPRequestPart {
+    static func body(buffer: ByteBuffer) -> HTTPRequestPart {
         .body(buffer)
     }
 
-    package static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
+    static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
         if trailers.isEmpty {
             return .end(nil)
         } else {
@@ -137,13 +137,13 @@ extension HTTPRequestPart: HTTPMessagePart {
         }
     }
 
-    package static func end() -> HTTPRequestPart {
+    static func end() -> HTTPRequestPart {
         .end(nil)
     }
 }
 
 extension HTTPResponsePart: HTTPMessagePart {
-    package static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
+    static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         let response: HTTPResponse
         do {
             response = try HTTPResponse(parsed: fields)
@@ -165,11 +165,11 @@ extension HTTPResponsePart: HTTPMessagePart {
         return .head(response)
     }
 
-    package static func body(buffer: ByteBuffer) -> HTTPResponsePart {
+    static func body(buffer: ByteBuffer) -> HTTPResponsePart {
         .body(buffer)
     }
 
-    package static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
+    static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         if trailers.isEmpty {
             return .end(nil)
         } else {
@@ -187,14 +187,14 @@ extension HTTPResponsePart: HTTPMessagePart {
         }
     }
 
-    package static func end() -> HTTPResponsePart {
+    static func end() -> HTTPResponsePart {
         .end(nil)
     }
 }
 
 /// Process HTTP3Frames into HTTPMessageParts.
 /// Use this to convert incoming frames into message parts.
-package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
+struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
     enum State {
         case awaitingHeaders
         case awaitingBodyOrTrailers
@@ -204,14 +204,14 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
 
     private var state = State.awaitingHeaders
 
-    package init() {}
+    init() {}
 
-    package enum ProcessFrameAction {
+    enum ProcessFrameAction {
         case returnPart(Part)
         case emitError(HTTP3Error)
     }
 
-    package mutating func processFrame(frame: HTTP3Frame) -> ProcessFrameAction? {
+    mutating func processFrame(frame: HTTP3Frame) -> ProcessFrameAction? {
         switch self.state {
         case .failed:
             return .none
@@ -262,11 +262,11 @@ package struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
         }
     }
 
-    package enum InputClosedAction {
+    enum InputClosedAction {
         case returnPart(Part)
     }
 
-    package mutating func inputClosed() -> InputClosedAction? {
+    mutating func inputClosed() -> InputClosedAction? {
         switch self.state {
         case .awaitingHeaders:
             // The input was closed without even receiving a head part. This case is handled appropriately by

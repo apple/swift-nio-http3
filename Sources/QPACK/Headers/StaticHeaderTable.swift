@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTPTypes
+import HTTPTypes
 
-package enum StaticHeaderTable {
+enum StaticHeaderTable {
     /// This array represents all the static header table entries as defined in RFC 9204 § 3.1.
     ///
     /// The absolute index is the position, which is the array index.
@@ -123,7 +123,7 @@ package enum StaticHeaderTable {
 
     /// A mapping of header name to the array of static table indices carrying that name.
     /// Arrays are guaranteed to be non-empty, and their values are in ascending index order.
-    private static let indicesByName: [HTTPField.Name: [Int]] = {
+    static let indicesByName: [HTTPField.Name: [Int]] = {
         var result = [HTTPField.Name: [Int]](minimumCapacity: Self.shared.count)
         for index in Self.shared.indices {
             result[Self.shared[index].0, default: []].append(index)
@@ -132,7 +132,7 @@ package enum StaticHeaderTable {
     }()
 
     /// Get the element of the static table at the specific index if it exists
-    package static func get(at index: Int) -> (HTTPField.Name, String)? {
+    static func get(at index: Int) -> (HTTPField.Name, String)? {
         if self.shared.indices.contains(index) {
             return self.shared[index]
         } else {

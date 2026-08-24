@@ -12,13 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import QPACK
+@_spi(PackageInternal) import QPACK
 
-package import struct NIOCore.ByteBuffer
+import struct NIOCore.ByteBuffer
 
 /// A decoder for ``HTTP3PartialFrame``.
-package struct HTTP3FrameDecoder: ~Copyable {
-    package typealias InboundOut = HTTP3PartialFrame
+struct HTTP3FrameDecoder: ~Copyable {
+    typealias InboundOut = HTTP3PartialFrame
 
     /// An enum indicating the next step when decoding HTTP/3 frames.
     private enum NextStep: Hashable {
@@ -46,11 +46,11 @@ package struct HTTP3FrameDecoder: ~Copyable {
     /// Indicates the next decoding step.
     private var nextStep: NextStep = .decodeFrameType
 
-    package init() {}
+    init() {}
 
     /// - Note: Any error thrown from here should be treated as a connection-level error.
     /// - Returns: A frame if one can be decoded from the available bytes, or `nil` if more bytes are needed.
-    package mutating func decode(buffer: inout ByteBuffer) throws(HTTP3Error) -> HTTP3PartialFrameOrUnknown? {
+    mutating func decode(buffer: inout ByteBuffer) throws(HTTP3Error) -> HTTP3PartialFrameOrUnknown? {
         while true {
             switch try self.next(buffer: &buffer) {
             case .returnFrame(let frame):
@@ -66,7 +66,7 @@ package struct HTTP3FrameDecoder: ~Copyable {
     }
 
     /// True if this decoder has consumed some bytes to start building up a frame, but has not completed doing so
-    package var hasPartialFrame: Bool {
+    var hasPartialFrame: Bool {
         switch self.nextStep {
         case .decodeFrameType:
             // The frame type is the first thing. If we're waiting for a frame type then we aren't mid-frame
@@ -278,7 +278,7 @@ extension ByteBuffer {
     }
 }
 
-package enum HTTP3PartialFrameOrUnknown: Hashable {
+enum HTTP3PartialFrameOrUnknown: Hashable {
     case known(HTTP3PartialFrame)
     case unknown
 }

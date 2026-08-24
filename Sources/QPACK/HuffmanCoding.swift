@@ -29,7 +29,7 @@ extension ByteBuffer {
     }
 
     /// Returns the number of bytes required to encode a given string.
-    package static func huffmanEncodedByteLength(of bytes: some Collection<UInt8>) -> Int {
+    static func huffmanEncodedByteLength(of bytes: some Collection<UInt8>) -> Int {
         self.huffmanEncodedBitLength(of: bytes) / 8
     }
 
@@ -38,7 +38,7 @@ extension ByteBuffer {
     /// - Parameter stringBytes: The string data to encode.
     /// - Returns: The number of bytes used while encoding the string.
     @discardableResult
-    package mutating func setHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
+    mutating func setHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
         let clen = ByteBuffer.huffmanEncodedBitLength(of: stringBytes)
         self.ensureBitsAvailable(clen)
 
@@ -61,7 +61,7 @@ extension ByteBuffer {
     }
 
     @discardableResult
-    package mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
+    mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
         let written = self.setHuffmanEncoded(bytes: stringBytes)
         self.moveWriterIndex(forwardBy: written)
         return written
@@ -159,7 +159,7 @@ extension ByteBuffer {
     ///   - length: The number of huffman-encoded octets to read.
     /// - Returns: The decoded `String`, or nil if it can't be read.
     @discardableResult
-    package func getHuffmanEncodedString(at index: Int, length: Int) -> String? {
+    func getHuffmanEncodedString(at index: Int, length: Int) -> String? {
         if index + length > self.capacity {
             assertionFailure(
                 "Requested range out of bounds: \(index..<index + length) vs. \(self.capacity)"

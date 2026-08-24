@@ -12,12 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-package enum HTTP3StreamType: Sendable {
+@_spi(PackageInternal)
+public enum HTTP3StreamType: Sendable {
     case unidirectional(Unidirectional)
     case request  // Bidirectional streams must be request streams
 
     /// Unidirectional stream types.
-    package enum Unidirectional: Hashable, RawRepresentable, CustomStringConvertible, Sendable {
+    @_spi(PackageInternal)
+    public enum Unidirectional: Hashable, RawRepresentable, CustomStringConvertible, Sendable {
         /// Type 0x00. Carries HTTP3 frames such as settings, goaway, etc.
         case control
         /// Type 0x01. Carries HTTP3 frames to fulfill a previously promised push.
@@ -30,7 +32,8 @@ package enum HTTP3StreamType: Sendable {
         case unknown(raw: UInt64)
 
         /// RFC 9114 § 6.2 specifies the mapping.
-        package var rawValue: UInt64 {
+        @_spi(PackageInternal)
+        public var rawValue: UInt64 {
             switch self {
             case .control: return 0
             case .push: return 1
@@ -40,7 +43,8 @@ package enum HTTP3StreamType: Sendable {
             }
         }
 
-        package var description: String {
+        @_spi(PackageInternal)
+        public var description: String {
             switch self {
             case .control: return "control"
             case .push: return "push"
@@ -50,7 +54,8 @@ package enum HTTP3StreamType: Sendable {
             }
         }
 
-        package init(rawValue: UInt64) {
+        @_spi(PackageInternal)
+        public init(rawValue: UInt64) {
             precondition(rawValue <= QUICEncodableInteger.maxValue, "Invalid stream type \(rawValue)")
             switch rawValue {
             case 0:
@@ -70,12 +75,14 @@ package enum HTTP3StreamType: Sendable {
 
 extension HTTP3StreamType {
     /// Stream types which carry HTTP3 frames (other streams, e.g. qpack streams, do not). This is a subset of ``HTTP3StreamType``.
-    package enum Framed: Hashable, CustomStringConvertible, Sendable {
+    @_spi(PackageInternal)
+    public enum Framed: Hashable, CustomStringConvertible, Sendable {
         case request
         case push
         case control
 
-        package var description: String {
+        @_spi(PackageInternal)
+        public var description: String {
             switch self {
             case .request: return "request"
             case .push: return "push"
@@ -84,7 +91,8 @@ extension HTTP3StreamType {
         }
     }
 
-    package init(_ framed: Framed) {
+    @_spi(PackageInternal)
+    public init(_ framed: Framed) {
         switch framed {
         case .request:
             self = .request

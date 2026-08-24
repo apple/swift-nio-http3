@@ -14,7 +14,8 @@
 
 public import HTTP3
 import NIOCore
-import QPACK
+
+@testable import QPACK
 
 extension String {
     var huffmanEncodedBytes: [UInt8] {

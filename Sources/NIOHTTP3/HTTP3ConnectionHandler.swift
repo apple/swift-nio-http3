@@ -12,13 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTP3
+@_spi(PackageInternal) public import HTTP3
 public import Logging
 public import NIOCore
 public import NIOQUICHelpers
 
 /// What to do when a new stream comes inbound.
-package enum H3InboundStreamInitializer {
+enum H3InboundStreamInitializer {
     /// Call yield on a multiplexer to give it the new stream channel.
     case multiplexer(any StreamMultiplexerContinuation)
     /// Call a closure with the new stream channel.
@@ -150,7 +150,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - inboundRequestStreamInitializer: A closure which will be called for every incoming request stream.
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-request stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
-    package static func server(
+    static func server(
         eventLoop: any EventLoop,
         configuration: HTTP3ServerConfiguration,
         settings: HTTP3Settings,
@@ -275,7 +275,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - inboundPushStreamInitializer: A closure which will be called for every incoming push stream.
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-push stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
-    package static func client(
+    static func client(
         eventLoop: any EventLoop,
         configuration: HTTP3ClientConfiguration,
         settings: HTTP3Settings,
@@ -442,7 +442,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     }
 
     /// Exposed for testing
-    package func createUnidirectionalStream<InitializerOutput: Sendable>(
+    func createUnidirectionalStream<InitializerOutput: Sendable>(
         ofType type: HTTP3StreamType.Unidirectional,
         streamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<InitializerOutput>
     ) -> EventLoopFuture<InitializerOutput> {

@@ -12,8 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
 import Testing
+
+@testable import HTTP3
 
 struct HTTP3GoawayIDTests {
     @Test

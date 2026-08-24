@@ -14,7 +14,7 @@
 
 import HTTPTypes
 import NIOQUICHelpers
-import QPACK
+@_spi(PackageInternal) import QPACK
 import Testing
 
 struct EncodeDecodeTests {

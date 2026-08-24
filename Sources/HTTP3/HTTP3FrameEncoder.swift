@@ -13,9 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
-import QPACK
+@_spi(PackageInternal) import QPACK
 
-package import struct NIOCore.ByteBuffer
+import struct NIOCore.ByteBuffer
 
 extension ByteBuffer {
     /// Write a single ``HTTP3PartialFrame`` into the ByteBuffer, and move the writer index to just after the frame.
@@ -26,7 +26,7 @@ extension ByteBuffer {
     /// - Parameters:
     /// - frame: The frame to be written to the `ByteBuffer`.
     /// - preferHuffmanEncoding: If true, huffman coding will be preferred where applicable, e.g. header field sections. It will not be used if doing so would use more space than not.
-    package mutating func writeHTTP3PartialFrame(_ frame: HTTP3PartialFrame, preferHuffmanEncoding: Bool) {
+    mutating func writeHTTP3PartialFrame(_ frame: HTTP3PartialFrame, preferHuffmanEncoding: Bool) {
         switch frame {
         case .data(let payload):
             self.writeEncodedInteger(HTTP3FrameType.data.rawValue, strategy: .quic)

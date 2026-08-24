@@ -12,12 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-package import HTTPTypes
+public import HTTPTypes
 
-package import struct NIOCore.ByteBuffer
-package import struct NIOQUICHelpers.QUICApplicationErrorCode
+public import struct NIOCore.ByteBuffer
+public import struct NIOQUICHelpers.QUICApplicationErrorCode
 
-package struct HTTP3StreamStateMachine: ~Copyable {
+@_spi(PackageInternal)
+public struct HTTP3StreamStateMachine: ~Copyable {
     /// This state machine handles the reading side of the stream only.
     /// You call `buffer` to give it bytes, and continually call `decodeNext` to get out frames.
     /// Sometimes, decodeNext will return the `decodeHeader` action, in which case you need to decode those headers.
@@ -303,7 +304,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
             }
         }
 
-        package enum FinishType {
+        @_spi(PackageInternal)
+        public enum FinishType {
             /// We had seen EOF before the close.
             case sawEOF
             /// We hadn't seen EOF before the close.
@@ -458,7 +460,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
 
     private let state: State
 
-    package init(
+    @_spi(PackageInternal)
+    public init(
         streamType: HTTP3StreamType.Framed,
         incoming: Bool,
         preferHuffmanEncoding: Bool
@@ -474,7 +477,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         self.state = state
     }
 
-    package enum WriteFrameAction {
+    @_spi(PackageInternal)
+    public enum WriteFrameAction {
         /// The frame's bytes were appended to the buffer you provided.
         case wroteBytes
         /// You should encode the given headers and call back with the result.
@@ -490,7 +494,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     /// Write out a frame by appending its encoded bytes to `buffer`.
-    package mutating func writeFrame(frame: HTTP3Frame, into buffer: inout ByteBuffer) -> WriteFrameAction {
+    @_spi(PackageInternal)
+    public mutating func writeFrame(frame: HTTP3Frame, into buffer: inout ByteBuffer) -> WriteFrameAction {
         switch self.state {
         case .idle(var idleState):
             guard idleState.readState.checkCanWrite() else {
@@ -528,7 +533,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    package enum HeaderEncodeResultAction {
+    @_spi(PackageInternal)
+    public enum HeaderEncodeResultAction {
         /// The header's bytes were appended to the buffer you provided.
         case wroteBytes
         /// This header can't be encoded because the stream is already in an error state.
@@ -537,7 +543,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         case alreadyClosed
     }
 
-    package mutating func gotHeaderEncodeResult(
+    @_spi(PackageInternal)
+    public mutating func gotHeaderEncodeResult(
         _ result: HTTP3PartialFrame.Headers,
         from: [HTTPField],
         into buffer: inout ByteBuffer
@@ -564,7 +571,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     /// Tell the machine about incoming bytes.
-    package mutating func buffer(_ buffer: ByteBuffer) {
+    @_spi(PackageInternal)
+    public mutating func buffer(_ buffer: ByteBuffer) {
         // Buffer the bytes into the decoder as long as we didn't already hit an error
         switch self.state {
         case .idle(var idleState):
@@ -578,7 +586,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    package enum DecodeNextAction {
+    @_spi(PackageInternal)
+    public enum DecodeNextAction {
         /// A full frame is ready.
         case returnFrame(HTTP3Frame)
         /// An error happened at the connection level.
@@ -598,7 +607,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         /// The decodeNext() function should be called again to get the next action.
         case callAgain
 
-        package enum InputClosedAction {
+        @_spi(PackageInternal)
+        public enum InputClosedAction {
             /// A complete request/response was received before the input was closed. As such, we should just deliver
             /// the `inputClosed` event downstream.
             case emitEvent
@@ -615,7 +625,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     /// Read out the next frame if it is ready. This may ask you to run qpack on some partial headers.
     ///
     /// - Returns: The next action to be performed.
-    package mutating func decodeNext() -> DecodeNextAction {
+    @_spi(PackageInternal)
+    public mutating func decodeNext() -> DecodeNextAction {
         switch self.state {
         case .idle(var idleState):
             let readStateResult = idleState.readState.decodeNext()
@@ -693,7 +704,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
 
     /// Inform the state machine of a qpack decode result that has been previously been asked for.
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
-    package mutating func gotHeaderDecodeResult(_ decoded: [HTTPField], from: HTTP3PartialFrame.Headers) {
+    @_spi(PackageInternal)
+    public mutating func gotHeaderDecodeResult(_ decoded: [HTTPField], from: HTTP3PartialFrame.Headers) {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore
@@ -709,7 +721,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
     /// Inform the state machine of a qpack decode error for a header that the machine previously asked to decode.
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
     /// This error will fail the stream. Connection-level errors should not be sent here.
-    package mutating func gotHeaderDecodeError(_ error: HTTP3Error, from: HTTP3PartialFrame.Headers) {
+    @_spi(PackageInternal)
+    public mutating func gotHeaderDecodeError(_ error: HTTP3Error, from: HTTP3PartialFrame.Headers) {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore
@@ -722,7 +735,8 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    package mutating func inputClosed() {
+    @_spi(PackageInternal)
+    public mutating func inputClosed() {
         switch consume self.state {
         case .finished:
             // Why are we getting input closed after already closed?
@@ -736,12 +750,14 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    package enum ErrorCaughtAction {
+    @_spi(PackageInternal)
+    public enum ErrorCaughtAction {
         case emitStreamError(HTTP3Error)
     }
 
     /// Inform the state machine of a stream error which was caught on this stream.
-    package mutating func streamErrorCaught(errorCode: QUICApplicationErrorCode) -> ErrorCaughtAction? {
+    @_spi(PackageInternal)
+    public mutating func streamErrorCaught(errorCode: QUICApplicationErrorCode) -> ErrorCaughtAction? {
         // Preserve the peer's error code verbatim for reporting, even if it is
         // not one this library recognizes. The reaction is a generic stream
         // error (`.remoteStreamError`), which already satisfies RFC 9114 § 8's
@@ -776,14 +792,16 @@ package struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    package enum FinishedAction: Hashable, Sendable {
+    @_spi(PackageInternal)
+    public enum FinishedAction: Hashable, Sendable {
         /// The stream has been closed. If `seenEOF` is false, then we potentially dropped incoming data.
         case streamClosed(seenEOF: Bool)
     }
 
     /// Inform the state machine that the stream is no longer open.
     /// - Note: You should call ``decodeNext()`` to unbuffer as much as possible before calling this function.
-    package mutating func closed() -> FinishedAction {
+    @_spi(PackageInternal)
+    public mutating func closed() -> FinishedAction {
         switch consume self.state {
         case .idle(let idle):
             let finishState = idle.readState.closed()

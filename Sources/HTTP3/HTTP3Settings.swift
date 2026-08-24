@@ -54,7 +54,7 @@ public struct HTTP3Settings: Hashable, Sendable {
     }
 
     /// Make an empty settings instance.
-    package init() {}
+    init() {}
 
     /// Create a new HTTP3Settings.
     /// Any parameter which is set to nil or omitted will result in the default value being used as per RFC 9114.
@@ -210,7 +210,7 @@ extension ByteBuffer {
     ///
     /// - Warning: There must not be any extra readable bytes beyond a valid set of settings.
     /// - Throws: If there are any extra readable bytes beyond a valid set of settings, or any of the integers are unparseable.
-    package mutating func readHTTP3Settings() throws(HTTP3Error) -> HTTP3Settings {
+    mutating func readHTTP3Settings() throws(HTTP3Error) -> HTTP3Settings {
         var settings = HTTP3Settings()
 
         // We are going to decode the next setting until we have read the payload length
@@ -253,7 +253,7 @@ extension ByteBuffer {
     ///
     /// - Parameter settings: The settings to write.
     /// - Returns: The number of bytes written.
-    package mutating func writeHTTP3Settings(_ settings: HTTP3Settings) -> Int {
+    mutating func writeHTTP3Settings(_ settings: HTTP3Settings) -> Int {
         var bytesWritten = 0
         if settings.qpackBlockedStreams != 0 {
             bytesWritten += self.writeHTTP3Setting(

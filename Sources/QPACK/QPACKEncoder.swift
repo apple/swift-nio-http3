@@ -13,10 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 import DequeModule
-package import HTTPTypes
-package import NIOQUICHelpers
+public import HTTPTypes
+public import NIOQUICHelpers
 
-package enum QPACKEncoderError: Error, Sendable, Hashable {
+enum QPACKEncoderError: Error, Sendable, Hashable {
     case unknownStream
     case unexpectedStreamAck
 }
@@ -105,11 +105,15 @@ struct StreamTracker {
     }
 }
 
-package struct QPACKEncodeResult: Sendable, Hashable {
-    package let fieldSection: FieldSection
-    package let instructions: [QPACKEncoderInstruction]
+@_spi(PackageInternal)
+public struct QPACKEncodeResult: Sendable, Hashable {
+    @_spi(PackageInternal)
+    public let fieldSection: FieldSection
+    @_spi(PackageInternal)
+    public let instructions: [QPACKEncoderInstruction]
 
-    package init(fieldSection: FieldSection, instructions: [QPACKEncoderInstruction]) {
+    @_spi(PackageInternal)
+    public init(fieldSection: FieldSection, instructions: [QPACKEncoderInstruction]) {
         self.fieldSection = fieldSection
         self.instructions = instructions
     }
@@ -193,7 +197,8 @@ private struct QPACKEncodeSingleResult {
 }
 
 /// A full QPACK encoder which may use the dynamic table and may emit instructions.
-package struct DynamicQPACKEncoder {
+@_spi(PackageInternal)
+public struct DynamicQPACKEncoder {
     /// The actual header table.
     private var table: DynamicHeaderTable
     /// The maximum number of streams we'll risk blocking. The peers decoder chooses this.
@@ -203,7 +208,8 @@ package struct DynamicQPACKEncoder {
     /// For when the dynamic table can't be used (e.g. it's full).
     private let staticEncoder: StaticQPACKEncoder
 
-    package static func create(
+    @_spi(PackageInternal)
+    public static func create(
         dynamicTableMaxCapacity: Int,
         dynamicTableInitialCapacity: Int,
         maxBlockedStreams: Int,
@@ -236,7 +242,8 @@ package struct DynamicQPACKEncoder {
         return (encoder, result)
     }
 
-    package mutating func encode(headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
+    @_spi(PackageInternal)
+    public mutating func encode(headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
         let base = self.table.insertCount
         var highestRequiredIndex: Int?
         var requiredIndices = [Int]()
@@ -453,7 +460,8 @@ package struct DynamicQPACKEncoder {
         }
     }
 
-    package mutating func processInstruction(
+    @_spi(PackageInternal)
+    public mutating func processInstruction(
         _ instruction: QPACKDecoderInstruction
     ) throws {
         switch instruction {
@@ -506,9 +514,13 @@ package struct DynamicQPACKEncoder {
 }
 
 /// Can encode field sections but only statically (can't use dynamic table and can't send instructions).
-package struct StaticQPACKEncoder {
-    package init() {}
-    package func encode(headers: [HTTPField]) -> FieldSection {
+@_spi(PackageInternal)
+public struct StaticQPACKEncoder {
+    @_spi(PackageInternal)
+    public init() {}
+
+    @_spi(PackageInternal)
+    public func encode(headers: [HTTPField]) -> FieldSection {
         let base = 0  // base 0 is the cheapest way when no dynamic entries
         var lines = [FieldLine]()
         lines.reserveCapacity(headers.count)
