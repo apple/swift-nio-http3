@@ -548,12 +548,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             streamID: streamID,
             streamType: streamType,
             delegate: self,
-//            qpackEncoder: self.encodeHeaders,
-//            qpackDecoder: self.decodeHeaders,
-//            onStreamClosed: { seenEOF, streamID, streamType in
-//                self.onStreamClosed(streamID: streamID, seenEOF: seenEOF, streamType: .init(streamType))
-//            },
-//            onConnectionError: self.emitConnectionErrorFromStream,
             logger: logger
         )
         try streamChannel.pipeline.syncOperations.addHandler(streamHandler)
