@@ -29,7 +29,9 @@ protocol HTTP3StreamDelegate {
     func decodeHeaders(_: HTTP3PartialFrame.Headers, forStream streamID: QUICStreamID)
 
     /// Tell the connection state when this stream becomes inactive.
-    /// - Parameter sawEOF: `true` if we read an EOF before closure. That means no incoming frames were dropped.
+    ///
+    /// - Parameters:
+    ///     - sawEOF: `true` if we read an EOF before closure. That means no incoming frames were dropped.
     func onStreamClosed(_ sawEOF: Bool, streamID: QUICStreamID, streamType: HTTP3StreamType.Framed)
 
     /// Ask the connection coordinator to send connection-level error to the remote peer.
