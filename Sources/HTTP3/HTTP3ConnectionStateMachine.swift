@@ -171,7 +171,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         static func datagramsNotNegotiated(location: HTTP3Error.SourceLocation) -> Self {
             let error = HTTP3Error(
                 code: .datagramsNotNegotiated,
-                message: "Received an HTTP datagram without having advertised 'SETTINGS_H3_DATAGRAM'",
+                message: "Received an HTTP datagram but datagrams weren't negotiated by both peers",
                 cause: nil,
                 errorCode: .generalProtocolError,
                 location: location
@@ -191,8 +191,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             }
 
         case .initialized(let initialized):
-            // Didn't advertise 'SETTINGS_H3_DATAGRAM': emit an error.
-            guard initialized.localAllowsDatagrams else {
+            // Datagrams can only be sent once both peers have advertised support.
+            guard initialized.localAllowsDatagrams, initialized.remoteAllowsDatagrams else {
                 return .datagramsNotNegotiated(location: .here())
             }
 
@@ -247,12 +247,11 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             )
 
         case .initialized(let initialized):
-            // Datagrams can only be sent once the remote peer has advertised they'll accept them.
-            // See: RFC 9297 § 2.1.1.
-            guard initialized.remoteAllowsDatagrams else {
+            // Datagrams can only be sent once both peers have advertised support.
+            guard initialized.remoteAllowsDatagrams, initialized.localAllowsDatagrams else {
                 return .drop(
                     code: .datagramsNotNegotiated,
-                    message: "The remote has not advertised support for HTTP datagrams",
+                    message: "Datagrams have not been negotiated by both peers",
                     location: .here()
                 )
             }

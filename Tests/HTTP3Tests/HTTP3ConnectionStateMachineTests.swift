@@ -872,7 +872,8 @@ struct HTTP3ConnectionStateMachineTests {
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
             type: .server,
             idGenerator: &idGenerator,
-            localSettings: HTTP3Settings(h3Datagram: true)
+            localSettings: HTTP3Settings(h3Datagram: true),
+            remoteSettings: HTTP3Settings(h3Datagram: true)
         )
 
         #expect(stateMachine.receivedDatagram(streamID: 0).isBuffer)
@@ -891,7 +892,8 @@ struct HTTP3ConnectionStateMachineTests {
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
             type: .server,
             idGenerator: &idGenerator,
-            localSettings: HTTP3Settings(h3Datagram: true)
+            localSettings: HTTP3Settings(h3Datagram: true),
+            remoteSettings: HTTP3Settings(h3Datagram: true)
         )
 
         // Streams at or above ID 4 are rejected from here on.
@@ -915,7 +917,8 @@ struct HTTP3ConnectionStateMachineTests {
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
             type: .client,
             idGenerator: &idGenerator,
-            localSettings: HTTP3Settings(h3Datagram: true)
+            localSettings: HTTP3Settings(h3Datagram: true),
+            remoteSettings: HTTP3Settings(h3Datagram: true)
         )
 
         // A client's GOAWAY carries a push ID, so it says nothing about which request streams the
@@ -945,6 +948,21 @@ struct HTTP3ConnectionStateMachineTests {
     func testReceivedDatagramBeforeStartedWithoutLocalSupport() {
         let stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
         stateMachine.expectReceivingDatagramIsConnectionError(streamID: 0, code: .datagramsNotNegotiated)
+    }
+
+    @Test
+    func testReceivedDatagramWithoutRemoteSupport() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .server,
+            idGenerator: &idGenerator,
+            localSettings: HTTP3Settings(h3Datagram: true)
+        )
+
+        // The remote didn't advertise support so it must not send datagrams.
+        let streamID = idGenerator.inboundBidi()
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+        stateMachine.expectReceivingDatagramIsConnectionError(streamID: streamID, code: .datagramsNotNegotiated)
     }
 
     @Test
@@ -985,6 +1003,7 @@ struct HTTP3ConnectionStateMachineTests {
         var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
             type: .server,
             idGenerator: &idGenerator,
+            localSettings: HTTP3Settings(h3Datagram: true),
             remoteSettings: HTTP3Settings(h3Datagram: true)
         )
 
@@ -1002,7 +1021,25 @@ struct HTTP3ConnectionStateMachineTests {
     @Test
     func testSendDatagramWithoutRemoteSupport() {
         var idGenerator = IDGenerator(type: .server)
-        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(type: .server, idGenerator: &idGenerator)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .server,
+            idGenerator: &idGenerator,
+            localSettings: HTTP3Settings(h3Datagram: true)
+        )
+
+        let streamID = idGenerator.inboundBidi()
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+        stateMachine.expectSendingDatagramIsDropped(streamID: streamID, code: .datagramsNotNegotiated)
+    }
+
+    @Test
+    func testSendDatagramWithoutLocalSupport() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .server,
+            idGenerator: &idGenerator,
+            remoteSettings: HTTP3Settings(h3Datagram: true)
+        )
 
         let streamID = idGenerator.inboundBidi()
         #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
@@ -1016,6 +1053,7 @@ struct HTTP3ConnectionStateMachineTests {
         let stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
             type: .server,
             idGenerator: &idGenerator,
+            localSettings: HTTP3Settings(h3Datagram: true),
             remoteSettings: HTTP3Settings(h3Datagram: true)
         )
         stateMachine.expectSendingDatagramIsDropped(streamID: streamID, code: .invalidStream)
