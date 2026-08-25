@@ -39,7 +39,7 @@ struct StreamIDTracker {
             self.openBidirectionalStreamCount += 1
         }
 
-        let streamType = Int(id.rawValue & 0b11)  // The last 2 bits determine the type of a QUIC stream.
+        let streamType = id.typeBits  // The last 2 bits determine the type of a QUIC stream.
 
         let previousHighestSeenID = self.highestIDSeenByType[streamType]
         if previousHighestSeenID == nil || id > previousHighestSeenID! {
@@ -85,7 +85,7 @@ struct StreamIDTracker {
     /// - Returns: `true` if the next id of the same type as the provided one would be equal to or greater than the provided one.
     func hasExhaustedSameTypeStreams(withIDsLessThan givenID: QUICStreamID) -> Bool {
         /// The stream type for the id we were given. This is determined by the last 2 bits. See RFC 9000 § 2.1
-        let givenIDType = Int(givenID.rawValue & 0b11)
+        let givenIDType = givenID.typeBits
         /// The highest ID that we have seen so far for streams of this type
         let highestSeenIDOfSameType = self.highestIDSeenByType[givenIDType]
         /// The next ID for a stream of this type
@@ -98,5 +98,26 @@ struct StreamIDTracker {
             }
         // Would the next ID be more than or equal to the max?
         return nextIDOfSameType >= givenID.rawValue
+    }
+
+    enum Openness {
+        /// The stream hasn't been opened yet.
+        case notYetOpen
+        /// The stream is open.
+        case open
+        /// The stream is closed.
+        case closed
+    }
+
+    func opennessOfStream(withID streamID: QUICStreamID) -> Openness {
+        if self.openStreams.contains(streamID) {
+            return .open
+        }
+
+        if let highest = self.highestIDSeenByType[streamID.typeBits] {
+            return streamID > highest ? .notYetOpen : .closed
+        } else {
+            return .notYetOpen
+        }
     }
 }

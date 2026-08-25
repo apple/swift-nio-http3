@@ -264,8 +264,8 @@ extension HTTP3Error {
             Self(.peerTerminatedInboundStream)
         }
 
-        // Attempted to send a datagram but the remote peer hasn't advertised that it's willing
-        /// to receive datagrams.
+        /// A datagram was sent or received on a connection where the endpoint receiving it hasn't
+        /// advertised that it's willing to receive datagrams.
         public static var datagramsNotNegotiated: Self {
             Self(.datagramsNotNegotiated)
         }

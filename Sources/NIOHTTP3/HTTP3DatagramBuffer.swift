@@ -71,7 +71,7 @@ struct HTTP3DatagramBuffer {
     private var runs: Deque<StreamIDRun>
 
     #if DEBUG
-    /// A set of stream IDs for which datagrams have already been discarded.
+    /// A set of stream IDs for which datagrams have already been unbuffered.
     private var unbuffered: Set<QUICStreamID> = []
 
     private mutating func markUnbuffered(_ streamID: QUICStreamID) {
@@ -81,7 +81,7 @@ struct HTTP3DatagramBuffer {
     private func checkNotUnbuffered(_ streamID: QUICStreamID) {
         if self.unbuffered.contains(streamID) {
             fatalError(
-                "\(streamID) has been discarded: you can't buffer data for a stream after it has been unbuffered"
+                "\(streamID) has been unbuffered: you can't buffer data for a stream after it has been unbuffered"
             )
         }
     }
@@ -143,11 +143,10 @@ struct HTTP3DatagramBuffer {
     }
 
     /// Removes all datagrams for the given stream ID, if they exist.
+    ///
+    /// Unlike ``unbufferDatagrams(forStream:)`` this doesn't stop the stream from buffering datagrams
+    /// again: discarding is a cleanup, so it doesn't change the order datagrams are delivered in.
     mutating func discardDatagrams(forStream id: QUICStreamID) {
-        #if DEBUG
-        self.markUnbuffered(id)
-        #endif
-
         if let batch = self.storage.removeValue(forKey: id) {
             self.totalSize -= batch.totalSize
         }
@@ -162,12 +161,6 @@ struct HTTP3DatagramBuffer {
 
     /// Removes all buffered datagrams.
     mutating func discardAllDatagrams() {
-        #if DEBUG
-        for id in self.storage.keys {
-            self.markUnbuffered(id)
-        }
-        #endif
-
         self.storage.removeAll()
         self.runs.removeAll()
         self.totalSize = 0
@@ -219,9 +212,9 @@ extension [QUICStreamID: HTTP3DatagramBuffer.DatagramBatch] {
         var bytes: Int
         var datagrams: Int
 
-        mutating func record(bytes: Int) {
+        mutating func record(bytes: Int, datagrams: Int = 1) {
             self.bytes += bytes
-            self.datagrams += 1
+            self.datagrams += datagrams
         }
     }
 
@@ -238,8 +231,7 @@ extension [QUICStreamID: HTTP3DatagramBuffer.DatagramBatch] {
 
             // Fast-path: drop a whole batch.
             if maxDatagramsToDrop >= batch!.datagrams.count, bytesToDrop >= batch!.totalSize {
-                dropped.datagrams = batch!.datagrams.count
-                dropped.record(bytes: batch!.totalSize)
+                dropped.record(bytes: batch!.totalSize, datagrams: batch!.datagrams.count)
                 batch = nil
             } else {
                 while dropped.datagrams < maxDatagramsToDrop, dropped.bytes < bytesToDrop,
