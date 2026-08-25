@@ -1023,12 +1023,12 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
     public enum CloseAction {
         /// Send a GOAWAY frame containing ``id`` and close any existing streams with an id in ``idsToCancel``.
         ///
-        /// Streams with an ID greater than or equal to ``firstRejectedStreamID`` will be rejected and can therefore
+        /// Streams with an ID greater than or equal to ``lowestRejectedStreamID`` will be rejected and can therefore
         /// never be created. This is `nil` for clients, whose GOAWAY carries a push ID rather than a stream ID.
         case sendGoaway(
             id: HTTP3GoawayID,
             idsToCancel: [QUICStreamID],
-            firstRejectedStreamID: QUICStreamID?
+            lowestRejectedStreamID: QUICStreamID?
         )
         /// Throw an error: the caller of this function has made a mistake and gave us an invalid id.
         case throwError(any Error)
@@ -1049,12 +1049,12 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let action = initializedState.quiescingState.sendGoaway(goawayID: newLocalMaxID)
 
             let idsToCancel: [QUICStreamID]
-            let firstRejectedStreamID: QUICStreamID?
+            let lowestRejectedStreamID: QUICStreamID?
             switch initializedState.type {
             case .client:
                 // TODO: Once we implement server push, explicitly cancel pushes above the max ID here
                 idsToCancel = []
-                firstRejectedStreamID = nil
+                lowestRejectedStreamID = nil
             case .server:
                 // RFC 9114 § 5.2: Upon sending a GOAWAY frame, the endpoint SHOULD explicitly cancel (see Sections 4.1.1 and 7.2.3) any requests or
                 // pushes that have identifiers greater than or equal to the one indicated, in order to clean up transport state for the affected streams
@@ -1062,14 +1062,14 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 idsToCancel = initializedState.streamIDTracker.getOpenStreamIDs {
                     $0 >= sentID && $0.isBidirectional && $0.isClientInitiated
                 }
-                firstRejectedStreamID = sentID
+                lowestRejectedStreamID = sentID
             }
             self = .init(state: .initialized(initializedState))
             switch action {
             case .throwError(let error):
                 return .throwError(error)
             case .sendGoaway(let id):
-                return .sendGoaway(id: id, idsToCancel: idsToCancel, firstRejectedStreamID: firstRejectedStreamID)
+                return .sendGoaway(id: id, idsToCancel: idsToCancel, lowestRejectedStreamID: lowestRejectedStreamID)
             }
         }
     }

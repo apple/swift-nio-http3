@@ -801,13 +801,13 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             // We will only reach here if the connection state machine is in the `.notStarted` case; the state machine
             // can only be in the `.notStarted` case if `channelActive` has not been called.
             self.shutdownConnectionImmediately()
-        case .sendGoaway(let id, let streamsToCancel, let firstRejectedStreamID):
+        case .sendGoaway(let id, let streamsToCancel, let lowestRejectedStreamID):
             self.logger.trace("Sending goaway", metadata: [LoggingKeys.goawayID: "\(id)"])
             self.outboundControlStreamHandler.sendGoaway(id: id)
             self.cancelStreamsDueToSendingGoaway(streamsToCancel)
-            if let firstRejectedStreamID {
+            if let lowestRejectedStreamID {
                 // These streams will never be opened: drop any datagrams for them.
-                self.datagramBuffer.discardDatagrams(forStreamsAtOrAbove: firstRejectedStreamID)
+                self.datagramBuffer.discardDatagrams(forStreamsAtOrAbove: lowestRejectedStreamID)
             }
         case .throwError(let error):
             throw error
