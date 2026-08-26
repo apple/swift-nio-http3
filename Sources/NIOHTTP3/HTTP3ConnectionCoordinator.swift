@@ -565,8 +565,13 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             break
         case .emitConnectionError(let error):
             self.connection?.emitConnectionError(error)
-        case .makeEncoderInstructionStream:
-            self.createQPACKEncoderInstructionStream()
+        case .onSettings(let onSettings):
+            if onSettings.makeEncoderInstructionStream {
+                self.createQPACKEncoderInstructionStream()
+            }
+            if onSettings.emitDatagramsNegotiatedEvent {
+                self.connection?.fireDatagramsNegotiatedEvent()
+            }
         case .cancelStreams(let ids):
             self.cancelStreamsDueToReceivingGoaway(ids)
         case .closeConnection:

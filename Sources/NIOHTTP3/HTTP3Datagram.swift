@@ -85,6 +85,11 @@ extension HTTP3Datagram {
     }
 }
 
+/// Fired on the connection channel when both peers have advertised support for HTTP datagrams.
+public struct HTTP3DatagramsNegotiated: Hashable, Sendable {
+    public init() {}
+}
+
 extension ByteBuffer {
     mutating func parseDatagram() throws(HTTP3Error) -> HTTP3Datagram {
         guard let quarterStreamID = self.readEncodedInteger(as: UInt64.self, strategy: .quic) else {

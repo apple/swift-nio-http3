@@ -359,7 +359,12 @@ struct HTTP3ConnectionStateMachineTests {
         let action1 = stateMachine.initialize()
         #expect(action1 == .createControlStream)
         let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
-        #expect(action2 == nil)
+        guard case .onSettings(let settings) = action2 else {
+            Issue.record("Unexpected action \(String(describing: action2))")
+            return
+        }
+        #expect(!settings.makeEncoderInstructionStream)
+        #expect(!settings.emitDatagramsNegotiatedEvent)
     }
 
     @Test
@@ -372,7 +377,7 @@ struct HTTP3ConnectionStateMachineTests {
         #expect(action1 == .createControlAndDecoderStreams)
 
         let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
-        guard case .makeEncoderInstructionStream = action2 else {
+        guard case .onSettings(let settings) = action2, settings.makeEncoderInstructionStream else {
             Issue.record("Unexpected action \(String(describing: action2))")
             return
         }
@@ -745,7 +750,7 @@ struct HTTP3ConnectionStateMachineTests {
         #expect(action1 == .createControlAndDecoderStreams)
 
         let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
-        guard case .makeEncoderInstructionStream = action2 else {
+        guard case .onSettings(let settings) = action2, settings.makeEncoderInstructionStream else {
             Issue.record("Unexpected action \(String(describing: action2))")
             return
         }
@@ -963,6 +968,22 @@ struct HTTP3ConnectionStateMachineTests {
         let streamID = idGenerator.inboundBidi()
         #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
         stateMachine.expectReceivingDatagramIsConnectionError(streamID: streamID, code: .datagramsNotNegotiated)
+    }
+
+    @Test(arguments: [true, false], [true, false])
+    func testSettingsReportWhetherDatagramsAreNegotiated(localSupport: Bool, remoteSupport: Bool) {
+        var stateMachine = HTTP3ConnectionStateMachine(
+            settings: HTTP3Settings(h3Datagram: localSupport),
+            type: .client
+        )
+        _ = stateMachine.initialize()
+
+        let action = stateMachine.receivedControlFrame(.settings(HTTP3Settings(h3Datagram: remoteSupport)))
+        guard case .onSettings(let settings) = action else {
+            Issue.record("Unexpected action \(String(describing: action))")
+            return
+        }
+        #expect(settings.emitDatagramsNegotiatedEvent == (localSupport && remoteSupport))
     }
 
     @Test
@@ -1293,19 +1314,20 @@ extension HTTP3ConnectionStateMachine {
         // receive remotes settings
         let action3 = stateMachine.receivedControlFrame(.settings(remoteSettings))
         switch action3 {
-        case .makeEncoderInstructionStream:
-            // We shouldn't be asked to make an encoder stream if remote qpack isn't enabled.
-            #expect(expectRemoteQPACK)
-            let action3 = stateMachine.outboundEncoderStreamReady(streamID: idGenerator.outboundUni())
-            switch action3 {
-            case .sendEncoderInstruction(let ins):
-                #expect(ins == .setDynamicTableCapacity(Int(localSettings.qpackMaximumTableCapacity)))
-            case .none:
-                Issue.record()
+        case .onSettings(let settings):
+            // We should be asked to make an encoder stream if and only if remote qpack is enabled.
+            #expect(settings.makeEncoderInstructionStream == expectRemoteQPACK)
+            if settings.makeEncoderInstructionStream {
+                let action3 = stateMachine.outboundEncoderStreamReady(streamID: idGenerator.outboundUni())
+                switch action3 {
+                case .sendEncoderInstruction(let ins):
+                    #expect(ins == .setDynamicTableCapacity(Int(localSettings.qpackMaximumTableCapacity)))
+                case .none:
+                    Issue.record()
+                }
             }
         default:
-            // We should be asked to make an encoder stream if remote qpack is enabled.
-            #expect(!expectRemoteQPACK)
+            Issue.record("Unexpected action \(String(describing: action3))")
         }
 
         return stateMachine

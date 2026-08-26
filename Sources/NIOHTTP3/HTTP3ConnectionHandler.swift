@@ -640,6 +640,10 @@ extension HTTP3ConnectionHandler {
         context.fireChannelReadComplete()
     }
 
+    func fireDatagramsNegotiatedEvent() {
+        self.context?.fireUserInboundEventTriggered(HTTP3DatagramsNegotiated())
+    }
+
     func emitConnectionError(_ error: HTTP3Error) {
         self.logger.debug(
             "Closing connection",

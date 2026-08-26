@@ -96,6 +96,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             var remoteAllowsDatagrams = false
             let localAllowsDatagrams: Bool
 
+            var datagramsNegotiated: Bool {
+                self.localAllowsDatagrams && self.remoteAllowsDatagrams
+            }
+
             init(notStarted: consuming NotStarted) {
                 self.inboundControlStream = .init()
                 self.inboundQPACKDecoderStream = .init()
@@ -191,8 +195,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             }
 
         case .initialized(let initialized):
-            // Datagrams can only be sent once both peers have advertised support.
-            guard initialized.localAllowsDatagrams, initialized.remoteAllowsDatagrams else {
+            guard initialized.datagramsNegotiated else {
                 return .datagramsNotNegotiated(location: .here())
             }
 
@@ -247,8 +250,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             )
 
         case .initialized(let initialized):
-            // Datagrams can only be sent once both peers have advertised support.
-            guard initialized.remoteAllowsDatagrams, initialized.localAllowsDatagrams else {
+            guard initialized.datagramsNegotiated else {
                 return .drop(
                     code: .datagramsNotNegotiated,
                     message: "Datagrams have not been negotiated by both peers",
@@ -692,14 +694,22 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     @_spi(PackageInternal)
     public enum ControlFrameReceivedAction {
-        /// An outbound QPACK encoder instruction stream needs to be created.
-        case makeEncoderInstructionStream
+        /// The remote's SETTINGS were processed; do each thing it indicates.
+        case onSettings(OnSettings)
         /// A connection error should be emitted
         case emitConnectionError(HTTP3Error)
         /// The following streams should be cancelled (we got a GOAWAY)
         case cancelStreams(ids: [QUICStreamID])
         /// The connection should be immediately closed without an error.
         case closeConnection
+
+        @_spi(PackageInternal)
+        public struct OnSettings: Hashable, Sendable {
+            /// An outbound QPACK encoder instruction stream needs to be created.
+            public var makeEncoderInstructionStream: Bool
+            /// Tell the user that both peers have agreed to use HTTP datagrams.
+            public var emitDatagramsNegotiatedEvent: Bool
+        }
     }
 
     @_spi(PackageInternal)
@@ -717,13 +727,21 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                     )
                 )
                 initializedState.remoteAllowsDatagrams = settings.h3Datagram
+                let datagramsNegotiated = initializedState.datagramsNegotiated
+                let makeEncoderStream: Bool
                 self = .init(state: .initialized(initializedState))
                 switch action {
                 case .makeEncoderInstructionStream:
-                    return .makeEncoderInstructionStream
+                    makeEncoderStream = true
                 case .none:
-                    return nil
+                    makeEncoderStream = false
                 }
+                return .onSettings(
+                    ControlFrameReceivedAction.OnSettings(
+                        makeEncoderInstructionStream: makeEncoderStream,
+                        emitDatagramsNegotiatedEvent: datagramsNegotiated
+                    )
+                )
             case .notStarted:
                 fatalError("Inbound control frame received before state machine started")
             case .finished:
