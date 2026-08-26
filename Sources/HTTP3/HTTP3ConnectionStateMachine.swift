@@ -93,6 +93,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let encoderMaxTableSize: Int
             var streamIDTracker = StreamIDTracker()
             var quiescingState: HTTP3ConnectionQuiescingStateMachine
+            var remoteAllowsDatagrams = false
+            let localAllowsDatagrams: Bool
 
             init(notStarted: consuming NotStarted) {
                 self.inboundControlStream = .init()
@@ -101,6 +103,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 self.qpackState = notStarted.qpackState
                 self.type = notStarted.type
                 self.encoderMaxTableSize = Int(clamping: notStarted.localSettings.qpackMaximumTableCapacity)
+                self.localAllowsDatagrams = notStarted.localSettings.h3Datagram
                 self.quiescingState = .init(type: notStarted.type)
             }
         }
@@ -153,6 +156,162 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             self = .init(state: .finished)
             return .none
         }
+    }
+
+    // MARK: Datagrams
+
+    @_spi(PackageInternal)
+    public enum ReceivedDatagramAction {
+        case buffer
+        case forward
+        case discard
+        case connectionError(HTTP3Error)
+
+        @inline(never)
+        static func datagramsNotNegotiated(location: HTTP3Error.SourceLocation) -> Self {
+            let error = HTTP3Error(
+                code: .datagramsNotNegotiated,
+                message: "Received an HTTP datagram but datagrams weren't negotiated by both peers",
+                cause: nil,
+                errorCode: .generalProtocolError,
+                location: location
+            )
+            return .connectionError(error)
+        }
+    }
+
+    @_spi(PackageInternal)
+    public func receivedDatagram(streamID: QUICStreamID) -> ReceivedDatagramAction {
+        switch self.state {
+        case .notStarted(let notStarted):
+            if notStarted.localSettings.h3Datagram {
+                return .buffer
+            } else {
+                return .datagramsNotNegotiated(location: .here())
+            }
+
+        case .initialized(let initialized):
+            // Datagrams can only be sent once both peers have advertised support.
+            guard initialized.localAllowsDatagrams, initialized.remoteAllowsDatagrams else {
+                return .datagramsNotNegotiated(location: .here())
+            }
+
+            // If the connection is quiescing then the datagram may never be allowed on some streams.
+            if initialized.type == .server {
+                if !initialized.quiescingState.inboundRequestStreamAllowed(incomingStreamID: streamID) {
+                    return .discard
+                }
+            }
+
+            switch initialized.streamIDTracker.opennessOfStream(withID: streamID) {
+            case .notYetOpen:
+                return .buffer
+            case .open:
+                return .forward
+            case .closed:
+                return .discard
+            }
+
+        case .finished:
+            return .discard
+        }
+    }
+
+    @_spi(PackageInternal)
+    public enum SendDatagramAction {
+        /// Send the datagram on the connection.
+        case send
+        /// Drop the datagram and fail any write promise with the given error.
+        case drop(HTTP3Error)
+
+        @inline(never)
+        static func drop(
+            code: HTTP3Error.Code,
+            message: String,
+            location: HTTP3Error.SourceLocation
+        ) -> Self {
+            let error = HTTP3Error(code: code, message: message, cause: nil, errorCode: nil, location: location)
+            return .drop(error)
+        }
+    }
+
+    /// Whether a datagram associated with the given stream may be sent to the remote.
+    @_spi(PackageInternal)
+    public func sendDatagram(streamID: QUICStreamID) -> SendDatagramAction {
+        switch self.state {
+        case .notStarted:
+            return .drop(
+                code: .datagramsNotNegotiated,
+                message: "Datagrams can't be sent before the connection has been initialized",
+                location: .here()
+            )
+
+        case .initialized(let initialized):
+            // Datagrams can only be sent once both peers have advertised support.
+            guard initialized.remoteAllowsDatagrams, initialized.localAllowsDatagrams else {
+                return .drop(
+                    code: .datagramsNotNegotiated,
+                    message: "Datagrams have not been negotiated by both peers",
+                    location: .here()
+                )
+            }
+
+            // Datagrams can only be sent on client initiated bidirectional streams.
+            // See: RFC 9297 § 2.1.
+            guard streamID.type == .clientInitiatedBidirectional else {
+                return .drop(
+                    code: .invalidStream,
+                    message: "Datagrams can only be sent on client-initiated bidirectional streams",
+                    location: .here()
+                )
+            }
+
+            switch initialized.streamIDTracker.opennessOfStream(withID: streamID) {
+            case .open:
+                return .send
+            case .notYetOpen:
+                return .drop(
+                    code: .invalidStream,
+                    message: "Stream \(streamID) hasn't been opened",
+                    location: .here()
+                )
+            case .closed:
+                return .drop(
+                    code: .invalidStream,
+                    message: "Stream \(streamID) is closed",
+                    location: .here()
+                )
+            }
+
+        case .finished:
+            return .drop(
+                code: .connectionClosed,
+                message: "Datagrams can't be sent once the connection has been closed",
+                location: .here()
+            )
+        }
+    }
+
+    // Only used for an assertion.
+    @_spi(PackageInternal)
+    package func isStreamOpen(_ id: QUICStreamID) -> Bool {
+        let isOpen: Bool
+
+        switch self.state {
+        case .notStarted:
+            isOpen = false
+        case .initialized(let state):
+            switch state.streamIDTracker.opennessOfStream(withID: id) {
+            case .open:
+                isOpen = true
+            case .notYetOpen, .closed:
+                isOpen = false
+            }
+        case .finished:
+            isOpen = false
+        }
+
+        return isOpen
     }
 
     // MARK: Inbound streams
@@ -557,6 +716,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                         Int(clamping: settings.qpackMaximumTableCapacity)
                     )
                 )
+                initializedState.remoteAllowsDatagrams = settings.h3Datagram
                 self = .init(state: .initialized(initializedState))
                 switch action {
                 case .makeEncoderInstructionStream:
@@ -861,8 +1021,15 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     @_spi(PackageInternal)
     public enum CloseAction {
-        /// Send a GOAWAY frame containing ``id`` and close any existing streams with an id in ``idsToCancel``
-        case sendGoaway(id: HTTP3GoawayID, idsToCancel: [QUICStreamID])
+        /// Send a GOAWAY frame containing ``id`` and close any existing streams with an id in ``idsToCancel``.
+        ///
+        /// Streams with an ID greater than or equal to ``lowestRejectedStreamID`` will be rejected and can therefore
+        /// never be created. This is `nil` for clients, whose GOAWAY carries a push ID rather than a stream ID.
+        case sendGoaway(
+            id: HTTP3GoawayID,
+            idsToCancel: [QUICStreamID],
+            lowestRejectedStreamID: QUICStreamID?
+        )
         /// Throw an error: the caller of this function has made a mistake and gave us an invalid id.
         case throwError(any Error)
         /// Close the connection immediately.
@@ -882,10 +1049,12 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let action = initializedState.quiescingState.sendGoaway(goawayID: newLocalMaxID)
 
             let idsToCancel: [QUICStreamID]
+            let lowestRejectedStreamID: QUICStreamID?
             switch initializedState.type {
             case .client:
                 // TODO: Once we implement server push, explicitly cancel pushes above the max ID here
                 idsToCancel = []
+                lowestRejectedStreamID = nil
             case .server:
                 // RFC 9114 § 5.2: Upon sending a GOAWAY frame, the endpoint SHOULD explicitly cancel (see Sections 4.1.1 and 7.2.3) any requests or
                 // pushes that have identifiers greater than or equal to the one indicated, in order to clean up transport state for the affected streams
@@ -893,13 +1062,14 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 idsToCancel = initializedState.streamIDTracker.getOpenStreamIDs {
                     $0 >= sentID && $0.isBidirectional && $0.isClientInitiated
                 }
+                lowestRejectedStreamID = sentID
             }
             self = .init(state: .initialized(initializedState))
             switch action {
             case .throwError(let error):
                 return .throwError(error)
             case .sendGoaway(let id):
-                return .sendGoaway(id: id, idsToCancel: idsToCancel)
+                return .sendGoaway(id: id, idsToCancel: idsToCancel, lowestRejectedStreamID: lowestRejectedStreamID)
             }
         }
     }
@@ -1065,7 +1235,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     /// Call this when a stream wants to emit a connection-level error.
     @_spi(PackageInternal)
-    public mutating func emitConnectionErrorFromStream(error: HTTP3Error) -> EmitConnectionErrorAction {
+    public mutating func emitConnectionErrorFromStream(
+        error: HTTP3Error,
+        allowNotStarted: Bool = false
+    ) -> EmitConnectionErrorAction {
         switch consume self.state {
         case .finished:
             // We already finished, so emitting a connection error is now pointless.
@@ -1075,7 +1248,12 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             self = .init(state: .finished)
             return .emitConnectionError(error)
         case .notStarted:
-            fatalError("Stream emitted connection error before started")
+            if allowNotStarted {
+                self = .init(state: .finished)
+                return .emitConnectionError(error)
+            } else {
+                fatalError("Stream emitted connection error before started")
+            }
         }
     }
 

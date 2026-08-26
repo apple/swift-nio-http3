@@ -41,4 +41,9 @@ extension QUICStreamID {
     var isServerInitiated: Bool {
         !self.isClientInitiated
     }
+
+    /// The last two bits of the ID, which determine the type of the stream.
+    var typeBits: Int {
+        Int(self.rawValue & 0b11)
+    }
 }
