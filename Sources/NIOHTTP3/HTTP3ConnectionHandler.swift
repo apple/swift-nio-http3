@@ -341,6 +341,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     /// Ask the handler to initialize a new incoming stream. This must be called for every incoming QUIC stream _before_ that stream channel is activated.
     /// - Precondition: You must call this function on the eventloop.
     public func inboundStreamReceived(_ streamChannel: any Channel) -> EventLoopFuture<Void> {
+        self.coordinator.eventLoop.preconditionInEventLoop()
         self.logger.trace("Connection got inbound stream")
         if let sync = streamChannel.syncOptions {
             let result = Result { try sync.getOption(.quicStreamID) }
@@ -393,10 +394,10 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         _ streamChannel: any Channel,
         streamID streamIDResult: Result<UInt64, any Error>
     ) -> EventLoopFuture<Void> {
-        let streamID: UInt64
+        let streamID: QUICStreamID
         switch streamIDResult {
         case .success(let id):
-            streamID = id
+            streamID = QUICStreamID(rawValue: id)
         case .failure(let cause):
             return streamChannel.eventLoop.makeFailedFuture(
                 HTTP3Error(
@@ -412,7 +413,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         switch self.inboundStreamInitializer {
         case .closure(let closure):
             return self.coordinator.inboundStreamInitializer(
-                parameters: .init(channel: streamChannel, streamID: .init(rawValue: streamID)),
+                parameters: .init(channel: streamChannel, streamID: streamID),
                 addTypeHandlers: self.addTypeHandlers,
                 userInboundStreamInitializer: closure,
                 internalInboundStreamInitializer: self.internalInboundStreamInitializer,
@@ -420,7 +421,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             )
         case .multiplexer(let multiplexer):
             return self.coordinator.inboundStreamInitializer(
-                parameters: .init(channel: streamChannel, streamID: .init(rawValue: streamID)),
+                parameters: .init(channel: streamChannel, streamID: streamID),
                 addTypeHandlers: self.addTypeHandlers,
                 userInboundStreamInitializer: multiplexer.initialize(parameters:),
                 internalInboundStreamInitializer: self.internalInboundStreamInitializer,
