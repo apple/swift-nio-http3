@@ -637,9 +637,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             if onSettings.makeEncoderInstructionStream {
                 self.createQPACKEncoderInstructionStream()
             }
-            if onSettings.emitDatagramsNegotiatedEvent {
-                self.connection?.fireDatagramsNegotiatedEvent()
-            }
+            self.connection?.fireDatagramsNegotiatedEvent(onSettings.datagramsNegotiated)
         case .cancelStreams(let ids):
             self.cancelStreamsDueToReceivingGoaway(ids)
         case .closeConnection:

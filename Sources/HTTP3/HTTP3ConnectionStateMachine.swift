@@ -707,8 +707,9 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         public struct OnSettings: Hashable, Sendable {
             /// An outbound QPACK encoder instruction stream needs to be created.
             public var makeEncoderInstructionStream: Bool
-            /// Tell the user that both peers have agreed to use HTTP datagrams.
-            public var emitDatagramsNegotiatedEvent: Bool
+            /// Whether both peers have agreed to use HTTP datagrams. The outcome must be reported by firing the
+            /// `HTTP3DatagramsNegotiated` event.
+            public var datagramsNegotiated: Bool
         }
     }
 
@@ -719,27 +720,31 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let settings = payload.settings
             switch consume self.state {
             case .initialized(var initializedState):
-                let action = initializedState.qpackState.receivedRemoteSettings(
+                initializedState.remoteAllowsDatagrams = settings.h3Datagram
+                let datagramsNegotiated = initializedState.datagramsNegotiated
+
+                let qpackAction = initializedState.qpackState.receivedRemoteSettings(
                     maxQueueSize: Int(clamping: settings.qpackBlockedStreams),
                     effectiveDynamicTableSize: min(
                         initializedState.encoderMaxTableSize,
                         Int(clamping: settings.qpackMaximumTableCapacity)
                     )
                 )
-                initializedState.remoteAllowsDatagrams = settings.h3Datagram
-                let datagramsNegotiated = initializedState.datagramsNegotiated
-                let makeEncoderStream: Bool
+
+                let makeEncoderStream =
+                    switch qpackAction {
+                    case .makeEncoderInstructionStream:
+                        true
+                    case .none:
+                        false
+                    }
+
                 self = .init(state: .initialized(initializedState))
-                switch action {
-                case .makeEncoderInstructionStream:
-                    makeEncoderStream = true
-                case .none:
-                    makeEncoderStream = false
-                }
+
                 return .onSettings(
                     ControlFrameReceivedAction.OnSettings(
                         makeEncoderInstructionStream: makeEncoderStream,
-                        emitDatagramsNegotiatedEvent: datagramsNegotiated
+                        datagramsNegotiated: datagramsNegotiated
                     )
                 )
             case .notStarted:

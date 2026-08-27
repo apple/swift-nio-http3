@@ -85,9 +85,14 @@ extension HTTP3Datagram {
     }
 }
 
-/// Fired on the connection channel when both peers have advertised support for HTTP datagrams.
+/// Fired on the connection channel once the peer's SETTINGS have been received.
 public struct HTTP3DatagramsNegotiated: Hashable, Sendable {
-    public init() {}
+    /// Whether both peers advertised support for HTTP datagrams.
+    public var isSupported: Bool
+
+    init(_ isSupported: Bool) {
+        self.isSupported = isSupported
+    }
 }
 
 extension ByteBuffer {

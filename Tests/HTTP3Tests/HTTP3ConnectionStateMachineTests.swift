@@ -364,7 +364,7 @@ struct HTTP3ConnectionStateMachineTests {
             return
         }
         #expect(!settings.makeEncoderInstructionStream)
-        #expect(!settings.emitDatagramsNegotiatedEvent)
+        #expect(!settings.datagramsNegotiated)
     }
 
     @Test
@@ -983,7 +983,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(String(describing: action))")
             return
         }
-        #expect(settings.emitDatagramsNegotiatedEvent == (localSupport && remoteSupport))
+        #expect(settings.datagramsNegotiated == (localSupport && remoteSupport))
     }
 
     @Test
