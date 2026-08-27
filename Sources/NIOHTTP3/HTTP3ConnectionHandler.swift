@@ -641,8 +641,8 @@ extension HTTP3ConnectionHandler {
         context.fireChannelReadComplete()
     }
 
-    func fireDatagramsNegotiatedEvent(_ result: Bool) {
-        self.context?.fireUserInboundEventTriggered(HTTP3DatagramsNegotiated(result))
+    func fireReceivedSettingsEvent(_ event: ReceivedSettings) {
+        self.context?.fireUserInboundEventTriggered(event)
     }
 
     func emitConnectionError(_ error: HTTP3Error) {

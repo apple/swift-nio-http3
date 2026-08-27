@@ -86,12 +86,12 @@ extension HTTP3Datagram {
 }
 
 /// Fired on the connection channel once the peer's SETTINGS have been received.
-public struct HTTP3DatagramsNegotiated: Hashable, Sendable {
+public struct ReceivedSettings: Hashable, Sendable {
     /// Whether both peers advertised support for HTTP datagrams.
-    public var isSupported: Bool
+    public var datagramsSupported: Bool
 
-    init(_ isSupported: Bool) {
-        self.isSupported = isSupported
+    init(datagramsSupported: Bool) {
+        self.datagramsSupported = datagramsSupported
     }
 }
 

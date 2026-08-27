@@ -66,18 +66,18 @@ final class InboundSlowingHandler: ChannelInboundHandler {
     }
 }
 
-/// Records the ``HTTP3DatagramsNegotiated`` events fired on a connection channel.
-final class DatagramsNegotiatedRecorder: ChannelInboundHandler, Sendable {
+/// Records the ``ReceivedSettings`` events fired on a connection channel.
+final class ReceivedSettingsRecorder: ChannelInboundHandler, Sendable {
     typealias InboundIn = HTTP3Datagram
 
-    private let events = NIOLockedValueBox([HTTP3DatagramsNegotiated]())
+    private let events = NIOLockedValueBox([ReceivedSettings]())
 
-    var recordedEvents: [HTTP3DatagramsNegotiated] {
+    var recordedEvents: [ReceivedSettings] {
         self.events.withLockedValue { $0 }
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if let event = event as? HTTP3DatagramsNegotiated {
+        if let event = event as? ReceivedSettings {
             self.events.withLockedValue { $0.append(event) }
         }
         context.fireUserInboundEventTriggered(event)
@@ -1509,7 +1509,7 @@ struct EndToEndTests {
         serverSettings: HTTP3Settings = HTTP3Settings(h3Datagram: true),
         serverDatagrams: (promise: EventLoopPromise<[HTTP3Datagram]>, count: Int)? = nil,
         clientDatagrams: (promise: EventLoopPromise<[HTTP3Datagram]>, count: Int)? = nil,
-        negotiationRecorders: (client: DatagramsNegotiatedRecorder, server: DatagramsNegotiatedRecorder)? = nil,
+        recorders: (client: ReceivedSettingsRecorder, server: ReceivedSettingsRecorder)? = nil,
         execute: (
             _ clientConnection: any Channel,
             _ serverConnection: any Channel,
@@ -1545,8 +1545,8 @@ struct EndToEndTests {
             logger: serverLogger,
             inboundConnectionInitializer: { connection in
                 connection.eventLoop.makeCompletedFuture {
-                    if let negotiationRecorders {
-                        try connection.pipeline.syncOperations.addHandler(negotiationRecorders.server)
+                    if let recorders {
+                        try connection.pipeline.syncOperations.addHandler(recorders.server)
                     }
                     if let serverDatagrams {
                         try connection.pipeline.syncOperations.addHandler(
@@ -1597,8 +1597,8 @@ struct EndToEndTests {
             },
             connectionInitializer: { connection in
                 connection.eventLoop.makeCompletedFuture {
-                    if let negotiationRecorders {
-                        try connection.pipeline.syncOperations.addHandler(negotiationRecorders.client)
+                    if let recorders {
+                        try connection.pipeline.syncOperations.addHandler(recorders.client)
                     }
                     if let clientDatagrams {
                         try connection.pipeline.syncOperations.addHandler(
@@ -1689,20 +1689,20 @@ struct EndToEndTests {
         ]
     )
     @available(anyAppleOS 26, *)
-    func testDatagramsNegotiatedEvent(
+    func testDatagramsNegotiated(
         authenticationConfiguration: AuthenticationConfiguration,
         support: (client: Bool, server: Bool)
     ) async throws {
-        let recorders = (client: DatagramsNegotiatedRecorder(), server: DatagramsNegotiatedRecorder())
+        let recorders = (client: ReceivedSettingsRecorder(), server: ReceivedSettingsRecorder())
 
         try await self.withDatagramConnection(
             authenticationConfiguration: authenticationConfiguration,
             clientSettings: HTTP3Settings(h3Datagram: support.client),
             serverSettings: HTTP3Settings(h3Datagram: support.server),
-            negotiationRecorders: recorders
+            recorders: recorders
         ) { _, _, _ in
             // Both peers must advertise support for datagrams to be negotiated.
-            let expected = HTTP3DatagramsNegotiated(support.client && support.server)
+            let expected = ReceivedSettings(datagramsSupported: support.client && support.server)
             #expect(recorders.client.recordedEvents == [expected])
             #expect(recorders.server.recordedEvents == [expected])
         }
