@@ -66,19 +66,19 @@ final class InboundSlowingHandler: ChannelInboundHandler {
     }
 }
 
-/// Counts the ``HTTP3DatagramsNegotiated`` events fired on a connection channel.
-final class DatagramsNegotiatedCounter: ChannelInboundHandler, Sendable {
+/// Records the ``ReceivedSettings`` events fired on a connection channel.
+final class ReceivedSettingsRecorder: ChannelInboundHandler, Sendable {
     typealias InboundIn = HTTP3Datagram
 
-    private let events = NIOLockedValueBox(0)
+    private let events = NIOLockedValueBox([ReceivedSettings]())
 
-    var eventCount: Int {
+    var recordedEvents: [ReceivedSettings] {
         self.events.withLockedValue { $0 }
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if event is HTTP3DatagramsNegotiated {
-            self.events.withLockedValue { $0 &+= 1 }
+        if let event = event as? ReceivedSettings {
+            self.events.withLockedValue { $0.append(event) }
         }
         context.fireUserInboundEventTriggered(event)
     }
@@ -1499,16 +1499,17 @@ struct EndToEndTests {
 
     // MARK: - Datagrams
 
-    /// Sets up a client and server which both advertise datagram support, waits until each has
-    /// received the other's SETTINGS frame, then calls `execute` with the two connection channels and
-    /// the ID of a request stream which the client has opened and the server has accepted.
+    /// Sets up a client and server, waits until each has received the other's SETTINGS frame, then calls `execute` with
+    /// the two connection channels and the ID of a request stream which the client has opened and the server has
+    /// accepted.
     @available(anyAppleOS 26, *)
     private func withDatagramConnection(
         authenticationConfiguration: AuthenticationConfiguration,
+        clientSettings: HTTP3Settings = HTTP3Settings(h3Datagram: true),
         serverSettings: HTTP3Settings = HTTP3Settings(h3Datagram: true),
         serverDatagrams: (promise: EventLoopPromise<[HTTP3Datagram]>, count: Int)? = nil,
         clientDatagrams: (promise: EventLoopPromise<[HTTP3Datagram]>, count: Int)? = nil,
-        negotiationCounters: (client: DatagramsNegotiatedCounter, server: DatagramsNegotiatedCounter)? = nil,
+        recorders: (client: ReceivedSettingsRecorder, server: ReceivedSettingsRecorder)? = nil,
         execute: (
             _ clientConnection: any Channel,
             _ serverConnection: any Channel,
@@ -1544,8 +1545,8 @@ struct EndToEndTests {
             logger: serverLogger,
             inboundConnectionInitializer: { connection in
                 connection.eventLoop.makeCompletedFuture {
-                    if let negotiationCounters {
-                        try connection.pipeline.syncOperations.addHandler(negotiationCounters.server)
+                    if let recorders {
+                        try connection.pipeline.syncOperations.addHandler(recorders.server)
                     }
                     if let serverDatagrams {
                         try connection.pipeline.syncOperations.addHandler(
@@ -1580,7 +1581,7 @@ struct EndToEndTests {
             credentials: credentials,
             host: host,
             port: serverChannel.localAddress!.port!,
-            settings: HTTP3Settings(h3Datagram: true),
+            settings: clientSettings,
             logger: clientLogger,
             internalInboundStreamInitializer: { channel, _, streamType in
                 channel.eventLoop.makeCompletedFuture {
@@ -1596,8 +1597,8 @@ struct EndToEndTests {
             },
             connectionInitializer: { connection in
                 connection.eventLoop.makeCompletedFuture {
-                    if let negotiationCounters {
-                        try connection.pipeline.syncOperations.addHandler(negotiationCounters.client)
+                    if let recorders {
+                        try connection.pipeline.syncOperations.addHandler(recorders.client)
                     }
                     if let clientDatagrams {
                         try connection.pipeline.syncOperations.addHandler(
@@ -1678,21 +1679,32 @@ struct EndToEndTests {
         }
     }
 
-    @Test(arguments: Self.standardAuthenticationConfigurations, [true, false])
+    @Test(
+        arguments: Self.standardAuthenticationConfigurations,
+        [
+            (client: true, server: true),
+            (client: true, server: false),
+            (client: false, server: true),
+            (client: false, server: false),
+        ]
+    )
     @available(anyAppleOS 26, *)
-    func testDatagramsNegotiatedEvent(
+    func testDatagramsNegotiated(
         authenticationConfiguration: AuthenticationConfiguration,
-        enabled: Bool
+        support: (client: Bool, server: Bool)
     ) async throws {
-        let counters = (client: DatagramsNegotiatedCounter(), server: DatagramsNegotiatedCounter())
+        let recorders = (client: ReceivedSettingsRecorder(), server: ReceivedSettingsRecorder())
 
         try await self.withDatagramConnection(
             authenticationConfiguration: authenticationConfiguration,
-            serverSettings: HTTP3Settings(h3Datagram: enabled),
-            negotiationCounters: counters
+            clientSettings: HTTP3Settings(h3Datagram: support.client),
+            serverSettings: HTTP3Settings(h3Datagram: support.server),
+            recorders: recorders
         ) { _, _, _ in
-            #expect(counters.client.eventCount == (enabled ? 1 : 0))
-            #expect(counters.server.eventCount == (enabled ? 1 : 0))
+            // Both peers must advertise support for datagrams to be negotiated.
+            let expected = ReceivedSettings(datagramsSupported: support.client && support.server)
+            #expect(recorders.client.recordedEvents == [expected])
+            #expect(recorders.server.recordedEvents == [expected])
         }
     }
 
