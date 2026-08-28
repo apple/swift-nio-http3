@@ -719,27 +719,23 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let settings = payload.settings
             switch consume self.state {
             case .initialized(var initializedState):
-                initializedState.remoteAllowsDatagrams = settings.h3Datagram
-                let datagramsNegotiated = initializedState.datagramsNegotiated
-
-                let qpackAction = initializedState.qpackState.receivedRemoteSettings(
+                let action = initializedState.qpackState.receivedRemoteSettings(
                     maxQueueSize: Int(clamping: settings.qpackBlockedStreams),
                     effectiveDynamicTableSize: min(
                         initializedState.encoderMaxTableSize,
                         Int(clamping: settings.qpackMaximumTableCapacity)
                     )
                 )
-
-                let makeEncoderStream =
-                    switch qpackAction {
-                    case .makeEncoderInstructionStream:
-                        true
-                    case .none:
-                        false
-                    }
-
+                initializedState.remoteAllowsDatagrams = settings.h3Datagram
+                let datagramsNegotiated = initializedState.datagramsNegotiated
+                let makeEncoderStream: Bool
                 self = .init(state: .initialized(initializedState))
-
+                switch action {
+                case .makeEncoderInstructionStream:
+                    makeEncoderStream = true
+                case .none:
+                    makeEncoderStream = false
+                }
                 return .onSettings(
                     ControlFrameReceivedAction.OnSettings(
                         makeEncoderInstructionStream: makeEncoderStream,
