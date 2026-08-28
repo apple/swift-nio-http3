@@ -90,7 +90,7 @@ public struct ReceivedSettings: Hashable, Sendable {
     /// Whether both peers advertised support for HTTP datagrams.
     public var datagramsSupported: Bool
 
-    init(datagramsSupported: Bool) {
+    public init(datagramsSupported: Bool) {
         self.datagramsSupported = datagramsSupported
     }
 }
