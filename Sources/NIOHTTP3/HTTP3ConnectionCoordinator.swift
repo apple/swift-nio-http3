@@ -712,7 +712,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             // And stream closing would have triggered pending decodes to be dropped, so we wouldn't have reached here.
             self.streamHandlers[payload.streamID]!.onQPACKDecodeError(
                 payload.error,
-                forHeaders: payload.headers
             )
         case .informDecodeResult(let payload):
             self.processQPACKDecodeResult(payload)
@@ -791,7 +790,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 // And stream closing would have triggered pending decodes to be dropped, so we wouldn't have reached here.
                 self.streamHandlers[payload.streamID]!.onQPACKDecodeError(
                     payload.error,
-                    forHeaders: payload.headers
                 )
             case .informDecodeResult(let payload):
                 self.processQPACKDecodeResult(payload)
@@ -807,8 +805,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         // And that handler cannot have been removed yet because removal only happens when the stream closes.
         // And stream closing would have triggered pending decodes to be dropped, so we wouldn't have reached here.
         self.streamHandlers[result.streamID]!.onQPACKDecodeResult(
-            fields: result.fields,
-            forHeaders: result.headers
+            fields: result.fields
         )
         if let i = result.instructionToWrite {
             self.outboundQPACKDecoderHandler.sendInstruction(i)

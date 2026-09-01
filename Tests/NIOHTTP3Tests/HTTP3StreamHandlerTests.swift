@@ -146,7 +146,7 @@ struct NIOHTTP3StreamHandlerTests {
             Issue.record("Expected to have a header to decode")
             return
         }
-        handler.onQPACKDecodeError(testError, forHeaders: headerToDecode)
+        handler.onQPACKDecodeError(testError)
 
         expectH3Error(code: .qpackDecoderError, h3ErrorCode: .internalError, message: "test") {
             _ = try recorderPromise.futureResult.wait()
@@ -186,7 +186,7 @@ struct NIOHTTP3StreamHandlerTests {
             Issue.record("Expected to have a header to decode")
             return
         }
-        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields, forHeaders: headerToDecode)
+        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Make sure we read the right value
         guard let readFrameAny = seenEvents.popFirst()?.readValue else {
@@ -236,7 +236,7 @@ struct NIOHTTP3StreamHandlerTests {
             Issue.record("Expected to have a header to decode")
             return
         }
-        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields, forHeaders: headerToDecode)
+        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Make sure we read the right value
         guard let readFrameAny = seenEvents.popFirst()?.readValue else {
@@ -532,7 +532,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.isEmpty())
 
         // Give the stream the header decode result
-        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields, forHeaders: self.testRequestPartialHeader)
+        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         guard let headerReadEvent = seenEvents.popFirst()?.readValue else {
             Issue.record("Expected a read event")
@@ -586,7 +586,7 @@ struct NIOHTTP3StreamHandlerTests {
 
         // Headers frame
         try channel.writeInbound(self.testRequestPartialHeaderBytes)
-        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields, forHeaders: self.testRequestPartialHeader)
+        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Input close
         channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)

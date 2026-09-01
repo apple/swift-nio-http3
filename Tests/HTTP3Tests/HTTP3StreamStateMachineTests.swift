@@ -149,7 +149,7 @@ struct HTTP3StreamStateMachineTests {
         #expect(partialHeader == self.testRequestHeader)
 
         let decodeResult = self.testRequestHeaderFields
-        machine.gotHeaderDecodeResult(decodeResult, from: partialHeader)
+        machine.gotHeaderDecodeResult(decodeResult)
         let action2 = machine.decodeNext()
         guard case .returnFrame(let frame) = action2 else {
             Issue.record("Unexpected action \(action2)")
@@ -195,7 +195,7 @@ struct HTTP3StreamStateMachineTests {
 
         // Put in the decode result
         let decodeResult = self.testRequestHeaderFields
-        machine.gotHeaderDecodeResult(decodeResult, from: partialHeader)
+        machine.gotHeaderDecodeResult(decodeResult)
 
         // We should also be able to read more bytes now, after putting in the header decode result, before fetching back the action
         machine.buffer(.init(bytes: self.testDataFrameBytes))
@@ -235,7 +235,7 @@ struct HTTP3StreamStateMachineTests {
             errorCode: .internalError,
             location: .here()
         )
-        machine.gotHeaderDecodeError(testError, from: partialHeader)
+        machine.gotHeaderDecodeError(testError)
 
         // Let's put in some more bytes. They should get ignored because they come after an error
         machine.buffer(.init(bytes: self.testDataFrameBytes))
@@ -278,7 +278,7 @@ struct HTTP3StreamStateMachineTests {
             errorCode: .internalError,
             location: .here()
         )
-        machine.gotHeaderDecodeError(testError, from: partialHeader)
+        machine.gotHeaderDecodeError(testError)
 
         // Writes are now dropped
         let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
@@ -447,7 +447,7 @@ struct HTTP3StreamStateMachineTests {
 
         // Now decode the request trailers
         let testResult = self.testTrailerFields
-        machine.gotHeaderDecodeResult(testResult, from: self.testRequestHeader)
+        machine.gotHeaderDecodeResult(testResult)
 
         // The machine is now in a buffering state for reads, where it is holding on to that trailer for us. We can still write data out
         let writeAction2 = machine.writeFrameAndQPACK(frame: self.testDataFrame)
@@ -535,7 +535,7 @@ struct HTTP3StreamStateMachineTests {
             return
         }
 
-        machine.gotHeaderDecodeResult(self.testRequestHeaderFields, from: headerToDecode)
+        machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
         machine.inputClosed()
 
         machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
@@ -563,7 +563,7 @@ struct HTTP3StreamStateMachineTests {
             return
         }
 
-        machine.gotHeaderDecodeResult(self.testResponseHeaderFields, from: headerToDecode)
+        machine.gotHeaderDecodeResult(self.testResponseHeaderFields)
         machine.inputClosed()
 
         machine.assertReturnFrame(expected: .headers(self.testResponseHeaderFields))
@@ -590,7 +590,7 @@ struct HTTP3StreamStateMachineTests {
 
         // There is no next, despite the input close, until we decode the header
         machine.assertNoNext()
-        machine.gotHeaderDecodeResult(self.testRequestHeaderFields, from: headerToDecode)
+        machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
 
         // Now the headers are returned, then the input close, then nothing else
         machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
@@ -615,7 +615,7 @@ struct HTTP3StreamStateMachineTests {
         // There is no next, despite the input close, until we decode the header
         machine.inputClosed()
         machine.assertNoNext()
-        machine.gotHeaderDecodeResult(self.testRequestHeaderFields, from: headerToDecode)
+        machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
 
         // Now the headers are returned, then the input close, then nothing else
         machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
@@ -639,7 +639,7 @@ struct HTTP3StreamStateMachineTests {
 
         // There is no next until we decode the header
         machine.assertNoNext()
-        machine.gotHeaderDecodeResult(self.testRequestHeaderFields, from: headerToDecode)
+        machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
 
         machine.inputClosed()
 
@@ -833,7 +833,7 @@ extension HTTP3StreamStateMachine {
         case .missingInsertCount:
             Issue.record("Unexpected result", sourceLocation: sourceLocation)
         case .success(let fields, _):
-            self.gotHeaderDecodeResult(fields, from: partialHeader)
+            self.gotHeaderDecodeResult(fields)
             self.assertReturnFrame(expected: .headers(fields), sourceLocation: sourceLocation)
         case .error(let qpackError):
             let error = HTTP3Error(
@@ -843,7 +843,7 @@ extension HTTP3StreamStateMachine {
                 errorCode: .qpackDecompressionFailed,
                 location: .here()
             )
-            self.gotHeaderDecodeError(error, from: partialHeader)
+            self.gotHeaderDecodeError(error)
         }
     }
 
