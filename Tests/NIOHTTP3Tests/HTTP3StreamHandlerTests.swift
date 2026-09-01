@@ -142,10 +142,7 @@ struct NIOHTTP3StreamHandlerTests {
             errorCode: .internalError,
             location: .here()
         )
-        guard let headerToDecode else {
-            Issue.record("Expected to have a header to decode")
-            return
-        }
+        #expect(headerToDecode?.fieldSection.lines.count == 4)
         handler.onQPACKDecodeError(testError)
 
         expectH3Error(code: .qpackDecoderError, h3ErrorCode: .internalError, message: "test") {
@@ -182,10 +179,7 @@ struct NIOHTTP3StreamHandlerTests {
         try channel.writeInbound(self.testRequestPartialHeaderBytes)
 
         // Make the result available
-        guard let headerToDecode else {
-            Issue.record("Expected to have a header to decode")
-            return
-        }
+        #expect(headerToDecode?.fieldSection.lines.count == 4)
         handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Make sure we read the right value
@@ -236,6 +230,7 @@ struct NIOHTTP3StreamHandlerTests {
             Issue.record("Expected to have a header to decode")
             return
         }
+        #expect(headerToDecode.fieldSection.lines.count == 4)
         handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Make sure we read the right value

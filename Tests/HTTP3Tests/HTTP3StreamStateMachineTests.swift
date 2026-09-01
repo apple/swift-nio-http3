@@ -534,6 +534,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
+        #expect(headerToDecode.fieldSection.lines.count == 4)
 
         machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
         machine.inputClosed()
@@ -562,6 +563,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
+        #expect(headerToDecode.fieldSection.lines.count == 1)
 
         machine.gotHeaderDecodeResult(self.testResponseHeaderFields)
         machine.inputClosed()
@@ -587,6 +589,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
+        #expect(headerToDecode.fieldSection.lines.count == 4)
 
         // There is no next, despite the input close, until we decode the header
         machine.assertNoNext()
@@ -611,6 +614,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
+        #expect(headerToDecode.fieldSection.lines.count == 4)
 
         // There is no next, despite the input close, until we decode the header
         machine.inputClosed()
@@ -636,6 +640,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
+        #expect(headerToDecode.fieldSection.lines.count == 4)
 
         // There is no next until we decode the header
         machine.assertNoNext()
