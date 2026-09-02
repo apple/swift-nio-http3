@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIOCore
 @_spi(PackageInternal) import HTTP3
+import NIOCore
 
 struct NIOHTTP3FrameDecoder: NIOSingleStepByteToMessageDecoder {
     typealias InboundOut = HTTP3PartialFrameOrUnknown

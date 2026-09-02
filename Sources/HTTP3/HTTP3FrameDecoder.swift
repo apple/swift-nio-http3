@@ -68,7 +68,10 @@ public struct HTTP3FrameDecoder {
     }
 
     @_spi(PackageInternal)
-    public mutating func decodeLast(buffer: inout ByteBuffer, seenEOF: Bool) throws(HTTP3Error) -> HTTP3PartialFrameOrUnknown? {
+    public mutating func decodeLast(
+        buffer: inout ByteBuffer,
+        seenEOF: Bool
+    ) throws(HTTP3Error) -> HTTP3PartialFrameOrUnknown? {
         if let frame = try self.decode(buffer: &buffer) {
             return frame
         }
