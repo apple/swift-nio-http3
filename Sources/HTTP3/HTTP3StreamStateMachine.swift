@@ -48,13 +48,11 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
             struct WaitingForDecode: ~Copyable {
                 var decoder: HTTP3FrameDecoderStateMachine
-                let partialHeader: HTTP3PartialFrame.Headers
                 /// If we receive a close whilst waiting for a decode, we buffer it here. We must maintain the order of closes relative to reads.
                 var seenEOF: Bool
 
-                init(idleState: consuming Idle, partialHeader: HTTP3PartialFrame.Headers) {
+                init(idleState: consuming Idle) {
                     self.decoder = idleState.decoder
-                    self.partialHeader = partialHeader
                     self.seenEOF = idleState.seenEOF
                 }
             }
@@ -156,7 +154,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                     }
                 case .returnFrame(.headers(let partialHeader)):
                     self = .init(
-                        state: .waitingForDecode(.init(idleState: idleState, partialHeader: partialHeader))
+                        state: .waitingForDecode(.init(idleState: idleState))
                     )
                     return .decodeHeader(partialHeader)
                 case .returnFrame(.pushPromise):
@@ -198,12 +196,9 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
         /// Inform the state machine of a qpack decode result that has been previously asked for.
         /// It is an error to call this function with a result for a partial header which wasn't asked for.
-        mutating func gotHeaderDecodeResult(_ decoded: [HTTPField], from: HTTP3PartialFrame.Headers) {
+        mutating func gotHeaderDecodeResult(_ decoded: [HTTPField]) {
             switch consume self.state {
             case .waitingForDecode(let waitingState):
-                guard waitingState.partialHeader == from else {
-                    fatalError("Called gotHeaderDecodeResult with wrong partial header")
-                }
                 self = .init(
                     state: .buffered(
                         .init(
@@ -225,7 +220,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
         /// Inform the state machine of a qpack decode error for a header that the machine previously asked to decode.
         /// It is an error to call this function with a result for a partial header which wasn't asked for.
-        mutating func gotHeaderDecodeError(_ error: HTTP3Error, from: HTTP3PartialFrame.Headers) {
+        mutating func gotHeaderDecodeError(_ error: HTTP3Error) {
             switch consume self.state {
             case .idle:
                 fatalError("Unexpected header decode")
@@ -236,9 +231,6 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             case .inputClosed:
                 fatalError("Unexpected header decode")
             case .waitingForDecode(let waitingState):
-                guard waitingState.partialHeader == from else {
-                    fatalError("Called gotHeaderDecodeError with wrong partial header")
-                }
                 self = .init(state: .headerDecodeError(.init(error: error, seenEOF: waitingState.seenEOF)))
             }
         }
@@ -705,13 +697,13 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     /// Inform the state machine of a qpack decode result that has been previously been asked for.
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
     @_spi(PackageInternal)
-    public mutating func gotHeaderDecodeResult(_ decoded: [HTTPField], from: HTTP3PartialFrame.Headers) {
+    public mutating func gotHeaderDecodeResult(_ decoded: [HTTPField]) {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore
             self = .init(state: .finished)
         case .idle(var idleState):
-            idleState.readState.gotHeaderDecodeResult(decoded, from: from)
+            idleState.readState.gotHeaderDecodeResult(decoded)
             self = .init(state: .idle(idleState))
         case .previousError(let error):
             self = .init(state: .previousError(error))
@@ -722,13 +714,13 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
     /// This error will fail the stream. Connection-level errors should not be sent here.
     @_spi(PackageInternal)
-    public mutating func gotHeaderDecodeError(_ error: HTTP3Error, from: HTTP3PartialFrame.Headers) {
+    public mutating func gotHeaderDecodeError(_ error: HTTP3Error) {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore
             self = .init(state: .finished)
         case .idle(var idleState):
-            idleState.readState.gotHeaderDecodeError(error, from: from)
+            idleState.readState.gotHeaderDecodeError(error)
             self = .init(state: .idle(idleState))
         case .previousError(let error):
             self = .init(state: .previousError(error))

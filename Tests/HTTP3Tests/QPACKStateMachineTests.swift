@@ -215,7 +215,6 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected actions \(String(describing: action2))")
             return
         }
-        #expect(error.headers == testHeader)
         #expect(error.streamID == streamID)
         expectH3ErrorEqual(error: error.error, expectedCode: .qpackDecoderError, expectedH3ErrorCode: .messageError)
     }
@@ -297,7 +296,6 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action \(String(describing: action5))")
             return
         }
-        #expect(decodeError.headers == testHeader)
         #expect(decodeError.streamID == streamID)
         expectH3ErrorEqual(
             error: decodeError.error,

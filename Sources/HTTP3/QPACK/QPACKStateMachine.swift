@@ -348,7 +348,6 @@ struct QPACKStateMachine: ~Copyable {
 
         struct InformDecodeResult: Hashable, Sendable {
             var fields: [HTTPField]
-            var headers: HTTP3PartialFrame.Headers
             var streamID: QUICStreamID
             var instructionToWrite: QPACKDecoderInstruction?
 
@@ -359,7 +358,6 @@ struct QPACKStateMachine: ~Copyable {
                 instructionToWrite: QPACKDecoderInstruction?
             ) {
                 self.fields = fields
-                self.headers = headers
                 self.streamID = streamID
                 self.instructionToWrite = instructionToWrite
             }
@@ -367,12 +365,10 @@ struct QPACKStateMachine: ~Copyable {
 
         struct InformDecodeError {
             var error: HTTP3Error
-            var headers: HTTP3PartialFrame.Headers
             var streamID: QUICStreamID
 
-            init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
+            init(error: HTTP3Error, streamID: QUICStreamID) {
                 self.error = error
-                self.headers = headers
                 self.streamID = streamID
             }
         }
@@ -448,7 +444,7 @@ struct QPACKStateMachine: ~Copyable {
             case .connection(let h3Error):
                 return .emitConnectionError(h3Error)
             case .stream(let h3Error):
-                return .informDecodeError(.init(error: h3Error, headers: headers, streamID: streamID))
+                return .informDecodeError(.init(error: h3Error, streamID: streamID))
             }
         }
     }
@@ -473,7 +469,7 @@ struct QPACKStateMachine: ~Copyable {
             case .connection(let h3Error):
                 return .emitConnectionError(h3Error)
             case .stream(let h3Error):
-                return .informDecodeError(.init(error: h3Error, headers: entry.headers, streamID: entry.streamID))
+                return .informDecodeError(.init(error: h3Error, streamID: entry.streamID))
             }
         case .success(let fields, let instruction):
             let writeAction = instruction.flatMap { self.outboundDecoderInstructionQueue.writeDecoderInstruction($0) }
