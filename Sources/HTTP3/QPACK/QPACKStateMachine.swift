@@ -417,7 +417,13 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
         case .missingInsertCount:
             do {
                 try self.decoderQueue.add(
-                    .init(headers: headers, prefix: prefix, lines: headers.fieldSection.lines, streamID: streamID, context: context)
+                    .init(
+                        headers: headers,
+                        prefix: prefix,
+                        lines: headers.fieldSection.lines,
+                        streamID: streamID,
+                        context: context
+                    )
                 )
                 return nil
             } catch {

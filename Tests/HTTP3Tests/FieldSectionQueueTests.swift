@@ -19,7 +19,11 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 
 struct FieldSectionQueueTests {
-    private func makeTestEntry(streamID: QUICStreamID, requiredInsertCount: Int, context: Int) -> FieldSectionQueue<Int>.Entry {
+    private func makeTestEntry(
+        streamID: QUICStreamID,
+        requiredInsertCount: Int,
+        context: Int
+    ) -> FieldSectionQueue<Int>.Entry {
         let prefix = FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
         return FieldSectionQueue.Entry(
             headers: .init(fieldSection: .init(prefix: prefix.encode(maxCapacity: 100), lines: [])),
