@@ -81,6 +81,8 @@ let package = Package(
                 .target(name: "HTTP3"),
                 .target(name: "QPACK"),
                 .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOEmbedded", package: "swift-nio"),
+                .product(name: "NIOTestUtils", package: "swift-nio"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
             swiftSettings: swiftSettings
