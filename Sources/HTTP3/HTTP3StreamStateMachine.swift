@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+public import DequeModule
 public import HTTPTypes
 
 public import struct NIOCore.ByteBuffer
@@ -20,71 +21,121 @@ public import struct NIOQUICHelpers.QUICApplicationErrorCode
 @_spi(PackageInternal)
 public struct HTTP3StreamStateMachine: ~Copyable {
     /// This state machine handles the reading side of the stream only.
-    /// You call `buffer` to give it bytes, and continually call `decodeNext` to get out frames.
-    /// Sometimes, decodeNext will return the `decodeHeader` action, in which case you need to decode those headers.
-    /// and call gotHeaderDecodeResult. Further frames will be blocked behind that, to maintain the order.
+    ///
+    /// Frames are pushed into it, one at a time, via `decodedNext(_:)`. The bytes those frames were decoded from are
+    /// owned by the caller (in practice a `NIOSingleStepByteToMessageProcessor`), not by this state machine.
+    ///
+    /// Sometimes, `decodedNext(_:)` will return the `decodeHeader` action, in which case you need to decode those
+    /// headers and call `gotHeaderDecodeResult`. Whilst that decode is outstanding, no further frames may be pushed
+    /// in: everything that arrives in the meantime (raw bytes, read completions, EOF) is queued as a
+    /// ``PendingReadAction`` and handed back once the decode result arrives, so that ordering is maintained.
     struct ReadState: ~Copyable {
         private enum State: ~Copyable {
             /// Nothing special is happening on the read side.
-            case idle(Idle)
+            case idle
 
-            /// We have read a partial header. We can't take further frames out of the decoder state machine until this header is decoded.
+            /// We have read a partial header. We can't take further frames out of the decoder until this header is decoded.
             case waitingForDecode(WaitingForDecode)
-
-            /// We previously read a partial header. It's now decoded and we know the frame. We can't read further out of the frame decoder until this buffered frame is sent.
-            case buffered(Buffered)
-
-            /// We previously read a partial header. We asked for it to be decoded, and got back an error. We'll return this error on the next decodeNext call.
-            case headerDecodeError(HeaderDecodeError)
 
             /// Input is closed, we can receive no more.
             case inputClosed
 
-            struct Idle: ~Copyable {
-                var decoder: HTTP3FrameDecoderStateMachine
-                /// If we receive a close whilst waiting for a decode, we buffer it here. We must maintain the order of closes relative to reads.
-                var seenEOF: Bool
-            }
-
             struct WaitingForDecode: ~Copyable {
-                var decoder: HTTP3FrameDecoderStateMachine
-                /// If we receive a close whilst waiting for a decode, we buffer it here. We must maintain the order of closes relative to reads.
-                var seenEOF: Bool
+                /// Everything that arrived whilst we were waiting for the QPACK decode result, in arrival order.
+                var waiting: UniqueDeque<PendingReadAction>
 
-                init(idleState: consuming Idle) {
-                    self.decoder = idleState.decoder
-                    self.seenEOF = idleState.seenEOF
+                init() {
+                    self.waiting = .init()
                 }
-            }
-
-            struct Buffered: ~Copyable {
-                var decoder: HTTP3FrameDecoderStateMachine
-                let frame: HTTP3Frame
-                /// If we receive a close whilst waiting for a decode, we buffer it here. We must maintain the order of closes relative to reads.
-                var seenEOF: Bool
-
-                init(waitingState: consuming WaitingForDecode, frame: HTTP3Frame) {
-                    self.decoder = waitingState.decoder
-                    self.frame = frame
-                    self.seenEOF = waitingState.seenEOF
-                }
-            }
-
-            struct HeaderDecodeError {
-                let error: HTTP3Error
-                /// If we receive a close whilst waiting for a decode, we buffer it here. We must maintain the order of closes relative to reads.
-                var seenEOF: Bool
             }
         }
 
         private let state: State
 
-        init(decoder: consuming HTTP3FrameDecoderStateMachine) {
-            self.init(state: .idle(.init(decoder: decoder, seenEOF: false)))
+        init() {
+            self.init(state: .idle)
         }
 
         private init(state: consuming State) {
             self.state = state
+        }
+
+        /// Whether we are currently blocked on a QPACK decode result.
+        var isWaitingForHeaderDecode: Bool {
+            switch self.state {
+            case .waitingForDecode: return true
+            case .idle: return false
+            case .inputClosed: return false
+            }
+        }
+
+        /// Whether we have seen the EOF and surfaced it.
+        var hasSeenEOF: Bool {
+            switch self.state {
+            case .inputClosed: return true
+            case .idle: return false
+            case .waitingForDecode: return false
+            }
+        }
+
+        /// Ask whether `buffer` may be handed to the frame decoder right now.
+        ///
+        /// - Returns: `true` if the caller should decode the buffer now. `false` if it must not: either the bytes were
+        ///   queued behind an outstanding QPACK decode, or they should be dropped.
+        mutating func readyToDecode(_ buffer: ByteBuffer) -> Bool {
+            switch consume self.state {
+            case .idle:
+                self = .init(state: .idle)
+                return true
+            case .waitingForDecode(var waitingForDecode):
+                waitingForDecode.waiting.append(.decodeFrames(buffer))
+                self = .init(state: .waitingForDecode(waitingForDecode))
+                return false
+            case .inputClosed:
+                // The peer shouldn't send anything after the FIN, but we can't stop it from trying. Drop the bytes.
+                self = .init(state: .inputClosed)
+                return false
+            }
+        }
+
+        /// Ask whether a read completion may be forwarded right now.
+        ///
+        /// - Returns: `true` if the caller should forward it now, `false` if it was queued behind an outstanding
+        ///   QPACK decode.
+        mutating func readCompleted() -> Bool {
+            switch consume self.state {
+            case .idle:
+                self = .init(state: .idle)
+                return true
+            case .waitingForDecode(var waitingForDecode):
+                waitingForDecode.waiting.append(.fireReadComplete)
+                self = .init(state: .waitingForDecode(waitingForDecode))
+                return false
+            case .inputClosed:
+                self = .init(state: .inputClosed)
+                return true
+            }
+        }
+
+        /// Queue actions which couldn't be replayed because we became blocked on another QPACK decode.
+        ///
+        /// The queue is always empty when we newly block, and nothing can arrive during the (synchronous) replay, so
+        /// appending preserves ordering.
+        mutating func enqueue(_ actions: consuming UniqueDeque<PendingReadAction>) {
+            switch consume self.state {
+            case .waitingForDecode(var waitingForDecode):
+                var actions = actions
+                while let action = actions.popFirst() {
+                    waitingForDecode.waiting.append(action)
+                }
+                self = .init(state: .waitingForDecode(waitingForDecode))
+            case .idle:
+                assertionFailure("Actions can only be requeued whilst waiting for a decode")
+                self = .init(state: .idle)
+            case .inputClosed:
+                assertionFailure("Actions can only be requeued whilst waiting for a decode")
+                self = .init(state: .inputClosed)
+            }
         }
 
         enum DecodeNextAction {
@@ -98,67 +149,22 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             case emitStreamError(HTTP3Error)
             /// We need this header to be decoded.
             case decodeHeader(HTTP3PartialFrame.Headers)
-            /// The input is newly closed, nothing else will come now. This action should only be seen once
-            case inputClosed
             /// There is no action because the input was already closed.
             case alreadyClosed
-            /// More bytes are needed to form the next frame
-            case needMoreBytes
-            /// We are blocked on a header section being decoded. New bytes won't unblock this - only new QPACK instructions can
-            case needDecodeResult
+            /// There is nothing to do for this frame.
+            case doNothing
         }
 
-        /// Read out the next frame if it is ready. This may ask you to run qpack on some partial headers.
-        mutating func decodeNext() -> DecodeNextAction {
+        /// Push the next decoded frame in. This may ask you to run QPACK on some partial headers.
+        mutating func decodedNext(_ frame: HTTP3PartialFrame) -> DecodeNextAction {
             switch consume self.state {
-            case .idle(var idleState):
-                let decodedResult = idleState.decoder.decodeNext()
-                switch decodedResult {
-                case .emitConnectionError(let error):
-                    self = .init(state: .idle(idleState))
-                    return .emitConnectionError(error)
-                case .previousError:
-                    // we already emitted this error.
-                    self = .init(state: .idle(idleState))
-                    // This is the same as the input being closed because we won't decode anything further now.
-                    return .alreadyClosed
-                case .needMoreBytes:
-                    if idleState.seenEOF {
-                        // There is no more input (we have seen EOF) and the decoder is not able to make any more frames (it returned .needMoreBytes)
-                        // We need to check whether the decoder has any leftover bytes.
-                        let hasLeftoverBytes = idleState.decoder.inputClosed()
-                        if hasLeftoverBytes {
-                            // RFC 9214 § 7.1 When a stream terminates cleanly, if the last frame on the stream was truncated, this MUST be treated as a connection error of type H3_FRAME_ERROR.
-                            // Streams that terminate abruptly may be reset at any point in a frame.
-                            @inline(never)
-                            func uncleanStateError(location: HTTP3Error.SourceLocation) -> HTTP3Error {
-                                HTTP3Error(
-                                    code: .leftoverBytes,
-                                    message: "There were leftover bytes when the input was closed",
-                                    cause: nil,
-                                    errorCode: .frameError,
-                                    location: location
-                                )
-                            }
-                            self = .init(state: .inputClosed)
-                            return .emitConnectionError(uncleanStateError(location: .here()))
-                        } else {
-                            // There are no leftover bytes, so we close and all is well.
-                            self = .init(state: .inputClosed)
-                            return .inputClosed
-                        }
-                    } else {
-                        // The decoder is not able to make a complete frame. That's fine, we'll just wait for more bytes.
-                        self = .init(state: .idle(idleState))
-                        return .needMoreBytes
-                    }
-                case .returnFrame(.headers(let partialHeader)):
-                    self = .init(
-                        state: .waitingForDecode(.init(idleState: idleState))
-                    )
+            case .idle:
+                switch frame {
+                case .headers(let partialHeader):
+                    self = .init(state: .waitingForDecode(.init()))
                     return .decodeHeader(partialHeader)
-                case .returnFrame(.pushPromise):
-                    self = .init(state: .idle(idleState))
+                case .pushPromise:
+                    self = .init(state: .idle)
                     // RFC 9114 § 7.2.5: A server MUST NOT use a push ID that is larger than the client has provided in a MAX_PUSH_ID frame (Section 7.2.7).
                     // A client MUST treat receipt of a PUSH_PROMISE frame that contains a larger push ID than the client has advertised as a connection error of H3_ID_ERROR.
                     // RFC 9114 § 7.2.7: ... a server cannot push until it receives a MAX_PUSH_ID frame.
@@ -172,22 +178,15 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                             location: .here()
                         )
                     )
-                case .returnFrame(let frame):
-                    self = .init(state: .idle(idleState))
+                case .cancelPush, .data, .goaway, .maxPushID, .settings:
+                    self = .init(state: .idle)
                     return .returnFrame(frame.asFullFrameNotHeadersOrPush())
-                case .returnUnknownFrame:
-                    self = .init(state: .idle(idleState))
-                    return .returnUnknownFrame
                 }
             case .waitingForDecode(let waitingState):
+                // The caller must consult `readyToDecode(_:)` before feeding the frame decoder, so this can't happen.
+                assertionFailure("Frames must not be decoded whilst waiting for a QPACK decode result")
                 self = .init(state: .waitingForDecode(waitingState))
-                return .needDecodeResult
-            case .buffered(let bufferState):
-                self = .init(state: .idle(.init(decoder: bufferState.decoder, seenEOF: bufferState.seenEOF)))
-                return .returnFrame(bufferState.frame)
-            case .headerDecodeError(let error):
-                self = .init(state: .headerDecodeError(error))
-                return .emitStreamError(error.error)
+                return .doNothing
             case .inputClosed:
                 self = .init(state: .inputClosed)
                 return .alreadyClosed
@@ -196,103 +195,59 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
         /// Inform the state machine of a qpack decode result that has been previously asked for.
         /// It is an error to call this function with a result for a partial header which wasn't asked for.
-        mutating func gotHeaderDecodeResult(_ decoded: [HTTPField]) {
+        /// - Returns: The actions which were queued behind the decode, in arrival order.
+        mutating func gotHeaderDecodeResult() -> UniqueDeque<PendingReadAction> {
             switch consume self.state {
             case .waitingForDecode(let waitingState):
-                self = .init(
-                    state: .buffered(
-                        .init(
-                            waitingState: waitingState,
-                            frame: .headers(.init(fields: decoded))
-                        )
-                    )
-                )
-            case .buffered:
-                fatalError("Unexpected header decode")
+                self = .init(state: .idle)
+                return waitingState.waiting
+
             case .idle:
-                fatalError("Unexpected header decode")
-            case .headerDecodeError:
-                fatalError("Unexpected header decode")
+                assertionFailure("Unexpected header decode")
+                self = .init(state: .idle)
+                return .init()
             case .inputClosed:
-                fatalError("Unexpected header decode")
+                assertionFailure("Unexpected header decode")
+                self = .init(state: .inputClosed)
+                return .init()
             }
         }
 
         /// Inform the state machine of a qpack decode error for a header that the machine previously asked to decode.
         /// It is an error to call this function with a result for a partial header which wasn't asked for.
-        mutating func gotHeaderDecodeError(_ error: HTTP3Error) {
+        mutating func gotHeaderDecodeError() -> Bool {
             switch consume self.state {
             case .idle:
-                fatalError("Unexpected header decode")
-            case .buffered:
-                fatalError("Unexpected header decode")
-            case .headerDecodeError:
-                fatalError("Unexpected header decode")
+                assertionFailure("Unexpected header decode")
+                self = .init(state: .idle)
+                return false
             case .inputClosed:
-                fatalError("Unexpected header decode")
-            case .waitingForDecode(let waitingState):
-                self = .init(state: .headerDecodeError(.init(error: error, seenEOF: waitingState.seenEOF)))
+                assertionFailure("Unexpected header decode")
+                self = .init(state: .inputClosed)
+                return false
+            case .waitingForDecode:
+                // this implicitly drops any buffers and read completions that we may have received in the meantime
+                self = .init(state: .idle)
+                return true
             }
         }
 
-        /// Although this is the reading state, we might want to prevent writes happening based on the read state.
-        /// - Returns: True if writes should be allowed. Otherwise, they should be dropped.
-        func checkCanWrite() -> Bool {
-            switch self.state {
-            case .headerDecodeError:
-                // We failed to decode an incoming header. We haven't emitted that error yet
-                // But the stream is doomed to fail, so we can drop this write
-                // We'll not emit the error here, that will happen on decodeNext()
+        /// Call this when there is nothing left to read.
+        /// - Returns: `true` if the caller should act on the closure now, `false` if it was queued behind an
+        ///   outstanding QPACK decode.
+        mutating func inputClosed() -> Bool {
+            switch consume self.state {
+            case .waitingForDecode(var buffered):
+                buffered.waiting.append(.eof)
+                self = .init(state: .waitingForDecode(buffered))
                 return false
             case .idle:
-                return true
-            case .buffered:
-                return true
-            case .waitingForDecode:
-                return true
-            case .inputClosed:
-                return true
-            }
-        }
-
-        mutating func buffer(_ buffer: ByteBuffer) {
-            // Regardless of the current state, buffer the bytes into the decoder
-            switch self.state {
-            case .idle(var idleState):
-                idleState.decoder.buffer(buffer)
-                self = .init(state: .idle(idleState))
-            case .waitingForDecode(var waitingState):
-                waitingState.decoder.buffer(buffer)
-                self = .init(state: .waitingForDecode(waitingState))
-            case .buffered(var bufferState):
-                bufferState.decoder.buffer(buffer)
-                self = .init(state: .buffered(bufferState))
-            case .headerDecodeError(let errorState):
-                // We'll emit the header decode error on decodeNext. Can drop the new bytes
-                self = .init(state: .headerDecodeError(errorState))
-            case .inputClosed:
                 self = .init(state: .inputClosed)
-            }
-        }
-
-        /// Call this when there is nothing left to read. The inputClose will get queued behind any buffered incoming frames.
-        mutating func inputClosed() {
-            switch consume self.state {
-            case .buffered(var buffered):
-                buffered.seenEOF = true
-                self = .init(state: .buffered(buffered))
-            case .waitingForDecode(var buffered):
-                buffered.seenEOF = true
-                self = .init(state: .waitingForDecode(buffered))
-            case .headerDecodeError(var buffered):
-                buffered.seenEOF = true
-                self = .init(state: .headerDecodeError(buffered))
-            case .idle(var idle):
-                idle.seenEOF = true
-                self = .init(state: .idle(idle))
+                return true
             case .inputClosed:
-                // TODO: Should this be an error?
+                assertionFailure("Invalid state: We are already closed.")
                 self = .init(state: .inputClosed)
+                return false
             }
         }
 
@@ -306,18 +261,12 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
         /// Call this when the stream is completely closed. This will tell you whether or not we saw an EOF, i.e. any frames were potentially dropped.
         /// This function is consuming, the state machine can't be used after closing.
-        /// - Note: You should ``decodeNext()`` as much as possible before calling this.
         consuming func closed() -> FinishType {
             switch consume self.state {
-            case .buffered:
+            case .idle:
                 return .noEOF
             case .waitingForDecode:
-                return .noEOF
-            case .headerDecodeError:
-                return .noEOF
-            case .idle:
-                // This is unclean even if we have seen EOF. That is because we haven't unbuffered the EOF.
-                // That is why it's important to decode as much as possible before calling finished()
+                // We may have a queued EOF, but we never got to unbuffer it, so this is not a clean close.
                 return .noEOF
             case .inputClosed:
                 // Input was already closed, so it's clean
@@ -445,8 +394,8 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             /// The error that was reached. This is reported back on any subsequent operation.
             var error: HTTP3Error
 
-            /// The read state when the error occurred.
-            var readState: ReadState
+            /// Whether the read side had already seen the EOF when the error occurred.
+            var seenEOF: Bool
         }
     }
 
@@ -458,9 +407,8 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         incoming: Bool,
         preferHuffmanEncoding: Bool
     ) {
-        let frameDecoder = HTTP3FrameDecoderStateMachine()
         let frameValidator = HTTP3FrameValidator(streamType: streamType, incoming: incoming)
-        let readState = ReadState(decoder: frameDecoder)
+        let readState = ReadState()
         let writeState = WriteState(preferHuffmanEncoding: preferHuffmanEncoding)
         self.init(state: .idle(.init(validator: frameValidator, readState: readState, writeState: writeState)))
     }
@@ -490,10 +438,6 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     public mutating func writeFrame(frame: HTTP3Frame, into buffer: inout ByteBuffer) -> WriteFrameAction {
         switch self.state {
         case .idle(var idleState):
-            guard idleState.readState.checkCanWrite() else {
-                self = .init(state: .idle(idleState))
-                return .previousError
-            }
             let validationResult = idleState.validator.processOutboundFrame(frame)
             switch validationResult {
             case .forwardFrame(let validatedFrame):
@@ -507,10 +451,10 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                     return .encodeHeaders(fields)
                 }
             case .emitStreamError(let error):
-                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                 return .wouldBeStreamError(error)
             case .emitConnectionError(let error):
-                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                 return .wouldBeConnectionError(error)
             case .previousError:
                 self = .init(state: .idle(idleState))
@@ -562,22 +506,6 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    /// Tell the machine about incoming bytes.
-    @_spi(PackageInternal)
-    public mutating func buffer(_ buffer: ByteBuffer) {
-        // Buffer the bytes into the decoder as long as we didn't already hit an error
-        switch self.state {
-        case .idle(var idleState):
-            idleState.readState.buffer(buffer)
-            self = .init(state: .idle(idleState))
-        case .previousError(let error):
-            self = .init(state: .previousError(error))
-        case .finished:
-            // Drop the new bytes because we already closed
-            self = .init(state: .finished)
-        }
-    }
-
     @_spi(PackageInternal)
     public enum DecodeNextAction {
         /// A full frame is ready.
@@ -588,16 +516,12 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         case emitStreamError(HTTP3Error)
         /// A frame is ready, but you need to decode it and call the state machine back with the result.
         case decodeHeader(HTTP3PartialFrame.Headers)
-        /// The input was newly closed.
-        case inputClosed(InputClosedAction)
         /// The input was already closed
         case alreadyClosed
-        /// More input is needed before the next action can be determined
-        case needMoreBytes
         /// Input can't be processed further because of a previous error
         case previousError
-        /// The decodeNext() function should be called again to get the next action.
-        case callAgain
+        /// There is nothing to do for this frame.
+        case doNothing
 
         @_spi(PackageInternal)
         public enum InputClosedAction {
@@ -614,14 +538,94 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    /// Read out the next frame if it is ready. This may ask you to run qpack on some partial headers.
-    ///
-    /// - Returns: The next action to be performed.
+    /// Something which arrived whilst we were blocked on a QPACK decode and must be replayed afterwards.
     @_spi(PackageInternal)
-    public mutating func decodeNext() -> DecodeNextAction {
+    public enum PendingReadAction: Equatable {
+        /// Bytes which arrived but couldn't be handed to the frame decoder yet.
+        case decodeFrames(ByteBuffer)
+        /// A read completion which couldn't be forwarded yet.
+        case fireReadComplete
+        /// The input was closed.
+        case eof
+    }
+
+    /// Whether we're currently blocked on a QPACK decode result.
+    @_spi(PackageInternal)
+    public var isWaitingForHeaderDecode: Bool {
+        switch self.state {
+        case .idle(let idleState): return idleState.readState.isWaitingForHeaderDecode
+        case .finished: return false
+        case .previousError: return false
+        }
+    }
+
+    /// Ask whether `buffer` may be given to the frame decoder right now.
+    ///
+    /// - Returns: `true` if you should decode the buffer now. `false` if you must not: the bytes were either queued
+    ///   inside the state machine, to be replayed via ``gotHeaderDecodeResult(_:)``, or dropped.
+    @_spi(PackageInternal)
+    public mutating func readyToDecode(_ buffer: ByteBuffer) -> Bool {
         switch self.state {
         case .idle(var idleState):
-            let readStateResult = idleState.readState.decodeNext()
+            let action = idleState.readState.readyToDecode(buffer)
+            self = .init(state: .idle(idleState))
+            return action
+
+        case .finished:
+            self = .init(state: .finished)
+            // dropping the buffer is fine
+            return false
+
+        case .previousError(let context):
+            self = .init(state: .previousError(context))
+            return false
+        }
+    }
+
+    /// Ask whether a read completion may be forwarded downstream right now.
+    ///
+    /// - Returns: `true` if you should forward it now, `false` if it was queued behind an outstanding QPACK decode.
+    @_spi(PackageInternal)
+    public mutating func readCompleted() -> Bool {
+        switch self.state {
+        case .idle(var idleState):
+            let action = idleState.readState.readCompleted()
+            self = .init(state: .idle(idleState))
+            return action
+
+        case .finished:
+            self = .init(state: .finished)
+            return true
+
+        case .previousError(let context):
+            self = .init(state: .previousError(context))
+            return true
+        }
+    }
+
+    /// Queue actions which couldn't be replayed because we became blocked on another QPACK decode.
+    @_spi(PackageInternal)
+    public mutating func enqueue(_ actions: consuming UniqueDeque<PendingReadAction>) {
+        guard !actions.isEmpty else { return }
+        switch self.state {
+        case .idle(var idleState):
+            idleState.readState.enqueue(actions)
+            self = .init(state: .idle(idleState))
+
+        case .finished:
+            self = .init(state: .finished)
+
+        case .previousError(let context):
+            self = .init(state: .previousError(context))
+        }
+    }
+
+    @_spi(PackageInternal)
+    public mutating func decodedFrame(_ frame: HTTP3PartialFrame) -> DecodeNextAction {
+        switch self.state {
+        case .idle(var idleState):
+            let seenEOF = idleState.readState.hasSeenEOF
+            let readStateResult = idleState.readState.decodedNext(frame)
             switch readStateResult {
             case .returnFrame(let frame):
                 let validationResult = idleState.validator.processInboundFrame(frame)
@@ -630,35 +634,23 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                     self = .init(state: .idle(idleState))
                     return .returnFrame(validatedFrame)
                 case .emitStreamError(let error):
-                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                    self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
                     return .emitStreamError(error)
                 case .emitConnectionError(let error):
-                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                    self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
                     return .emitConnectionError(error)
                 case .previousError:
                     self = .init(state: .idle(idleState))
                     return .previousError
                 }
             case .returnUnknownFrame:
-                let validationResult = idleState.validator.processInboundUnknownFrame()
-                switch validationResult {
-                case .emitConnectionError(let error):
-                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
-                    return .emitConnectionError(error)
-                case .dropFrame:
-                    self = .init(state: .idle(idleState))
-                    // We received a frame which we want to drop.
-                    // We need to get the _next_ action. Which might be needMoreBytes, or we might already have the next frame.
-                    return .callAgain
-                case .previousError:
-                    self = .init(state: .idle(idleState))
-                    return .previousError
-                }
+                self = .init(state: .idle(idleState))
+                return self.decodedUnknownFrame()
             case .emitConnectionError(let error):
-                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
                 return .emitConnectionError(error)
             case .emitStreamError(let error):
-                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
                 return .emitStreamError(error)
             case .decodeHeader(let partialHeader):
                 self = .init(state: .idle(idleState))
@@ -666,24 +658,9 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             case .alreadyClosed:
                 self = .init(state: .idle(idleState))
                 return .alreadyClosed
-            case .needDecodeResult, .needMoreBytes:
+            case .doNothing:
                 self = .init(state: .idle(idleState))
-                return .needMoreBytes
-            case .inputClosed:
-                // The input was closed. Inform the validator to determine what to do next.
-                switch idleState.validator.processInboundClosed() {
-                case .doNothing:
-                    self = .init(state: .idle(idleState))
-                    return .inputClosed(.emitEvent)
-
-                case .notifyDownstream(let error):
-                    self = .init(state: .idle(idleState))
-                    return .inputClosed(.emitErrorAndEvent(error))
-
-                case .resetStream(let error):
-                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
-                    return .inputClosed(.resetStream(error))
-                }
+                return .doNothing
             }
         case .finished:
             self = .init(state: .finished)
@@ -694,51 +671,170 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
+    @_spi(PackageInternal)
+    public mutating func decodedUnknownFrame() -> DecodeNextAction {
+        switch self.state {
+        case .idle(var idleState):
+            let seenEOF = idleState.readState.hasSeenEOF
+            let validationResult = idleState.validator.processInboundUnknownFrame()
+            switch validationResult {
+            case .emitConnectionError(let error):
+                self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
+                return .emitConnectionError(error)
+            case .dropFrame:
+                self = .init(state: .idle(idleState))
+                // Unknown frames are simply ignored.
+                return .doNothing
+            case .previousError:
+                self = .init(state: .idle(idleState))
+                return .previousError
+            }
+
+        case .finished:
+            self = .init(state: .finished)
+            return .alreadyClosed
+        case .previousError(let error):
+            self = .init(state: .previousError(error))
+            return .alreadyClosed
+        }
+    }
+
+    /// Inform the state machine that the frame decoder failed to decode the incoming bytes.
+    ///
+    /// Frame decoding errors are always connection-level errors. No further bytes will be accepted afterwards.
+    @_spi(PackageInternal)
+    public mutating func frameDecodeError(_ error: HTTP3Error) -> DecodeNextAction {
+        switch consume self.state {
+        case .idle(let idleState):
+            let seenEOF = idleState.readState.hasSeenEOF
+            self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
+            return .emitConnectionError(error)
+        case .finished:
+            self = .init(state: .finished)
+            return .alreadyClosed
+        case .previousError(let context):
+            self = .init(state: .previousError(context))
+            return .previousError
+        }
+    }
+
+    @_spi(PackageInternal)
+    public struct HeaderDecodeSuccessAction: ~Copyable {
+        /// What to do with the now fully decoded HEADERS frame.
+        @_spi(PackageInternal)
+        public var frameAction: DecodeNextAction
+
+        /// Everything which arrived whilst the decode was outstanding, in arrival order. Empty if ``frameAction``
+        /// is an error, because in that case nothing further should be processed.
+        var nextActions: UniqueDeque<PendingReadAction>
+
+        /// Take ownership of the queued replay actions.
+        ///
+        /// This exists because ``nextActions`` is noncopyable, and a noncopyable field can only be moved out of a
+        /// struct within the module that declares it.
+        @_spi(PackageInternal)
+        public consuming func takeNextActions() -> UniqueDeque<PendingReadAction> {
+            self.nextActions
+        }
+    }
+
     /// Inform the state machine of a qpack decode result that has been previously been asked for.
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
     @_spi(PackageInternal)
-    public mutating func gotHeaderDecodeResult(_ decoded: [HTTPField]) {
+    public mutating func gotHeaderDecodeResult(_ decoded: [HTTPField]) -> HeaderDecodeSuccessAction? {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore
             self = .init(state: .finished)
+            return nil
         case .idle(var idleState):
-            idleState.readState.gotHeaderDecodeResult(decoded)
-            self = .init(state: .idle(idleState))
+            let seenEOF = idleState.readState.hasSeenEOF
+            let pending = idleState.readState.gotHeaderDecodeResult()
+            // The header section is only now a complete frame, so this is the point at which the validator sees it.
+            switch idleState.validator.processInboundFrame(.headers(.init(fields: decoded))) {
+            case .forwardFrame(let validatedFrame):
+                self = .init(state: .idle(idleState))
+                return .init(frameAction: .returnFrame(validatedFrame), nextActions: pending)
+            case .emitStreamError(let error):
+                self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
+                return .init(frameAction: .emitStreamError(error), nextActions: .init())
+            case .emitConnectionError(let error):
+                self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
+                return .init(frameAction: .emitConnectionError(error), nextActions: .init())
+            case .previousError:
+                self = .init(state: .idle(idleState))
+                return .init(frameAction: .previousError, nextActions: .init())
+            }
         case .previousError(let error):
             self = .init(state: .previousError(error))
+            return nil
         }
+    }
+
+    @_spi(PackageInternal)
+    public struct HeaderDecodeFailureAction {
+        @_spi(PackageInternal)
+        public var error: HTTP3Error
     }
 
     /// Inform the state machine of a qpack decode error for a header that the machine previously asked to decode.
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
     /// This error will fail the stream. Connection-level errors should not be sent here.
     @_spi(PackageInternal)
-    public mutating func gotHeaderDecodeError(_ error: HTTP3Error) {
+    public mutating func gotHeaderDecodeError(_ error: HTTP3Error) -> HeaderDecodeFailureAction? {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore
             self = .init(state: .finished)
+            return nil
         case .idle(var idleState):
-            idleState.readState.gotHeaderDecodeError(error)
-            self = .init(state: .idle(idleState))
+            let seenEOF = idleState.readState.hasSeenEOF
+            let wasWaiting = idleState.readState.gotHeaderDecodeError()
+            self = .init(state: .previousError(.init(error: error, seenEOF: seenEOF)))
+            return wasWaiting ? HeaderDecodeFailureAction(error: error) : nil
         case .previousError(let error):
             self = .init(state: .previousError(error))
+            return nil
         }
     }
 
+    /// Inform the state machine that there is nothing left to read.
+    ///
+    /// - Note: You should flush the frame decoder before calling this, so that any remaining frames are pushed in
+    ///   first. Check ``isWaitingForHeaderDecode`` before doing so: if we're blocked on a QPACK decode, the closure is
+    ///   queued and replayed later instead.
+    /// - Returns: The action to take, or `nil` if there is nothing to do right now.
     @_spi(PackageInternal)
-    public mutating func inputClosed() {
+    public mutating func inputClosed() -> DecodeNextAction.InputClosedAction? {
         switch consume self.state {
         case .finished:
             // Why are we getting input closed after already closed?
             assertionFailure("Input closed after stream closed")
             self = .init(state: .finished)
+            return nil
         case .previousError(let error):
             self = .init(state: .previousError(error))
+            return nil
         case .idle(var idleState):
-            idleState.readState.inputClosed()
-            self = .init(state: .idle(idleState))
+            guard idleState.readState.inputClosed() else {
+                // Queued behind an outstanding QPACK decode, or already closed.
+                self = .init(state: .idle(idleState))
+                return nil
+            }
+            // The input was closed. Inform the validator to determine what to do next.
+            switch idleState.validator.processInboundClosed() {
+            case .doNothing:
+                self = .init(state: .idle(idleState))
+                return .emitEvent
+
+            case .notifyDownstream(let error):
+                self = .init(state: .idle(idleState))
+                return .emitErrorAndEvent(error)
+
+            case .resetStream(let error):
+                self = .init(state: .previousError(.init(error: error, seenEOF: true)))
+                return .resetStream(error)
+            }
         }
     }
 
@@ -771,7 +867,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         switch consume self.state {
         case .idle(let idleState):
             let error = remoteStreamError(errorCode: errorCodeValue, location: .here())
-            self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+            self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
             return .emitStreamError(error)
         case .previousError(let previousError):
             // ignore the new error because we already are in an error state
@@ -791,9 +887,9 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     /// Inform the state machine that the stream is no longer open.
-    /// - Note: You should call ``decodeNext()`` to unbuffer as much as possible before calling this function.
+    /// - Note: You should flush the frame decoder to unbuffer as much as possible before calling this function.
     @_spi(PackageInternal)
-    public mutating func closed() -> FinishedAction {
+    public mutating func closed() -> FinishedAction? {
         switch consume self.state {
         case .idle(let idle):
             let finishState = idle.readState.closed()
@@ -807,18 +903,14 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                 return .streamClosed(seenEOF: false)
             }
         case .previousError(let errorState):
-            let finishState = errorState.readState.closed()
+            let seenEOF = errorState.seenEOF
             self = .init(state: .finished)
+            return .streamClosed(seenEOF: seenEOF)
 
-            switch finishState {
-            case .sawEOF:
-                return .streamClosed(seenEOF: true)
-
-            case .noEOF:
-                return .streamClosed(seenEOF: false)
-            }
         case .finished:
-            fatalError("Finished called twice")
+            assertionFailure("Finished called twice")
+            self = .init(state: .finished)
+            return nil
         }
     }
 }

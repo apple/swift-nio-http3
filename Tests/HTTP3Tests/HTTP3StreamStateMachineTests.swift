@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import DequeModule
 import HTTPTypes
 import NIOCore
 import NIOQUICHelpers
@@ -20,22 +21,20 @@ import Testing
 
 @_spi(PackageInternal) @testable import HTTP3
 
+/// Tests for ``HTTP3StreamStateMachine``.
+///
+/// The state machine no longer owns a frame decoder: frames are pushed into it one at a time, the way
+/// `HTTP3StreamHandler` does after `NIOSingleStepByteToMessageProcessor` has produced them. So these tests drive it
+/// with already-decoded ``HTTP3PartialFrame``s. Byte-level decoding is covered by `HTTP3FrameDecoderTests`.
 struct HTTP3StreamStateMachineTests {
     private let testDataFrame = HTTP3Frame.data(.init(bytes: [1, 2, 3, 4]))
-
-    /// These bytes encode `testDataFrame`.
-    private let testDataFrameBytes: [UInt8] = [0, 4, 1, 2, 3, 4]
+    private let testPartialDataFrame = HTTP3PartialFrame.data(.init(bytes: [1, 2, 3, 4]))
 
     private let testSettings = HTTP3Settings(
         qpackMaximumTableCapacity: 151_288_809_941_952_652,
         qpackBlockedStreams: 1,
         h3Datagram: false
     )
-
-    /// These bytes encode `testSettings`.
-    private let testSettingsFrameBytes: [UInt8] = [
-        0x04, 0x0b, 0x07, 0x01, 0x01, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c,
-    ]
 
     private var testRequestHeaderFields: [HTTPField] {
         [
@@ -70,23 +69,13 @@ struct HTTP3StreamStateMachineTests {
         .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testTrailerFields))
     }
 
-    /// These bytes encode `testRequestHeader`.
-    private var testRequestHeaderFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testRequestHeader))
-        return .init(buffer: buffer)
-    }
-
     /// These bytes encode `testResponseHeader`.
     private var testResponseHeaderFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testResponseHeader))
-        return .init(buffer: buffer)
+        .init(buffer: ByteBuffer(frame: .headers(self.testResponseHeader)))
     }
 
-    /// These bytes encode `testTrailerFrameBytes`.
-    private var testTrailerFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testTrailer))
-        return .init(buffer: buffer)
-    }
+    /// These bytes encode `testDataFrame`.
+    private let testDataFrameBytes: [UInt8] = [0, 4, 1, 2, 3, 4]
 
     private func testQpackDecoderClosure() -> (HTTP3PartialFrame.Headers) -> QPACKFullDecodeResult {
         var qpackDecoder = QPACKDecoder(
@@ -107,126 +96,167 @@ struct HTTP3StreamStateMachineTests {
     @Test
     func testNothing() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.assertNoNext()
+        let waiting = machine.isWaitingForHeaderDecode
+        #expect(!waiting)
+        let readyToDecode = machine.readyToDecode(ByteBuffer())
+        #expect(readyToDecode)
+        let readCompleted = machine.readCompleted()
+        #expect(readCompleted)
     }
 
     @Test
     func testReadFrame() {
         var machine = HTTP3StreamStateMachine(streamType: .control, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(.init(bytes: self.testSettingsFrameBytes))
-        machine.assertReturnFrame(expected: .settings(self.testSettings))
-        machine.assertNoNext()
+        machine.assertReturnFrame(.settings(self.testSettings), expected: .settings(self.testSettings))
     }
 
     @Test
     func testDroppedFrameFollowedByNormal() {
         let decode = self.testQpackDecoderClosure()
-        let testUnknownFrameBytes: [UInt8] = [0x40, 0xdb, 0x00]
-        let buffer = ByteBuffer(
-            bytes: testUnknownFrameBytes + self.testRequestHeaderFrameBytes + self.testDataFrameBytes
-        )
-
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(buffer)
-        machine.assertCallAgain()
-        machine.assertReceivedHeaders(decode: decode)
-        machine.assertReturnFrame(expected: self.testDataFrame)
-        machine.assertNoNext()
+
+        // Unknown frames are dropped without any further action.
+        let action = machine.decodedUnknownFrame()
+        guard case .doNothing = action else {
+            Issue.record("Unexpected action \(action)")
+            return
+        }
+
+        machine.assertReceivedHeaders(self.testRequestHeader, decode: decode)
+        machine.assertReturnFrame(self.testPartialDataFrame, expected: self.testDataFrame)
     }
 
     @Test
     func testQPACK() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        let action1 = machine.decodeNext()
+        let action1 = machine.decodedFrame(.headers(self.testRequestHeader))
         guard case .decodeHeader(let partialHeader) = action1 else {
             Issue.record("Unexpected action \(action1)")
             return
         }
-        machine.assertNoNext()
-
         // The header we've been asked to decode should match the one we put in
         #expect(partialHeader == self.testRequestHeader)
+        // Nothing else can be processed until we hand back a result.
+        let waiting = machine.isWaitingForHeaderDecode
+        #expect(waiting)
 
         let decodeResult = self.testRequestHeaderFields
-        machine.gotHeaderDecodeResult(decodeResult)
-        let action2 = machine.decodeNext()
-        guard case .returnFrame(let frame) = action2 else {
-            Issue.record("Unexpected action \(action2)")
+        guard let action2 = machine.gotHeaderDecodeResult(decodeResult) else {
+            Issue.record("Expected an action")
+            return
+        }
+        guard case .returnFrame(let frame) = action2.frameAction else {
+            Issue.record("Unexpected action \(action2.frameAction)")
             return
         }
         #expect(frame == .headers(decodeResult))
+        #expect(drain(action2.takeNextActions()).isEmpty)
+        let stillWaiting = machine.isWaitingForHeaderDecode
+        #expect(!stillWaiting)
     }
 
     @Test
     func testLotsOfQPACK() {
         let decode = self.testQpackDecoderClosure()
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        machine.buffer(.init(bytes: self.testTrailerFrameBytes))
 
-        machine.assertReceivedHeaders(decode: decode)
-        machine.assertReceivedHeaders(decode: decode)
-        machine.assertNoNext()
+        machine.assertReceivedHeaders(self.testRequestHeader, decode: decode)
+        machine.assertReceivedHeaders(self.testTrailer, decode: decode)
     }
 
+    /// Everything which arrives whilst a header section is being decoded must be queued behind it.
     @Test
     func testQPACKQueueing() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
 
-        // Throw in one headers and 1 data
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        machine.buffer(.init(bytes: self.testDataFrameBytes))
-
-        let action1 = machine.decodeNext()
+        let action1 = machine.decodedFrame(.headers(self.testRequestHeader))
         guard case .decodeHeader(let partialHeader) = action1 else {
             Issue.record("Unexpected action \(action1)")
             return
         }
-        // The only action available should be the decode, the 2 data frames are blocked behind that
-        machine.assertNoNext()
-
-        // Putting in further frames should still queue them and result in no action
-        machine.buffer(.init(bytes: self.testDataFrameBytes))
-        machine.assertNoNext()
-
-        // The header we've been asked to decode should match the one we put in
         #expect(partialHeader == self.testRequestHeader)
+
+        // Everything which arrives from here on has to wait.
+        let dataBytes = ByteBuffer(bytes: self.testDataFrameBytes)
+        let decodeQueued1 = machine.readyToDecode(dataBytes)
+        #expect(!decodeQueued1)
+        let readCompleteQueued = machine.readCompleted()
+        #expect(!readCompleteQueued)
+        let decodeQueued2 = machine.readyToDecode(dataBytes)
+        #expect(!decodeQueued2)
 
         // Put in the decode result
         let decodeResult = self.testRequestHeaderFields
-        machine.gotHeaderDecodeResult(decodeResult)
-
-        // We should also be able to read more bytes now, after putting in the header decode result, before fetching back the action
-        machine.buffer(.init(bytes: self.testDataFrameBytes))
-
-        // Now the header frame can come through.
-        let action2 = machine.decodeNext()
-        guard case .returnFrame(let frame) = action2 else {
-            Issue.record("Unexpected action \(action2)")
+        guard let action2 = machine.gotHeaderDecodeResult(decodeResult) else {
+            Issue.record("Expected an action")
+            return
+        }
+        guard case .returnFrame(let frame) = action2.frameAction else {
+            Issue.record("Unexpected action \(action2.frameAction)")
             return
         }
         #expect(frame == .headers(decodeResult))
 
-        // Finally, we should be able to read the 3 data frames
-        machine.assertReturnFrame(expected: self.testDataFrame)
-        machine.assertReturnFrame(expected: self.testDataFrame)
-        machine.assertReturnFrame(expected: self.testDataFrame)
-        machine.assertNoNext()
+        // We get everything back, in the order it arrived.
+        #expect(
+            drain(action2.takeNextActions()) == [
+                .decodeFrames(dataBytes),
+                .fireReadComplete,
+                .decodeFrames(dataBytes),
+            ]
+        )
+
+        // And we're unblocked again.
+        let stillWaiting = machine.isWaitingForHeaderDecode
+        #expect(!stillWaiting)
+        let readyAgain = machine.readyToDecode(dataBytes)
+        #expect(readyAgain)
+        machine.assertReturnFrame(self.testPartialDataFrame, expected: self.testDataFrame)
+    }
+
+    /// Actions which couldn't be replayed because we blocked on another decode get queued behind the new decode.
+    @Test
+    func testQPACKRequeueing() {
+        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
+
+        // A request head, followed by trailers which we'll block on again.
+        guard case .decodeHeader = machine.decodedFrame(.headers(self.testRequestHeader)) else {
+            Issue.record("Unexpected action")
+            return
+        }
+        let readCompleteQueued = machine.readCompleted()
+        #expect(!readCompleteQueued)
+        guard let action1 = machine.gotHeaderDecodeResult(self.testRequestHeaderFields) else {
+            Issue.record("Expected an action")
+            return
+        }
+        let pending = action1.takeNextActions()
+
+        // Whilst replaying, we hit the trailers and block again. The rest of the replay is handed back to us.
+        guard case .decodeHeader = machine.decodedFrame(.headers(self.testTrailer)) else {
+            Issue.record("Unexpected action")
+            return
+        }
+        machine.enqueue(pending)
+
+        guard let action2 = machine.gotHeaderDecodeResult(self.testTrailerFields) else {
+            Issue.record("Expected an action")
+            return
+        }
+        #expect(drain(action2.takeNextActions()) == [.fireReadComplete])
     }
 
     @Test
     func testQPACKError() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
         // Machine should ask us to decode a header now
-        let action1 = machine.decodeNext()
+        let action1 = machine.decodedFrame(.headers(self.testRequestHeader))
         guard case .decodeHeader(let partialHeader) = action1 else {
             Issue.record("Unexpected action \(action1)")
             return
         }
         #expect(partialHeader == self.testRequestHeader)
-        machine.assertNoNext()
+
         // We tell it we got an error
         let testError = HTTP3Error(
             code: .qpackDecoderError,
@@ -235,75 +265,43 @@ struct HTTP3StreamStateMachineTests {
             errorCode: .internalError,
             location: .here()
         )
-        machine.gotHeaderDecodeError(testError)
-
-        // Let's put in some more bytes. They should get ignored because they come after an error
-        machine.buffer(.init(bytes: self.testDataFrameBytes))
-        machine.assertNextIsStreamError { e in
-            expectH3ErrorEqual(
-                error: e,
-                expectedCode: .qpackDecoderError,
-                expectedH3ErrorCode: .internalError,
-                expectedMessage: "test"
-            )
+        guard let failure = machine.gotHeaderDecodeError(testError) else {
+            Issue.record("Expected an action")
+            return
         }
-        machine.assertNoNext()
+        expectH3ErrorEqual(
+            error: failure.error,
+            expectedCode: .qpackDecoderError,
+            expectedH3ErrorCode: .internalError,
+            expectedMessage: "test"
+        )
 
-        // Again, more bytes are ignored
-        machine.buffer(.init(bytes: self.testDataFrameBytes))
-        machine.assertNoNext()
+        // Further bytes are dropped because they come after an error
+        let readyToDecode = machine.readyToDecode(.init(bytes: self.testDataFrameBytes))
+        #expect(!readyToDecode)
 
         // Writes also ignored due to that error
         let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
         #expect(writeAction.isPreviousError)
+
+        // A second decode result is ignored: we're already in an error state.
+        let secondFailure = machine.gotHeaderDecodeError(testError)
+        #expect(secondFailure == nil)
     }
 
-    @Test
-    func testWriteAfterQPACKErrorBeforeRead() {
-        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        // Machine should ask us to decode a header now
-        let action1 = machine.decodeNext()
-        guard case .decodeHeader(let partialHeader) = action1 else {
-            Issue.record("Unexpected action \(action1)")
-            return
-        }
-        #expect(partialHeader == self.testRequestHeader)
-        machine.assertNoNext()
-        // We tell it we got an error
-        let testError = HTTP3Error(
-            code: .qpackDecoderError,
-            message: "test",
-            cause: nil,
-            errorCode: .internalError,
-            location: .here()
-        )
-        machine.gotHeaderDecodeError(testError)
-
-        // Writes are now dropped
-        let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
-        #expect(writeAction.isPreviousError)
-
-        // Reading gives the error from the header decode
-        machine.assertNextIsStreamError {
-            expectH3ErrorEqual(
-                error: $0,
-                expectedCode: .qpackDecoderError,
-                expectedH3ErrorCode: .internalError,
-                expectedMessage: "test"
-            )
-        }
-        machine.assertNoNext()
-    }
-
-    /// Read bytes which do not form a valid frame.
+    /// Read bytes which do not form a valid frame. The frame decoder rejects those; the state machine is told about it.
     @Test
     func testReadBadFrame() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
 
-        let badBytes = ByteBuffer(bytes: [2])  // 2 is a forbidden frame frame type
-        machine.buffer(badBytes)
-        let action1 = machine.decodeNext()
+        let decodeError = HTTP3Error(
+            code: .forbiddenFrameType,
+            message: "Forbidden frame type",
+            cause: nil,
+            errorCode: .frameUnexpected,
+            location: .here()
+        )
+        let action1 = machine.frameDecodeError(decodeError)
         guard case .emitConnectionError(let error) = action1 else {
             Issue.record("Unexpected action \(action1)")
             return
@@ -311,21 +309,25 @@ struct HTTP3StreamStateMachineTests {
         expectH3ErrorEqual(error: error, expectedCode: .forbiddenFrameType, expectedH3ErrorCode: .frameUnexpected)
 
         // All further reads and writes should fail
-        machine.assertNoNext()
+        let readyToDecode = machine.readyToDecode(.init(bytes: self.testDataFrameBytes))
+        #expect(!readyToDecode)
+        let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
+        #expect(writeAction.isPreviousError)
 
-        let action3 = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
-        #expect(action3.isPreviousError)
+        // The error is only reported once.
+        guard case .previousError = machine.frameDecodeError(decodeError) else {
+            Issue.record("Expected a previousError action")
+            return
+        }
     }
 
-    /// Read bytes which do form a valid frame, but of a type which isn't currently valid.
+    /// Read a valid frame, but of a type which isn't currently valid.
     /// We'll be sending a data frame when we need headers.
     @Test
     func testReadInvalidFrame() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
 
-        let badBytes = ByteBuffer(bytes: self.testDataFrameBytes)
-        machine.buffer(badBytes)
-        let action1 = machine.decodeNext()
+        let action1 = machine.decodedFrame(self.testPartialDataFrame)
         guard case .emitConnectionError(let error) = action1 else {
             Issue.record("Unexpected action \(action1)")
             return
@@ -333,10 +335,10 @@ struct HTTP3StreamStateMachineTests {
         expectH3ErrorEqual(error: error, expectedCode: .unexpectedFrame, expectedH3ErrorCode: .frameUnexpected)
 
         // All further reads and writes should fail
-        machine.assertNoNext()
-
-        let action3 = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
-        #expect(action3.isPreviousError)
+        let readyToDecode = machine.readyToDecode(.init(bytes: self.testDataFrameBytes))
+        #expect(!readyToDecode)
+        let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
+        #expect(writeAction.isPreviousError)
     }
 
     @Test
@@ -348,27 +350,19 @@ struct HTTP3StreamStateMachineTests {
 
         // Client writes a head + data
         let clientWrite1 = client.writeFrameAndQPACK(frame: .headers(self.testRequestHeaderFields))
-        try server.receiveWrite(clientWrite1)
         let clientWrite2 = client.writeFrameAndQPACK(frame: .data(.init(bytes: [1, 2, 3])))
-        try server.receiveWrite(clientWrite2)
 
         // Server receives
-        server.assertReceivedHeaders(decode: decode)
-        server.assertReturnFrame(expected: .data(.init(bytes: [1, 2, 3])))
+        server.assertReceivedHeaders(try clientWrite1.decodedHeaders(), decode: decode)
+        server.assertReturnFrame(try clientWrite2.decodedFrame(), expected: .data(.init(bytes: [1, 2, 3])))
 
         // Server writes a head + data
         let serverWrite1 = server.writeFrameAndQPACK(frame: .headers(self.testResponseHeaderFields))
-        try client.receiveWrite(serverWrite1)
         let serverWrite2 = server.writeFrameAndQPACK(frame: .data(.init(bytes: [4, 5, 6])))
-        try client.receiveWrite(serverWrite2)
 
         // Client receives
-        client.assertReceivedHeaders(decode: decode)
-        client.assertReturnFrame(expected: .data(.init(bytes: [4, 5, 6])))
-
-        // No further frames come
-        server.assertNoNext()
-        client.assertNoNext()
+        client.assertReceivedHeaders(try serverWrite1.decodedHeaders(), decode: decode)
+        client.assertReturnFrame(try serverWrite2.decodedFrame(), expected: .data(.init(bytes: [4, 5, 6])))
     }
 
     @Test
@@ -380,30 +374,21 @@ struct HTTP3StreamStateMachineTests {
 
         // Client writes a head + data
         let clientWrite1 = client.writeFrameAndQPACK(frame: .headers(self.testRequestHeaderFields))
-        try server.receiveWrite(clientWrite1)
         let clientWrite2 = client.writeFrameAndQPACK(frame: .data(.init(bytes: [1, 2, 3])))
-        try server.receiveWrite(clientWrite2)
 
         // Server receives
-        server.assertReceivedHeaders(decode: decode)
-        server.assertReturnFrame(expected: .data(.init(bytes: [1, 2, 3])))
+        server.assertReceivedHeaders(try clientWrite1.decodedHeaders(), decode: decode)
+        server.assertReturnFrame(try clientWrite2.decodedFrame(), expected: .data(.init(bytes: [1, 2, 3])))
 
         // Server writes a double head + data
         let serverWrite1 = server.writeFrameAndQPACK(frame: .headers([.init(name: .status, value: "100")]))
-        try client.receiveWrite(serverWrite1)
         let serverWrite2 = server.writeFrameAndQPACK(frame: .headers(self.testResponseHeaderFields))
-        try client.receiveWrite(serverWrite2)
         let serverWrite3 = server.writeFrameAndQPACK(frame: .data(.init(bytes: [4, 5, 6])))
-        try client.receiveWrite(serverWrite3)
 
         // Client receives
-        client.assertReceivedHeaders(decode: decode)
-        client.assertReceivedHeaders(decode: decode)
-        client.assertReturnFrame(expected: .data(.init(bytes: [4, 5, 6])))
-
-        // No further frames come
-        server.assertNoNext()
-        client.assertNoNext()
+        client.assertReceivedHeaders(try serverWrite1.decodedHeaders(), decode: decode)
+        client.assertReceivedHeaders(try serverWrite2.decodedHeaders(), decode: decode)
+        client.assertReturnFrame(try serverWrite3.decodedFrame(), expected: .data(.init(bytes: [4, 5, 6])))
     }
 
     @Test
@@ -412,14 +397,11 @@ struct HTTP3StreamStateMachineTests {
 
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
 
-        // Write request headers
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        machine.assertReceivedHeaders(decode: decode)
+        // Read request headers and some data
+        machine.assertReceivedHeaders(self.testRequestHeader, decode: decode)
+        machine.assertReturnFrame(self.testPartialDataFrame, expected: self.testDataFrame)
 
-        // Start, but don't finish, writing request data
-        machine.buffer(.init(bytes: [0, 10, 1, 2, 3]))  // type data, length 10, but we're only giving 3 bytes
-
-        // We can send response headers, even though we're in the middle of processing incoming request data
+        // We can send response headers, even though the request body is still arriving
         let writeAction = machine.writeFrameAndQPACK(frame: .headers(self.testResponseHeaderFields))
         writeAction?.assertReturnBytes(expectedBytes: .init(bytes: self.testResponseHeaderFrameBytes))
     }
@@ -431,12 +413,10 @@ struct HTTP3StreamStateMachineTests {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
 
         // Read request headers
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        machine.assertReceivedHeaders(decode: decode)
+        machine.assertReceivedHeaders(self.testRequestHeader, decode: decode)
 
         // Read request trailers, but don't decode them yet
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        guard case .decodeHeader = machine.decodeNext() else {
+        guard case .decodeHeader = machine.decodedFrame(.headers(self.testTrailer)) else {
             Issue.record("Unexpected action")
             return
         }
@@ -447,14 +427,19 @@ struct HTTP3StreamStateMachineTests {
 
         // Now decode the request trailers
         let testResult = self.testTrailerFields
-        machine.gotHeaderDecodeResult(testResult)
+        guard let action = machine.gotHeaderDecodeResult(testResult) else {
+            Issue.record("Expected an action")
+            return
+        }
+        guard case .returnFrame(let frame) = action.frameAction else {
+            Issue.record("Unexpected action \(action.frameAction)")
+            return
+        }
+        #expect(frame == .headers(testResult))
 
-        // The machine is now in a buffering state for reads, where it is holding on to that trailer for us. We can still write data out
+        // We can still write data out
         let writeAction2 = machine.writeFrameAndQPACK(frame: self.testDataFrame)
         writeAction2?.assertReturnBytes(expectedBytes: .init(bytes: self.testDataFrameBytes))
-
-        // now we can get back the head that we fed in as the qpack result
-        machine.assertReturnFrame(expected: .headers(testResult))
     }
 
     @Test
@@ -481,7 +466,11 @@ struct HTTP3StreamStateMachineTests {
     func testWriteDoubleData() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: false, preferHuffmanEncoding: false)
         let action1 = machine.writeFrameAndQPACK(frame: .headers(self.testRequestHeaderFields))
-        action1?.assertReturnBytes(expectedBytes: .init(bytes: self.testRequestHeaderFrameBytes))
+        action1?.assertReturnBytes(
+            expectedBytes: ByteBuffer(
+                frame: .headers(.init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields)))
+            )
+        )
 
         let action2 = machine.writeFrameAndQPACK(frame: .data(.init(bytes: [1, 2, 3])))
         action2?.assertReturnBytes(expectedBytes: .init(bytes: [0, 3, 1, 2, 3]))
@@ -495,10 +484,9 @@ struct HTTP3StreamStateMachineTests {
     @Test
     func testInputClosedBeforeReceivingCompleteRequest() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.inputClosed()
-        let action = machine.decodeNext()
-        guard case .inputClosed(.resetStream(let error)) = action else {
-            Issue.record("Unexpected action \(action)")
+        let action = machine.inputClosed()
+        guard case .resetStream(let error) = action else {
+            Issue.record("Unexpected action \(String(describing: action))")
             return
         }
 
@@ -512,11 +500,10 @@ struct HTTP3StreamStateMachineTests {
     @Test
     func testInputClosedBeforeReceivingCompleteResponse() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: false, preferHuffmanEncoding: false)
-        machine.inputClosed()
-        let action = machine.decodeNext()
+        let action = machine.inputClosed()
 
-        guard case .inputClosed(.emitErrorAndEvent(let error)) = action else {
-            Issue.record("Unexpected action \(action)")
+        guard case .emitErrorAndEvent(let error) = action else {
+            Issue.record("Unexpected action \(String(describing: action))")
             return
         }
 
@@ -527,25 +514,19 @@ struct HTTP3StreamStateMachineTests {
     func testInputClosedAfterReceivingCompleteRequest() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
 
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-
-        let action1 = machine.decodeNext()
+        let action1 = machine.decodedFrame(.headers(self.testRequestHeader))
         guard case .decodeHeader(let headerToDecode) = action1 else {
             Issue.record("Unexpected action \(action1)")
             return
         }
         #expect(headerToDecode.fieldSection.lines.count == 4)
 
-        machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
-        machine.inputClosed()
-
-        machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
-        let closeAction = machine.decodeNext()
+        _ = machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
 
         // If the input closed after receiving a complete request, the state machine should just tell us to fire the
         // inputClosed event.
-        guard case .inputClosed(.emitEvent) = closeAction else {
-            Issue.record("Unexpected action \(closeAction)")
+        guard case .emitEvent = machine.inputClosed() else {
+            Issue.record("Unexpected action")
             return
         }
     }
@@ -556,123 +537,53 @@ struct HTTP3StreamStateMachineTests {
 
         // Before simulating receiving a response, we must send a request.
         _ = machine.writeFrame(frame: .headers(self.testRequestHeaderFields))
-        machine.buffer(.init(bytes: self.testResponseHeaderFrameBytes))
 
-        let action1 = machine.decodeNext()
+        let action1 = machine.decodedFrame(.headers(self.testResponseHeader))
         guard case .decodeHeader(let headerToDecode) = action1 else {
             Issue.record("Unexpected action \(action1)")
             return
         }
         #expect(headerToDecode.fieldSection.lines.count == 1)
 
-        machine.gotHeaderDecodeResult(self.testResponseHeaderFields)
-        machine.inputClosed()
+        _ = machine.gotHeaderDecodeResult(self.testResponseHeaderFields)
 
-        machine.assertReturnFrame(expected: .headers(self.testResponseHeaderFields))
-        let closeAction = machine.decodeNext()
-
-        // If the input closed after receiving a complete response, the state machine should just tell us to fire the
-        // inputClosed event.
-        guard case .inputClosed(.emitEvent) = closeAction else {
-            Issue.record("Unexpected action \(closeAction)")
+        guard case .emitEvent = machine.inputClosed() else {
+            Issue.record("Unexpected action")
             return
         }
     }
 
+    /// The input close must not overtake a header section which is still being decoded.
     @Test
     func testInputClosedCantOvertakeQueuedFrame() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        machine.inputClosed()
-        let action1 = machine.decodeNext()
+        let action1 = machine.decodedFrame(.headers(self.testRequestHeader))
         guard case .decodeHeader(let headerToDecode) = action1 else {
             Issue.record("Unexpected action \(action1)")
             return
         }
         #expect(headerToDecode.fieldSection.lines.count == 4)
 
-        // There is no next, despite the input close, until we decode the header
-        machine.assertNoNext()
-        machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
+        // There is no action for the input close yet, it just gets queued.
+        let queuedClose = machine.inputClosed()
+        #expect(queuedClose == nil)
 
-        // Now the headers are returned, then the input close, then nothing else
-        machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
-        let action2 = machine.decodeNext()
-        guard case .inputClosed(.emitEvent) = action2 else {
-            Issue.record("Unexpected action \(action2)")
+        guard let action2 = machine.gotHeaderDecodeResult(self.testRequestHeaderFields) else {
+            Issue.record("Expected an action")
             return
         }
-        machine.assertNoNext()
-    }
-
-    @Test
-    func testInputClosedBeforeHeaderDecodeResult() {
-        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        let action1 = machine.decodeNext()
-        guard case .decodeHeader(let headerToDecode) = action1 else {
-            Issue.record("Unexpected action \(action1)")
+        guard case .returnFrame(let frame) = action2.frameAction else {
+            Issue.record("Unexpected action \(action2.frameAction)")
             return
         }
-        #expect(headerToDecode.fieldSection.lines.count == 4)
+        #expect(frame == .headers(self.testRequestHeaderFields))
 
-        // There is no next, despite the input close, until we decode the header
-        machine.inputClosed()
-        machine.assertNoNext()
-        machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
-
-        // Now the headers are returned, then the input close, then nothing else
-        machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
-        let action2 = machine.decodeNext()
-        guard case .inputClosed(.emitEvent) = action2 else {
-            Issue.record("Unexpected action \(action2)")
+        // The EOF comes back to us behind the header, and only now produces an action.
+        #expect(drain(action2.takeNextActions()) == [.eof])
+        guard case .emitEvent = machine.inputClosed() else {
+            Issue.record("Unexpected action")
             return
         }
-        machine.assertNoNext()
-    }
-
-    @Test
-    func testInputClosedAfterHeaderDecodeResult() {
-        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
-        let action1 = machine.decodeNext()
-        guard case .decodeHeader(let headerToDecode) = action1 else {
-            Issue.record("Unexpected action \(action1)")
-            return
-        }
-        #expect(headerToDecode.fieldSection.lines.count == 4)
-
-        // There is no next until we decode the header
-        machine.assertNoNext()
-        machine.gotHeaderDecodeResult(self.testRequestHeaderFields)
-
-        machine.inputClosed()
-
-        // Now the headers are returned, then the input close, then nothing else
-        machine.assertReturnFrame(expected: .headers(self.testRequestHeaderFields))
-        let action2 = machine.decodeNext()
-        guard case .inputClosed(.emitEvent) = action2 else {
-            Issue.record("Unexpected action \(action2)")
-            return
-        }
-        machine.assertNoNext()
-    }
-
-    @Test
-    func testInputClosedWithLeftoverBytes() {
-        var machine = HTTP3StreamStateMachine(streamType: .control, incoming: true, preferHuffmanEncoding: false)
-        // A frame is formed of a type + length + payload
-        // Here we only gave a type, so it's an unfinished frame
-        machine.buffer(.init(bytes: [UInt8(HTTP3FrameType.settings.rawValue)]))
-        machine.assertNoNext()  // Not enough bytes to do anything
-
-        machine.inputClosed()
-        let action2 = machine.decodeNext()
-        guard case .emitConnectionError(let error) = action2 else {
-            Issue.record("Unexpected action \(action2)")
-            return
-        }
-        expectH3ErrorEqual(error: error, expectedCode: .leftoverBytes, expectedH3ErrorCode: .frameError)
     }
 
     // MARK: Stream closed
@@ -682,7 +593,6 @@ struct HTTP3StreamStateMachineTests {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
         let action = machine.closed()
         #expect(action == .streamClosed(seenEOF: false))
-        machine.assertNoNext()
     }
 
     @Test
@@ -696,30 +606,36 @@ struct HTTP3StreamStateMachineTests {
         #expect(action2 == .streamClosed(seenEOF: false))
     }
 
+    /// If we blocked on a QPACK decode we never surfaced the queued EOF, so this is an unclean close.
     @Test
-    func testStreamClosedAfterBufferedEOF() {
+    func testStreamClosedWhilstWaitingForDecode() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.inputClosed()
+        guard case .decodeHeader = machine.decodedFrame(.headers(self.testRequestHeader)) else {
+            Issue.record("Unexpected action")
+            return
+        }
+        let queuedClose = machine.inputClosed()
+        #expect(queuedClose == nil)
 
         let action = machine.closed()
-        // We haven't seen EOF because we didn't unbuffer it. This an error on part of the user of the state machine.
-        // We should unbuffer as much as possible before calling streamClosed
         #expect(action == .streamClosed(seenEOF: false))
     }
 
     @Test
     func testStreamClosedAfterEOF() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
-        machine.inputClosed()
+        // A request stream which is closed before a complete request resets, and that's an error state.
+        // Use a control stream so that the EOF is clean.
+        var control = HTTP3StreamStateMachine(streamType: .control, incoming: true, preferHuffmanEncoding: false)
+        control.assertReturnFrame(.settings(self.testSettings), expected: .settings(self.testSettings))
+        _ = control.inputClosed()
+        let controlClose = control.closed()
+        #expect(controlClose == .streamClosed(seenEOF: true))
 
-        let action1 = machine.decodeNext()
-        switch action1 {
-        case .inputClosed: break  // Expected
-        default: Issue.record("Unexpected action \(String(describing: action1))")
-        }
-
-        let action2 = machine.closed()
-        #expect(action2 == .streamClosed(seenEOF: true))
+        // For the request stream, the EOF was still seen even though it produced a reset.
+        _ = machine.inputClosed()
+        let machineClose = machine.closed()
+        #expect(machineClose == .streamClosed(seenEOF: true))
     }
 
     @Test
@@ -774,10 +690,8 @@ struct HTTP3StreamStateMachineTests {
             ),
             lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
         )
-        let incomingPushFrameBytes = ByteBuffer(frame: .pushPromise(.init(pushID: 1, fieldSection: testFieldSection)))
-        machine.buffer(incomingPushFrameBytes)
 
-        let action = machine.decodeNext()
+        let action = machine.decodedFrame(.pushPromise(.init(pushID: 1, fieldSection: testFieldSection)))
         guard case .emitConnectionError(let error) = action else {
             Issue.record("Unexpected action \(action)")
             return
@@ -788,85 +702,29 @@ struct HTTP3StreamStateMachineTests {
     @Test
     func testInputAfterInputClosed() {
         var machine = HTTP3StreamStateMachine(streamType: .control, incoming: true, preferHuffmanEncoding: false)
-        machine.inputClosed()
-        let action1 = machine.decodeNext()
-        guard case .inputClosed = action1 else {
-            Issue.record("Unexpected action \(action1)")
+        guard case .emitEvent = machine.inputClosed() else {
+            Issue.record("Unexpected action")
             return
         }
-        machine.buffer(.init(bytes: self.testSettingsFrameBytes))
-        machine.assertNoNext()
+        // Any bytes which arrive after the close are dropped.
+        let readyToDecode = machine.readyToDecode(.init(bytes: [0x04, 0x00]))
+        #expect(!readyToDecode)
+        // And so is any frame which somehow still reaches us.
+        guard case .alreadyClosed = machine.decodedFrame(.settings(self.testSettings)) else {
+            Issue.record("Unexpected action")
+            return
+        }
     }
 }
 
 extension HTTP3StreamStateMachine {
-    fileprivate mutating func assertNoNext(sourceLocation: SourceLocation = #_sourceLocation) {
-        let next = self.decodeNext()
-        switch next {
-        case .needMoreBytes, .alreadyClosed:
-            break
-        default:
-            Issue.record("Unexpected action \(next)", sourceLocation: sourceLocation)
-        }
-    }
-
-    fileprivate mutating func assertNextIsStreamError(
-        verifier: (HTTP3Error) -> Void,
-        sourceLocation: SourceLocation = #_sourceLocation
-    ) {
-        let next = self.decodeNext()
-        switch next {
-        case .emitStreamError(let error):
-            verifier(error)
-        default:
-            Issue.record("Unexpected action \(next)", sourceLocation: sourceLocation)
-        }
-    }
-
-    fileprivate mutating func assertReceivedHeaders(
-        decode: (HTTP3PartialFrame.Headers) -> QPACKFullDecodeResult,
-        sourceLocation: SourceLocation = #_sourceLocation
-    ) {
-        let next = self.decodeNext()
-        guard case .decodeHeader(let partialHeader) = next else {
-            Issue.record("Unexpected action \(next)", sourceLocation: sourceLocation)
-            return
-        }
-        self.assertNoNext(sourceLocation: sourceLocation)
-        let decoded = decode(partialHeader)
-        switch decoded {
-        case .missingInsertCount:
-            Issue.record("Unexpected result", sourceLocation: sourceLocation)
-        case .success(let fields, _):
-            self.gotHeaderDecodeResult(fields)
-            self.assertReturnFrame(expected: .headers(fields), sourceLocation: sourceLocation)
-        case .error(let qpackError):
-            let error = HTTP3Error(
-                code: .qpackDecoderError,
-                message: "Failed to qpack decode",
-                cause: qpackError,
-                errorCode: .qpackDecompressionFailed,
-                location: .here()
-            )
-            self.gotHeaderDecodeError(error)
-        }
-    }
-
-    fileprivate mutating func assertCallAgain(sourceLocation: SourceLocation = #_sourceLocation) {
-        let next = self.decodeNext()
-        switch next {
-        case .callAgain:
-            break  // Expected
-        default:
-            Issue.record("Unexpected action \(next)", sourceLocation: sourceLocation)
-        }
-    }
-
+    /// Push in `frame` and assert that it comes straight back out as `expected`.
     fileprivate mutating func assertReturnFrame(
+        _ frame: HTTP3PartialFrame,
         expected: HTTP3Frame,
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        let next = self.decodeNext()
+        let next = self.decodedFrame(frame)
         switch next {
         case .returnFrame(let frame):
             #expect(frame == expected, sourceLocation: sourceLocation)
@@ -875,18 +733,43 @@ extension HTTP3StreamStateMachine {
         }
     }
 
-    fileprivate mutating func receiveWrite(_ action: ResolvedAction?) throws {
-        switch action {
-        case .none:
-            break
-        case .returnBytes(let bytes):
-            self.buffer(bytes)
-        case .wouldBeStreamError(let error):
-            throw error
-        case .wouldBeConnectionError(let error):
-            throw error
-        case .alreadyClosed:
-            throw ChannelError.ioOnClosedChannel
+    /// Push in a header section, run it through `decode`, and assert the resulting frame comes back out.
+    fileprivate mutating func assertReceivedHeaders(
+        _ header: HTTP3PartialFrame.Headers,
+        decode: (HTTP3PartialFrame.Headers) -> QPACKFullDecodeResult,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        let next = self.decodedFrame(.headers(header))
+        guard case .decodeHeader(let partialHeader) = next else {
+            Issue.record("Unexpected action \(next)", sourceLocation: sourceLocation)
+            return
+        }
+        let waiting = self.isWaitingForHeaderDecode
+        #expect(waiting, sourceLocation: sourceLocation)
+
+        switch decode(partialHeader) {
+        case .missingInsertCount:
+            Issue.record("Unexpected result", sourceLocation: sourceLocation)
+        case .success(let fields, _):
+            guard let action = self.gotHeaderDecodeResult(fields) else {
+                Issue.record("Expected an action", sourceLocation: sourceLocation)
+                return
+            }
+            guard case .returnFrame(let frame) = action.frameAction else {
+                Issue.record("Unexpected action \(action.frameAction)", sourceLocation: sourceLocation)
+                return
+            }
+            #expect(frame == .headers(fields), sourceLocation: sourceLocation)
+            #expect(drain(action.takeNextActions()).isEmpty, sourceLocation: sourceLocation)
+        case .error(let qpackError):
+            let error = HTTP3Error(
+                code: .qpackDecoderError,
+                message: "Failed to qpack decode",
+                cause: qpackError,
+                errorCode: .qpackDecompressionFailed,
+                location: .here()
+            )
+            _ = self.gotHeaderDecodeError(error)
         }
     }
 }
@@ -903,6 +786,33 @@ extension HTTP3StreamStateMachine.ResolvedAction {
             Issue.record("Unexpected action \(self)", sourceLocation: sourceLocation)
         }
     }
+
+    /// Decode the bytes this write produced back into the single frame they encode.
+    fileprivate func decodedFrame(sourceLocation: SourceLocation = #_sourceLocation) throws -> HTTP3PartialFrame {
+        guard case .returnBytes(var bytes) = self else {
+            throw UnexpectedWriteAction(description: "\(self)")
+        }
+        var decoder = HTTP3FrameDecoder()
+        guard case .known(let frame)? = try decoder.decode(buffer: &bytes) else {
+            throw UnexpectedWriteAction(description: "Didn't decode a known frame")
+        }
+        #expect(bytes.readableBytes == 0, sourceLocation: sourceLocation)
+        return frame
+    }
+
+    /// The same as ``decodedFrame(sourceLocation:)``, but for a write which encoded a header section.
+    fileprivate func decodedHeaders(
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) throws -> HTTP3PartialFrame.Headers {
+        guard case .headers(let headers) = try self.decodedFrame(sourceLocation: sourceLocation) else {
+            throw UnexpectedWriteAction(description: "Not a headers frame")
+        }
+        return headers
+    }
+}
+
+private struct UnexpectedWriteAction: Error {
+    var description: String
 }
 
 extension HTTP3StreamStateMachine.WriteFrameAction {
@@ -970,10 +880,43 @@ extension HTTP3StreamStateMachine {
     }
 }
 
+extension Optional where Wrapped == HTTP3StreamStateMachine.ResolvedAction {
+    fileprivate func decodedFrame(sourceLocation: SourceLocation = #_sourceLocation) throws -> HTTP3PartialFrame {
+        guard let self else {
+            throw UnexpectedWriteAction(description: "No write action at all")
+        }
+        return try self.decodedFrame(sourceLocation: sourceLocation)
+    }
+
+    fileprivate func decodedHeaders(
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) throws -> HTTP3PartialFrame.Headers {
+        guard let self else {
+            throw UnexpectedWriteAction(description: "No write action at all")
+        }
+        return try self.decodedHeaders(sourceLocation: sourceLocation)
+    }
+}
+
 extension ByteBuffer {
     /// Create a buffer and write a single frame into it.
     fileprivate init(frame: HTTP3PartialFrame) {
         self.init()
         self.writeHTTP3PartialFrame(frame, preferHuffmanEncoding: false)
     }
+}
+
+/// Drain a noncopyable deque into an array.
+///
+/// ``UniqueDeque`` is neither a `Sequence` nor `Equatable`, and `#expect` needs a `Copyable` argument, so pending
+/// actions have to be materialised before they can be asserted on.
+private func drain(
+    _ actions: consuming UniqueDeque<HTTP3StreamStateMachine.PendingReadAction>
+) -> [HTTP3StreamStateMachine.PendingReadAction] {
+    var actions = actions
+    var result: [HTTP3StreamStateMachine.PendingReadAction] = []
+    while let action = actions.popFirst() {
+        result.append(action)
+    }
+    return result
 }
