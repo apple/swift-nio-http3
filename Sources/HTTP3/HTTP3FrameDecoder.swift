@@ -15,6 +15,7 @@
 @_spi(PackageInternal) import QPACK
 
 public import struct NIOCore.ByteBuffer
+public import protocol NIOCore.NIOSingleStepByteToMessageDecoder
 
 /// A decoder for ``HTTP3PartialFrame``.
 @available(anyAppleOS 26.0, *)
@@ -313,6 +314,12 @@ extension ByteBuffer {
 public enum HTTP3PartialFrameOrUnknown: Hashable {
     case known(HTTP3PartialFrame)
     case unknown
+}
+
+@available(anyAppleOS 26.0, *)
+extension HTTP3FrameDecoder: NIOSingleStepByteToMessageDecoder {
+    @_spi(PackageInternal)
+    public typealias InboundOut = HTTP3PartialFrameOrUnknown
 }
 
 extension HTTP3FrameType {
