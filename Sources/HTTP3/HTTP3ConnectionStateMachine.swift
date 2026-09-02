@@ -76,7 +76,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case finished
 
         struct NotStarted: ~Copyable {
-            var qpackState: QPACKStateMachine
+            var qpackState: QPACKStateMachine<Void>
             /// Our own settings that we will send to the remote.
             let localSettings: HTTP3Settings
             /// The type of the connection (client or server).
@@ -87,7 +87,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             var inboundControlStream: InboundStreamCreationState
             var inboundQPACKDecoderStream: InboundStreamCreationState
             var inboundQPACKEncoderStream: InboundStreamCreationState
-            var qpackState: QPACKStateMachine
+            var qpackState: QPACKStateMachine<Void>
             /// The type of the connection (client or server).
             let type: HTTP3ConnectionType
             let encoderMaxTableSize: Int
@@ -117,7 +117,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     @_spi(PackageInternal)
     public init(settings: HTTP3Settings, type: HTTP3ConnectionType) {
-        let qpackState = QPACKStateMachine(
+        let qpackState = QPACKStateMachine<Void>(
             decoderMaxTableSize: Int(clamping: settings.qpackMaximumTableCapacity),
             decoderMaxBlockedStreams: Int(clamping: settings.qpackBlockedStreams)
         )
@@ -955,13 +955,13 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             }
         }
 
-        init(_ informDecodeResult: QPACKStateMachine.DecodeHeaderAction) {
+        init(_ informDecodeResult: QPACKStateMachine<Void>.DecodeHeaderAction) {
             switch informDecodeResult {
-            case .emitConnectionError(let error):
+            case .emitConnectionError(let error, _):
                 self = .emitConnectionError(error)
-            case .informDecodeError(let error):
+            case .informDecodeError(let error, _):
                 self = .informDecodeError(.init(error: error.error, streamID: error.streamID))
-            case .informDecodeResult(let result):
+            case .informDecodeResult(let result, _):
                 self = .informDecodeResult(
                     .init(
                         fields: result.fields,
@@ -986,7 +986,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             self = .init(state: .finished)
             return nil
         case .initialized(var initializedState):
-            let action = initializedState.qpackState.decodeHeaders(header, forStream: streamID)
+            let action = initializedState.qpackState.decodeHeaders(header, forStream: streamID, context: ())
             self = .init(state: .initialized(initializedState))
             return action.map { .init($0) }
         }
