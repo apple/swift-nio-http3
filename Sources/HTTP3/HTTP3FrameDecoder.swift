@@ -147,13 +147,14 @@ struct HTTP3FrameDecoder: ~Copyable {
                 buffer.moveReaderIndex(forwardBy: remainingLength)
                 // We have finished skipping bytes.
                 self.nextStep = .decodeFrameType
+                return .continueDecodeLoop
             } else {
                 buffer.moveReaderIndex(forwardBy: readableBytes)
                 let newRemainingLength = remainingLength - readableBytes
                 // Need to skip more bytes still.
                 self.nextStep = .skipBytes(length: newRemainingLength)
+                return .waitForMoreBytes
             }
-            return .continueDecodeLoop
         case .decodePayload(let type, let length):
             // Make sure the length is not excessive. If it is, drop the frame.
             guard length <= type.maximumAcceptableLength else {
