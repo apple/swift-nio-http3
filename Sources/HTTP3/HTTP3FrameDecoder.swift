@@ -14,11 +14,11 @@
 
 @_spi(PackageInternal) import QPACK
 
-import struct NIOCore.ByteBuffer
+public import struct NIOCore.ByteBuffer
 
 /// A decoder for ``HTTP3PartialFrame``.
-struct HTTP3FrameDecoder: ~Copyable {
-    typealias InboundOut = HTTP3PartialFrame
+@_spi(PackageInternal)
+public struct HTTP3FrameDecoder {
 
     /// An enum indicating the next step when decoding HTTP/3 frames.
     private enum NextStep: Hashable {
@@ -46,11 +46,13 @@ struct HTTP3FrameDecoder: ~Copyable {
     /// Indicates the next decoding step.
     private var nextStep: NextStep = .decodeFrameType
 
-    init() {}
+    @_spi(PackageInternal)
+    public init() {}
 
     /// - Note: Any error thrown from here should be treated as a connection-level error.
     /// - Returns: A frame if one can be decoded from the available bytes, or `nil` if more bytes are needed.
-    mutating func decode(buffer: inout ByteBuffer) throws(HTTP3Error) -> HTTP3PartialFrameOrUnknown? {
+    @_spi(PackageInternal)
+    public mutating func decode(buffer: inout ByteBuffer) throws(HTTP3Error) -> HTTP3PartialFrameOrUnknown? {
         while true {
             switch try self.next(buffer: &buffer) {
             case .returnFrame(let frame):
@@ -63,6 +65,31 @@ struct HTTP3FrameDecoder: ~Copyable {
                 ()
             }
         }
+    }
+
+    @_spi(PackageInternal)
+    public mutating func decodeLast(
+        buffer: inout ByteBuffer,
+        seenEOF: Bool
+    ) throws(HTTP3Error) -> HTTP3PartialFrameOrUnknown? {
+        if let frame = try self.decode(buffer: &buffer) {
+            return frame
+        }
+
+        // RFC 9114 § 7.1: When a stream terminates cleanly, if the last frame on the stream was truncated, this MUST
+        // be treated as a connection error of type H3_FRAME_ERROR. Streams that terminate abruptly may be reset at
+        // any point in a frame, so we only complain if we actually saw an EOF.
+        guard seenEOF && (buffer.readableBytes > 0 || self.hasPartialFrame) else {
+            return nil
+        }
+
+        throw HTTP3Error(
+            code: .leftoverBytes,
+            message: "There were leftover bytes when the input was closed",
+            cause: nil,
+            errorCode: .frameError,
+            location: .here()
+        )
     }
 
     /// True if this decoder has consumed some bytes to start building up a frame, but has not completed doing so
@@ -279,7 +306,8 @@ extension ByteBuffer {
     }
 }
 
-enum HTTP3PartialFrameOrUnknown: Hashable {
+@_spi(PackageInternal)
+public enum HTTP3PartialFrameOrUnknown: Hashable {
     case known(HTTP3PartialFrame)
     case unknown
 }
