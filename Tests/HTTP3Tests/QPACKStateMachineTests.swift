@@ -114,7 +114,6 @@ struct QPACKStateMachineTests {
             result
                 == QPACKStateMachine.DecodeHeaderAction.InformDecodeResult(
                     fields: [.init(name: .cookie, value: "test")],
-                    headers: testHeader,
                     streamID: streamID,
                     instructionToWrite: nil
                 )
@@ -153,7 +152,6 @@ struct QPACKStateMachineTests {
             decodeResult
                 == QPACKStateMachine.DecodeHeaderAction.InformDecodeResult(
                     fields: [.init(name: .cookie, value: "test")],
-                    headers: testHeader,
                     streamID: streamID,
                     instructionToWrite: .sectionAcknowledgement(streamID: streamID)
                 )
@@ -249,7 +247,6 @@ struct QPACKStateMachineTests {
                 == .informDecodeResult(
                     .init(
                         fields: [.init(name: .cookie, value: "test")],
-                        headers: testHeader,
                         streamID: streamID,
                         instructionToWrite: .sectionAcknowledgement(streamID: streamID)
                     ),
@@ -409,7 +406,6 @@ struct QPACKStateMachineTests {
                 == .informDecodeResult(
                     .init(
                         fields: [.init(name: .cookie, value: "test")],
-                        headers: testHeader,
                         streamID: streamID,
                         instructionToWrite: nil
                     ),

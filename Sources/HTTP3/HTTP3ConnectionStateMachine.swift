@@ -925,8 +925,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             @_spi(PackageInternal)
             public var fields: [HTTPField]
             @_spi(PackageInternal)
-            public var headers: HTTP3PartialFrame.Headers
-            @_spi(PackageInternal)
             public var streamID: QUICStreamID
             @_spi(PackageInternal)
             public var instructionToWrite: QPACKDecoderInstruction?
@@ -934,12 +932,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             @_spi(PackageInternal)
             public init(
                 fields: [HTTPField],
-                headers: HTTP3PartialFrame.Headers,
                 streamID: QUICStreamID,
                 instructionToWrite: QPACKDecoderInstruction?
             ) {
                 self.fields = fields
-                self.headers = headers
                 self.streamID = streamID
                 self.instructionToWrite = instructionToWrite
             }
@@ -950,14 +946,11 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             @_spi(PackageInternal)
             public var error: HTTP3Error
             @_spi(PackageInternal)
-            public var headers: HTTP3PartialFrame.Headers
-            @_spi(PackageInternal)
             public var streamID: QUICStreamID
 
             @_spi(PackageInternal)
-            public init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
+            public init(error: HTTP3Error, streamID: QUICStreamID) {
                 self.error = error
-                self.headers = headers
                 self.streamID = streamID
             }
         }
@@ -967,12 +960,11 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             case .emitConnectionError(let error, _):
                 self = .emitConnectionError(error)
             case .informDecodeError(let error, _):
-                self = .informDecodeError(.init(error: error.error, headers: error.headers, streamID: error.streamID))
+                self = .informDecodeError(.init(error: error.error, streamID: error.streamID))
             case .informDecodeResult(let result, _):
                 self = .informDecodeResult(
                     .init(
                         fields: result.fields,
-                        headers: result.headers,
                         streamID: result.streamID,
                         instructionToWrite: result.instructionToWrite
                     )
