@@ -33,7 +33,7 @@ struct FieldSectionQueue<Context> {
         var lines: [FieldLine]
         /// The id of the stream we received this message on.
         var streamID: QUICStreamID
-
+        /// Additional info that shall be stored with the header fields to decode
         var context: Context
 
         init(
@@ -101,3 +101,5 @@ struct FieldSectionQueue<Context> {
         self.maxItems = maxItems
     }
 }
+
+extension FieldSectionQueue.Entry: Sendable where Context: Sendable {}
