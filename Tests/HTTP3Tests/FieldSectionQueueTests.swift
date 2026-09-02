@@ -19,46 +19,47 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 
 struct FieldSectionQueueTests {
-    private func makeTestEntry(streamID: QUICStreamID, requiredInsertCount: Int) -> FieldSectionQueue.Entry {
+    private func makeTestEntry(streamID: QUICStreamID, requiredInsertCount: Int, context: Int) -> FieldSectionQueue<Int>.Entry {
         let prefix = FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
         return FieldSectionQueue.Entry(
             headers: .init(fieldSection: .init(prefix: prefix.encode(maxCapacity: 100), lines: [])),
             prefix: prefix,
             lines: [],
-            streamID: streamID
+            streamID: streamID,
+            context: context
         )
     }
 
     @Test
     func cantAddMoreThanMaxItems() throws {
-        var queue = FieldSectionQueue(maxItems: 3)
+        var queue = FieldSectionQueue<Int>(maxItems: 3)
 
-        try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 1))
-        try queue.add(self.makeTestEntry(streamID: 2, requiredInsertCount: 1))
-        try queue.add(self.makeTestEntry(streamID: 3, requiredInsertCount: 1))
+        try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 1, context: 1))
+        try queue.add(self.makeTestEntry(streamID: 2, requiredInsertCount: 1, context: 2))
+        try queue.add(self.makeTestEntry(streamID: 3, requiredInsertCount: 1, context: 3))
         // 4th item fails, because max is 3
         #expect(throws: FieldSectionQueueError.reachedMaxSize) {
-            try queue.add(self.makeTestEntry(streamID: 4, requiredInsertCount: 1))
+            try queue.add(self.makeTestEntry(streamID: 4, requiredInsertCount: 1, context: 4))
         }
     }
 
     @Test
     func popsNothingIfNothingDecodable() throws {
-        var queue = FieldSectionQueue(maxItems: 3)
+        var queue = FieldSectionQueue<Int>(maxItems: 3)
 
-        try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 10))
-        try queue.add(self.makeTestEntry(streamID: 2, requiredInsertCount: 20))
+        try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 10, context: 1))
+        try queue.add(self.makeTestEntry(streamID: 2, requiredInsertCount: 20, context: 2))
 
         #expect(queue.popIfDecodable(availableInsertCount: 5) == nil)
     }
 
     @Test
     func popsOldestIfMultipleDecodable() throws {
-        var queue = FieldSectionQueue(maxItems: 3)
+        var queue = FieldSectionQueue<Int>(maxItems: 3)
 
-        try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40))
-        try queue.add(self.makeTestEntry(streamID: 2, requiredInsertCount: 10))
-        try queue.add(self.makeTestEntry(streamID: 3, requiredInsertCount: 20))
+        try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40, context: 1))
+        try queue.add(self.makeTestEntry(streamID: 2, requiredInsertCount: 10, context: 2))
+        try queue.add(self.makeTestEntry(streamID: 3, requiredInsertCount: 20, context: 3))
 
         #expect(queue.popIfDecodable(availableInsertCount: 30)?.streamID == 2)
         #expect(queue.popIfDecodable(availableInsertCount: 30)?.streamID == 3)
@@ -69,11 +70,11 @@ struct FieldSectionQueueTests {
 
     @Test
     func removesEntries() throws {
-        var queue = FieldSectionQueue(maxItems: 3)
+        var queue = FieldSectionQueue<Int>(maxItems: 3)
 
-        try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40))
-        try queue.add(self.makeTestEntry(streamID: 2, requiredInsertCount: 10))
-        try queue.add(self.makeTestEntry(streamID: 3, requiredInsertCount: 20))
+        try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40, context: 1))
+        try queue.add(self.makeTestEntry(streamID: 2, requiredInsertCount: 10, context: 2))
+        try queue.add(self.makeTestEntry(streamID: 3, requiredInsertCount: 20, context: 3))
 
         // We have 3 entries, until we remove one, and then we have 2
         #expect(queue._allEntries.count == 3)

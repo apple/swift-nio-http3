@@ -14,14 +14,13 @@
 
 import DequeModule
 import HTTPTypes
-import Logging
 import NIOQUICHelpers
 @_spi(PackageInternal) import QPACK
 
 /// A state machine which holds qpack encoder and decoder.
 /// You can ask it to encode/decode things, and inform it of incoming instructions.
 /// It will then return actions to be taken.
-struct QPACKStateMachine: ~Copyable {
+struct QPACKStateMachine<DecodeContext>: ~Copyable {
     struct EncoderStateMachine: ~Copyable {
         private enum State: ~Copyable {
             /// The remote side has not yet told us what dynamic table size to use, so we must assume 0, ie use a static encoder.
@@ -281,7 +280,7 @@ struct QPACKStateMachine: ~Copyable {
 
     private var encoderState: EncoderStateMachine
     private var qpackDecoder: QPACKDecoder
-    private var decoderQueue: FieldSectionQueue
+    private var decoderQueue: FieldSectionQueue<DecodeContext>
     private var outboundDecoderInstructionQueue: OutboundDecoderInstructionQueue
 
     init(decoderMaxTableSize: Int, decoderMaxBlockedStreams: Int) {
@@ -338,16 +337,17 @@ struct QPACKStateMachine: ~Copyable {
 
     enum DecodeHeaderAction {
         /// Send this qpack decode result to the relevant stream.
-        case informDecodeResult(InformDecodeResult)
+        case informDecodeResult(InformDecodeResult, DecodeContext)
 
         /// Send this qpack decoder error to the relevant stream. This is a stream-level error.
-        case informDecodeError(InformDecodeError)
+        case informDecodeError(InformDecodeError, DecodeContext)
 
         /// Send a connection-level error.
-        case emitConnectionError(HTTP3Error)
+        case emitConnectionError(HTTP3Error, DecodeContext)
 
         struct InformDecodeResult: Hashable, Sendable {
             var fields: [HTTPField]
+            var headers: HTTP3PartialFrame.Headers
             var streamID: QUICStreamID
             var instructionToWrite: QPACKDecoderInstruction?
 
@@ -358,6 +358,7 @@ struct QPACKStateMachine: ~Copyable {
                 instructionToWrite: QPACKDecoderInstruction?
             ) {
                 self.fields = fields
+                self.headers = headers
                 self.streamID = streamID
                 self.instructionToWrite = instructionToWrite
             }
@@ -365,10 +366,12 @@ struct QPACKStateMachine: ~Copyable {
 
         struct InformDecodeError {
             var error: HTTP3Error
+            var headers: HTTP3PartialFrame.Headers
             var streamID: QUICStreamID
 
-            init(error: HTTP3Error, streamID: QUICStreamID) {
+            init(error: HTTP3Error, headers: HTTP3PartialFrame.Headers, streamID: QUICStreamID) {
                 self.error = error
+                self.headers = headers
                 self.streamID = streamID
             }
         }
@@ -376,7 +379,8 @@ struct QPACKStateMachine: ~Copyable {
 
     mutating func decodeHeaders(
         _ headers: HTTP3PartialFrame.Headers,
-        forStream streamID: QUICStreamID
+        forStream streamID: QUICStreamID,
+        context: DecodeContext
     ) -> DecodeHeaderAction? {
         @inline(never)
         func invalidFieldSectionPrefixError(location: HTTP3Error.SourceLocation) -> HTTP3Error {
@@ -392,7 +396,7 @@ struct QPACKStateMachine: ~Copyable {
             // The field section prefix can't have been produced by a conformant encoder
             // RFC 9204 4.5.1.1: If the decoder encounters a value of EncodedInsertCount that could not have been produced by a
             // conformant encoder, it MUST treat this as a connection error of type QPACK_DECOMPRESSION_FAILED.
-            return .emitConnectionError(invalidFieldSectionPrefixError(location: .here()))
+            return .emitConnectionError(invalidFieldSectionPrefixError(location: .here()), context)
         }
         let result = self.qpackDecoder.decodeFieldSection(
             prefix: prefix,
@@ -405,18 +409,20 @@ struct QPACKStateMachine: ~Copyable {
             switch writeAction {
             case .sendDecoderInstruction(let instruction):
                 return .informDecodeResult(
-                    .init(fields: fields, headers: headers, streamID: streamID, instructionToWrite: instruction)
+                    .init(fields: fields, headers: headers, streamID: streamID, instructionToWrite: instruction),
+                    context
                 )
             case .none:
                 return .informDecodeResult(
-                    .init(fields: fields, headers: headers, streamID: streamID, instructionToWrite: nil)
+                    .init(fields: fields, headers: headers, streamID: streamID, instructionToWrite: nil),
+                    context
                 )
             }
 
         case .missingInsertCount:
             do {
                 try self.decoderQueue.add(
-                    .init(headers: headers, prefix: prefix, lines: headers.fieldSection.lines, streamID: streamID)
+                    .init(headers: headers, prefix: prefix, lines: headers.fieldSection.lines, streamID: streamID, context: context)
                 )
                 return nil
             } catch {
@@ -435,16 +441,16 @@ struct QPACKStateMachine: ~Copyable {
                             location: location
                         )
                     }
-                    return .emitConnectionError(tooManyBlockedStreamsError(cause: error, location: .here()))
+                    return .emitConnectionError(tooManyBlockedStreamsError(cause: error, location: .here()), context)
                 }
             }
 
         case .error(let qpackError):
             switch self.errorTypeForDecoderError(qpackError, streamID: streamID) {
             case .connection(let h3Error):
-                return .emitConnectionError(h3Error)
+                return .emitConnectionError(h3Error, context)
             case .stream(let h3Error):
-                return .informDecodeError(.init(error: h3Error, streamID: streamID))
+                return .informDecodeError(.init(error: h3Error, headers: headers, streamID: streamID), context)
             }
         }
     }
@@ -467,9 +473,9 @@ struct QPACKStateMachine: ~Copyable {
         case .error(let qpackError):
             switch self.errorTypeForDecoderError(qpackError, streamID: entry.streamID) {
             case .connection(let h3Error):
-                return .emitConnectionError(h3Error)
+                return .emitConnectionError(h3Error, entry.context)
             case .stream(let h3Error):
-                return .informDecodeError(.init(error: h3Error, streamID: entry.streamID))
+                return .informDecodeError(.init(error: h3Error, headers: entry.headers, streamID: entry.streamID), entry.context)
             }
         case .success(let fields, let instruction):
             let writeAction = instruction.flatMap { self.outboundDecoderInstructionQueue.writeDecoderInstruction($0) }
@@ -481,7 +487,8 @@ struct QPACKStateMachine: ~Copyable {
                         headers: entry.headers,
                         streamID: entry.streamID,
                         instructionToWrite: instruction
-                    )
+                    ),
+                    entry.context
                 )
             case .none:
                 return .informDecodeResult(
@@ -490,7 +497,8 @@ struct QPACKStateMachine: ~Copyable {
                         headers: entry.headers,
                         streamID: entry.streamID,
                         instructionToWrite: nil
-                    )
+                    ),
+                    entry.context
                 )
             }
         }
