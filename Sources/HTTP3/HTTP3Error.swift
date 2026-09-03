@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+public import HTTPTypes
+
 /// An error thrown by the HTTP/3 library.
 ///
 /// All errors have a high-level ``HTTP3Error/Code-swift.struct`` which identifies the domain.
