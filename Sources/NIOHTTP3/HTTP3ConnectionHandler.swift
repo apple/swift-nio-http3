@@ -14,6 +14,7 @@
 
 internal import DequeModule
 @_spi(PackageInternal) public import HTTP3
+import HTTPTypes
 public import Logging
 public import NIOCore
 public import NIOQUICHelpers
