@@ -172,7 +172,7 @@ extension ByteBuffer {
 
         let capacity = length * QPACKConstants.huffmanMaxCompressionRatio
 
-        return try? String(customUnsafeUninitializedCapacity: capacity) { backingStorage in
+        return try? String(unsafeUninitializedCapacity: capacity) { backingStorage in
             var state: UInt8 = 0
 
             // We do unchecked math on offset. Offset is strictly unable to get any larger than `length * 2`,
