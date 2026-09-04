@@ -343,11 +343,9 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             }
 
             struct WaitingForEncode {
-                let fields: [HTTPField]
                 var preferHuffmanEncoding: Bool
 
-                init(idleState: consuming Idle, fields: [HTTPField]) {
-                    self.fields = fields
+                init(idleState: consuming Idle) {
                     self.preferHuffmanEncoding = idleState.preferHuffmanEncoding
                 }
             }
@@ -377,7 +375,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                 let maybePartial = MaybePartialFrame(frame)
                 switch maybePartial {
                 case .headers(let headers):
-                    self = .init(state: .waitingForEncode(.init(idleState: idleState, fields: headers.fields)))
+                    self = .init(state: .waitingForEncode(.init(idleState: idleState)))
                     return .encodeHeaders(headers.fields)
                 case .pushPromise:
                     // This cannot be reached. The validator currently forbids writing push promises at all
@@ -404,16 +402,12 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
         mutating func gotHeaderEncodeResult(
             _ result: HTTP3PartialFrame.Headers,
-            from: [HTTPField],
             into buffer: inout ByteBuffer
         ) -> HeaderEncodeResultAction {
             switch consume self.state {
             case .idle:
                 fatalError("Unexpected encode result")
             case .waitingForEncode(let waitingState):
-                guard from == waitingState.fields else {
-                    fatalError("Unexpected encode result")
-                }
                 buffer.writeHTTP3PartialFrame(
                     .headers(result),
                     preferHuffmanEncoding: waitingState.preferHuffmanEncoding
@@ -538,12 +532,11 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     @_spi(PackageInternal)
     public mutating func gotHeaderEncodeResult(
         _ result: HTTP3PartialFrame.Headers,
-        from: [HTTPField],
         into buffer: inout ByteBuffer
     ) -> HeaderEncodeResultAction {
         switch self.state {
         case .idle(var idleState):
-            let writeAction = idleState.writeState.gotHeaderEncodeResult(result, from: from, into: &buffer)
+            let writeAction = idleState.writeState.gotHeaderEncodeResult(result, into: &buffer)
             self = .init(state: .idle(idleState))
             switch writeAction {
             case .wroteBytes:

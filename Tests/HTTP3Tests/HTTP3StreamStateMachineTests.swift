@@ -751,7 +751,7 @@ struct HTTP3StreamStateMachineTests {
         #expect(action2 == .streamClosed(seenEOF: false))
 
         // Now give the encode result
-        let action3 = machine.gotHeaderEncodeResult(self.testRequestHeader, from: fieldsToEncode)
+        let action3 = machine.gotHeaderEncodeResult(self.testRequestHeader)
         guard case .alreadyClosed = action3 else {
             Issue.record("Unexpected action \(String(describing: action3))")
             return
@@ -925,11 +925,10 @@ extension HTTP3StreamStateMachine {
 
     /// Test convenience: deliver an encode result using a throwaway buffer.
     fileprivate mutating func gotHeaderEncodeResult(
-        _ result: HTTP3PartialFrame.Headers,
-        from: [HTTPField]
+        _ result: HTTP3PartialFrame.Headers
     ) -> HeaderEncodeResultAction {
         var buffer = ByteBuffer()
-        return self.gotHeaderEncodeResult(result, from: from, into: &buffer)
+        return self.gotHeaderEncodeResult(result, into: &buffer)
     }
 
     fileprivate enum ResolvedAction {
@@ -957,7 +956,7 @@ extension HTTP3StreamStateMachine {
             return .alreadyClosed
         case .encodeHeaders(let fields):
             let qpackResult = encoder.encode(headers: fields)
-            let action2 = self.gotHeaderEncodeResult(.init(fieldSection: qpackResult), from: fields, into: &buffer)
+            let action2 = self.gotHeaderEncodeResult(.init(fieldSection: qpackResult), into: &buffer)
             switch action2 {
             case .wroteBytes:
                 return .returnBytes(buffer)

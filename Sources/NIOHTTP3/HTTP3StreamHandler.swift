@@ -269,7 +269,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>: ChannelDuplexHand
             promise?.fail(error)
         case .encodeHeaders(let fields):
             let encoded = self.delegate.encodeHeaders(fields, forStream: self.streamID)
-            let action = self.stateMachine.gotHeaderEncodeResult(encoded, from: fields, into: &self.pendingBytes!)
+            let action = self.stateMachine.gotHeaderEncodeResult(encoded, into: &self.pendingBytes!)
 
             switch action {
             case .previousError(let previousError):
