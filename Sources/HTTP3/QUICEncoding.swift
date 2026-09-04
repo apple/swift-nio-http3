@@ -15,5 +15,5 @@
 enum QUICEncodableInteger {
     /// A QUIC-encoded integer is 62-bit integer (0 to 2^62-1).
     /// See RFC 9000 § 16 for more details.
-    static let maxValue: UInt64 = (1 << 62) - 1
+    static var maxValue: UInt64 { (1 << 62) - 1 }
 }
