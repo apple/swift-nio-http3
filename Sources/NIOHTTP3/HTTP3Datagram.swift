@@ -161,13 +161,3 @@ extension ByteBuffer {
         return bytesWritten
     }
 }
-
-extension HTTP3ErrorCode {
-    /// TODO: Remove as soon as https://github.com/apple/swift-http-types/pull/151 has been released.
-    /// H3_DATAGRAM_ERROR (0x33)
-    ///
-    /// Datagram or Capsule protocol parse error.
-    ///
-    /// https://www.rfc-editor.org/rfc/rfc9297.html#section-5.2
-    static var datagramError: Self { .init(rawValue: 0x33) }
-}
