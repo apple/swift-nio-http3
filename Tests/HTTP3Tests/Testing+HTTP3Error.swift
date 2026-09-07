@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import HTTP3
+import HTTPTypes
 import Testing
 
 func expectH3Error(
