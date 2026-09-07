@@ -21,9 +21,9 @@ import Testing
 
 /// Tests for ``QPACKCoder``.
 ///
-/// ``QPACKCoder`` is a thin layer which drives ``QPACKStateMachine`` and routes the resulting actions to the
-/// outbound streams, the connection and the decode receivers. The state machine's own behaviour is covered by
-/// ``QPACKStateMachineTests``; these tests focus on the routing.
+/// The coder is a thin layer over ``QPACKStateMachine``, routing its actions to the outbound streams, the
+/// connection and the decode receivers. The state machine itself is covered by ``QPACKStateMachineTests``, so
+/// these tests are about the routing.
 struct QPACKCoderTests {
 
     // MARK: Remote settings
@@ -70,8 +70,31 @@ struct QPACKCoderTests {
         let connection = TestConnection()
         let coder = TestCoder(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100, errorDelegate: connection)
 
-        // No remote settings have been received, so the coder must use the static encoder only. Note that there is
-        // no encoder stream set on the coder at all here: if the coder tried to send an instruction it would trap.
+        // No remote settings yet, so the static encoder must be used. Note there is no encoder stream set on the
+        // coder at all here: if it tried to send an instruction it would trap.
+        let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
+
+        #expect(
+            headers.fieldSection.lines == [
+                .literalWithNameReference(
+                    requireLiteralRepresentation: false,
+                    table: .staticTable,
+                    index: 5,
+                    value: "test"
+                )
+            ]
+        )
+    }
+
+    @Test func encodeHeadersWhileAwaitingEncoderStreamSendsNoInstructions() {
+        let connection = TestConnection()
+        let coder = TestCoder(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100, errorDelegate: connection)
+
+        // The peer permits the dynamic table, so an encoder stream has been requested, but it isn't here yet. The
+        // coder must stay on the static encoder: it holds no stream to write instructions to, and would trap.
+        coder.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
+        #expect(connection.madeOutboundEncoderStreamCount == 1)
+
         let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
 
         #expect(
@@ -238,14 +261,13 @@ struct QPACKCoderTests {
             return receiver
         }
 
-        // A single instruction supplies the entry all three were waiting for, so all three must be delivered.
+        // One instruction supplies the entry all three were waiting for.
         coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
 
         for receiver in receivers {
             #expect(receiver.decodedFields == [[.init(name: .cookie, value: "test")]])
         }
-        // The relative order of the acknowledgements is unspecified: the pending decodes are held in a heap keyed
-        // on required insert count, and these three all have the same one.
+        // Ack order is unspecified: pending decodes sit in a heap keyed on required insert count, and these tie.
         #expect(decoderStream.instructions.first == .insertCountIncrement(increment: 1))
         #expect(
             Set(decoderStream.instructions.dropFirst())
