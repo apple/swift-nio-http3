@@ -69,7 +69,7 @@ public protocol QPACKDecodeReceiver {
     /// - Important: If the decoder has all the necessary QPACK decode information available the decoder
     ///              will invoke this method syncronously from
     ///              ``QPACKCoder/decodeHeaders(_:streamID:decodeReceiver:)``.
-    func decodeResult(_ result: Result<[HTTPField], any Error>)
+    func decodeResult(_ result: Result<[HTTPField], HTTP3Error>)
 }
 
 /// An object encapsulating all the QPACK encoding and decoding. It implements the QPACK procedures while being
@@ -92,7 +92,6 @@ public protocol QPACKDecodeReceiver {
 /// ``QPACKDecodeReceiver``, while anything that leaves the two dynamic tables out of sync is fatal to the
 /// connection and goes to the ``ConnectionDelegate`` as well as to the receiver.
 ///
-/// - Important: This type is not thread safe. Call it from the connection's own serial context.
 /// - Note: This object retains its ``ConnectionDelegate``. If the object holding the QPACKCoder is also its
 ///   ``ConnectionDelegate`` (likely the HTTP3Connection), the two keep each other alive: the holder must drop
 ///   its reference to the coder to break the cycle.
@@ -177,7 +176,7 @@ public final class QPACKCoder<
 
     // MARK: Encode
 
-    /// QPACK encode your http fields. If new instructions need to be send to the peer as a side-effect of the encode the
+    /// QPACK encode your HTTP fields. If new instructions need to be send to the peer as a side-effect of the encode the
     /// QPACKCoder will inform the ``QPACKOutboundEncoderStream`` via the ``QPACKOutboundEncoderStream/sendInstructions(_:)``
     /// method call.
     ///
@@ -239,7 +238,7 @@ public final class QPACKCoder<
 
     // MARK: Decode
 
-    /// Decode incoming http fields. Use this method for headers and trailers.
+    /// Decode incoming HTTP fields. Use this method for headers and trailers.
     ///
     /// This method does not return the decoded http fields syncronously, as decoding might depend
     /// on decoder instructions that arrive asyncronously via ``receivedIncomingDecoderInstruction(_:)``
