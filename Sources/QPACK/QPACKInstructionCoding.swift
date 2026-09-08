@@ -19,6 +19,7 @@ extension ByteBuffer {
     /// Moves the reader index to the end of the instruction.
     /// If a valid instruction can't be formed, returns nil and leaves the reader index as it was.
     /// - Returns: The instruction, or nil if it cannot be decoded.
+    @available(anyAppleOS 26.0, *)
     mutating func readQPACKEncoderInstruction() throws(IntegerReadingError) -> QPACKEncoderInstruction? {
         guard let firstByte = self.peekInteger(as: UInt8.self) else {
             return nil
@@ -178,6 +179,7 @@ public struct QPACKEncoderInstructionEncoder {
 
 /// Decode qpack encoder instructions.
 @_spi(PackageInternal)
+@available(anyAppleOS 26.0, *)
 public struct QPACKEncoderInstructionDecoder {
     @_spi(PackageInternal)
     public init() {}

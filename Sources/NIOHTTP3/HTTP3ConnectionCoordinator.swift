@@ -37,7 +37,8 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     private let preferHuffmanEncoding: Bool
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.
-    private var streamHandlers = [QUICStreamID: HTTP3StreamHandler<HTTP3ConnectionCoordinator<QUICStreamCreator>>]()
+    private var streamHandlers:
+        QUICStreamIDDictionary<HTTP3StreamHandler<HTTP3ConnectionCoordinator<QUICStreamCreator>>>
     private var datagramBuffer: HTTP3DatagramBuffer
 
     init(
@@ -59,6 +60,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.logger = logger
         self.preferHuffmanEncoding = preferHuffmanEncoding
         self.datagramBuffer = HTTP3DatagramBuffer(maxAllowedSize: maxBufferedDatagramBytes)
+        self.streamHandlers = QUICStreamIDDictionary()
     }
 
     func setConnectionHandler(_ handler: HTTP3ConnectionHandler<QUICStreamCreator>?) {
@@ -946,6 +948,7 @@ extension Channel {
     }
 }
 
+@available(anyAppleOS 26, *)
 extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
     func onStreamClosed(_ sawEOF: Bool, streamID: NIOQUICHelpers.QUICStreamID, streamType: HTTP3.HTTP3StreamType.Framed)
     {

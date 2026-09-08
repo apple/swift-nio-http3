@@ -1897,6 +1897,7 @@ struct EndToEndTests {
 extension Channel {
     /// Call this on a HTTP3 connection channel to make an outbound request stream.
     /// - Returns: The request stream channel.
+    @available(anyAppleOS 26, *)
     fileprivate func makeHTTP3RequestChannel(
         initializer: (@Sendable (HTTP3StreamInitializerParameters) throws -> Void)? = nil
     ) -> EventLoopFuture<any Channel> {
@@ -1915,6 +1916,7 @@ extension Channel {
 
     /// Call this on a HTTP3 connection channel to make an outbound unidirectional stream.
     /// - Returns: The stream channel.
+    @available(anyAppleOS 26, *)
     fileprivate func makeHTTP3UnidirectionalStreamChannel(
         streamType: HTTP3StreamType.Unidirectional,
         initializer: (@Sendable (HTTP3StreamInitializerParameters) throws -> Void)? = nil

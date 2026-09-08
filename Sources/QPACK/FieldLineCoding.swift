@@ -181,6 +181,7 @@ public struct FieldSection: Sendable, Hashable {
 extension ByteBuffer {
     /// Read a single ``FieldLine`` from this `ByteBuffer`.
     /// - Returns: The instruction, or nil if it cannot be decoded.
+    @available(anyAppleOS 26.0, *)
     mutating func readFieldLine() throws(IntegerReadingError) -> FieldLine? {
         guard let result = try self.getFieldLine(at: self.readerIndex) else { return nil }
         self.moveReaderIndex(forwardBy: result.bytesRead)
@@ -190,6 +191,7 @@ extension ByteBuffer {
     /// Get a single ``FieldLine`` from this `ByteBuffer`.
     /// Does not move the readerIndex.
     /// - Returns: The instruction, or nil if it cannot be decoded.
+    @available(anyAppleOS 26.0, *)
     private func getFieldLine(at startIndex: Int) throws(IntegerReadingError) -> Decoded<FieldLine>? {
         guard let firstByte = self.getInteger(at: startIndex, as: UInt8.self) else {
             return nil
@@ -382,6 +384,7 @@ extension ByteBuffer {
     }
 
     @_spi(PackageInternal)
+    @available(anyAppleOS 26.0, *)
     public mutating func readFieldSection() throws(IntegerReadingError) -> FieldSection? {
         guard let prefix = try self.readFieldSectionPrefix() else {
             return nil

@@ -18,8 +18,8 @@ import Testing
 @_spi(PackageInternal) @testable import QPACK
 
 struct InstructionCodingTests {
-    @Test
-    func setDynamicTableCapacity() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func setDynamicTableCapacity() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(.setDynamicTableCapacity(20), preferHuffmanEncoding: false)
 
@@ -36,8 +36,8 @@ struct InstructionCodingTests {
         #expect(decoded == .setDynamicTableCapacity(20))
     }
 
-    @Test
-    func setDynamicTableCapacityTooBig() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func setDynamicTableCapacityTooBig() throws {
         var buffer = ByteBuffer()
         /// 0x20 followed by UInt.max means set the dynamic table size to UInt.max.
         /// This is always an error on any platform, because UInt.max is always more than Int.max and therefore we don't allow it.
@@ -48,8 +48,8 @@ struct InstructionCodingTests {
         }
     }
 
-    @Test
-    func insertWithNameReferenceToDynamicTable() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func insertWithNameReferenceToDynamicTable() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(
             .insertWithNameReference(.dynamicTable, relativeIndex: 10, value: "test"),
@@ -71,8 +71,8 @@ struct InstructionCodingTests {
         #expect(decoded == .insertWithNameReference(.dynamicTable, relativeIndex: 10, value: "test"))
     }
 
-    @Test
-    func insertWithNameReferenceToStaticTable() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func insertWithNameReferenceToStaticTable() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(
             .insertWithNameReference(.staticTable, relativeIndex: 30, value: "test"),
@@ -94,8 +94,8 @@ struct InstructionCodingTests {
         #expect(decoded == .insertWithNameReference(.staticTable, relativeIndex: 30, value: "test"))
     }
 
-    @Test
-    func insertWithLiteralName() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func insertWithLiteralName() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(
             .insertWithLiteralName(name: "Name", value: "Value"),
@@ -119,8 +119,8 @@ struct InstructionCodingTests {
         #expect(decoded == .insertWithLiteralName(name: "Name", value: "Value"))
     }
 
-    @Test
-    func duplicateEntry() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func duplicateEntry() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(
             .duplicateEntry(relativeIndex: 28),
@@ -138,8 +138,8 @@ struct InstructionCodingTests {
         #expect(decoded == .duplicateEntry(relativeIndex: 28))
     }
 
-    @Test
-    func sectionAcknowledgement() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func sectionAcknowledgement() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKDecoderInstruction(.sectionAcknowledgement(streamID: 8))
 
@@ -154,8 +154,8 @@ struct InstructionCodingTests {
         #expect(decoded == .sectionAcknowledgement(streamID: 8))
     }
 
-    @Test
-    func streamCancellation() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func streamCancellation() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKDecoderInstruction(.streamCancellation(streamID: 17))
 
@@ -170,8 +170,8 @@ struct InstructionCodingTests {
         #expect(decoded == .streamCancellation(streamID: 17))
     }
 
-    @Test
-    func insertCountIncrement() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func insertCountIncrement() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKDecoderInstruction(.insertCountIncrement(increment: 55))
 

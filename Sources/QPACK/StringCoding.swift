@@ -18,6 +18,7 @@ extension ByteBuffer {
     /// Read one QPACK encoded string from this ByteBuffer.
     /// Will move the reader index to the end of the string.
     /// If a qpack encoded string cannot be read, nil will be returned and the index will be left where it was.
+    @available(anyAppleOS 26.0, *)
     mutating func readQPACKEncodedString(withPrefix prefix: Int) throws(IntegerReadingError) -> String? {
         guard let result = try self.getQPACKEncodedString(at: self.readerIndex, withPrefix: prefix) else {
             return nil
@@ -27,6 +28,7 @@ extension ByteBuffer {
     }
 
     /// Get one QPACK encoded string from this ByteBuffer without moving the reader index.
+    @available(anyAppleOS 26.0, *)
     func getQPACKEncodedString(
         at: Int,
         withPrefix prefix: Int

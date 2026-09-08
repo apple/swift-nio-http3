@@ -175,6 +175,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - logger: A logger.
     ///   - connection: An instance of ``HTTP3ServerConnection`` which inbound connections can be vended to.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @available(anyAppleOS 26, *)
     @_spi(HTTP3AsyncInterface)
     public static func server<Output: Sendable>(
         eventLoop: any EventLoop,
@@ -631,6 +632,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     }
 }
 
+@available(anyAppleOS 26, *)
 extension HTTP3ConnectionHandler {
     func emitDatagrams(_ datagrams: Deque<HTTP3Datagram>) {
         guard let context = self.context else { return }
