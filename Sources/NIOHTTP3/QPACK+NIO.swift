@@ -18,4 +18,3 @@ public import NIOCore
 extension QPACKDecoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 @available(anyAppleOS 26.0, *)
 extension QPACKEncoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
-
