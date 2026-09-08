@@ -561,7 +561,7 @@ private final class TestConnection: HTTP3.ConnectionDelegate {
 
 /// Records the decode results delivered to a single stream.
 private final class TestDecodeReceiver: QPACKDecodeReceiver {
-    var results: [Result<[HTTPField], any Error>] = []
+    var results: [Result<[HTTPField], HTTP3Error>] = []
 
     /// The fields from all successful decodes, in order.
     var decodedFields: [[HTTPField]] {
@@ -574,7 +574,7 @@ private final class TestDecodeReceiver: QPACKDecodeReceiver {
     }
 
     /// The errors from all failed decodes, in order.
-    var errors: [any Error] {
+    var errors: [HTTP3Error] {
         self.results.compactMap {
             switch $0 {
             case .success: return nil
@@ -583,7 +583,7 @@ private final class TestDecodeReceiver: QPACKDecodeReceiver {
         }
     }
 
-    func decodeResult(_ result: Result<[HTTPField], any Error>) {
+    func decodeResult(_ result: Result<[HTTPField], HTTP3Error>) {
         self.results.append(result)
     }
 }
