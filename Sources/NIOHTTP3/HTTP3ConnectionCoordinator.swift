@@ -521,7 +521,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         switch action {
         case .addHandlers:
             // qpack streams do not carry h3 frames
-            let decoder = ByteToMessageHandler(QPACKEncoderInstructionDecoder())
             let forwarder = QPACKInboundEncoderStreamHandler { instruction in
                 let action = self.connectionStateMachine.receivedIncomingEncoderInstruction(instruction)
                 switch action {
@@ -544,7 +543,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     )
                 )
             }
-            try streamChannel.pipeline.syncOperations.addHandler(decoder)
             try streamChannel.pipeline.syncOperations.addHandler(forwarder)
             self.addStreamClosedCallback(
                 streamChannel: streamChannel,
@@ -576,7 +574,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         switch action {
         case .addHandlers:
             // qpack streams do not carry h3 frames
-            let decoder = ByteToMessageHandler(QPACKDecoderInstructionDecoder())
             let forwarder = QPACKInboundDecoderStreamHandler {
                 let action = self.connectionStateMachine.receivedIncomingDecoderInstruction($0)
                 switch action {
@@ -596,7 +593,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     )
                 )
             }
-            try streamChannel.pipeline.syncOperations.addHandler(decoder)
             try streamChannel.pipeline.syncOperations.addHandler(forwarder)
             self.addStreamClosedCallback(
                 streamChannel: streamChannel,

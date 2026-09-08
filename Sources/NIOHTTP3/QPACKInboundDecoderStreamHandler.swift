@@ -19,7 +19,9 @@ import NIOCore
 /// This belongs on the incoming decoder stream.
 /// The decoder instructions come from the remote decoder and should be fed into the local encoder.
 final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
-    typealias InboundIn = QPACKDecoderInstruction
+    typealias InboundIn = ByteBuffer
+
+    let decoder: NIOSingleStepByteToMessageProcessor<QPACKDecoderInstructionDecoder>
 
     /// Called when an incoming instruction is successfully read.
     private var onReceivedInstruction: (QPACKDecoderInstruction) -> Void
@@ -30,6 +32,7 @@ final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
         onReceivedInstruction: @escaping (QPACKDecoderInstruction) -> Void,
         onError: @escaping (any Error) -> Void
     ) {
+        self.decoder = NIOSingleStepByteToMessageProcessor(QPACKDecoderInstructionDecoder())
         self.onReceivedInstruction = onReceivedInstruction
         self.onError = onError
     }
@@ -40,8 +43,14 @@ final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        let instruction = unwrapInboundIn(data)
-        self.onReceivedInstruction(instruction)
-        context.fireChannelRead(data)
+        let byteBuffer = Self.unwrapInboundIn(data)
+        do {
+            try self.decoder.process(buffer: byteBuffer) { instruction in
+                self.onReceivedInstruction(instruction)
+            }
+        } catch {
+            self.onError(error)
+            context.fireErrorCaught(error)
+        }
     }
 }
