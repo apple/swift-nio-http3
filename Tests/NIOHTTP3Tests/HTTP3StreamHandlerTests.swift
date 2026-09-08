@@ -112,8 +112,8 @@ struct NIOHTTP3StreamHandlerTests {
 
     private let logger = Logger(label: "NIOHTTP3StreamHandlerTests")
 
-    @Test
-    func receiveInvalidHeaders() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func receiveInvalidHeaders() throws {
         var headerToDecode: HTTP3PartialFrame.Headers?
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
@@ -151,8 +151,8 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     /// Receive headers which can't yet be decoded, but can be later.
-    @Test
-    func receiveHeadersWhichNeedInstructions() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func receiveHeadersWhichNeedInstructions() throws {
         var headerToDecode: HTTP3PartialFrame.Headers?
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
@@ -195,8 +195,8 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.isEmpty())
     }
 
-    @Test
-    func receiveUnknownFrameFollowedByHeaders() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func receiveUnknownFrameFollowedByHeaders() throws {
         var headerToDecode: HTTP3PartialFrame.Headers?
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
@@ -246,8 +246,8 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.isEmpty())
     }
 
-    @Test
-    func write() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func write() throws {
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
@@ -272,8 +272,8 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     /// Write a frame which would result in a stream error.
-    @Test
-    func writeStreamError() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func writeStreamError() throws {
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
@@ -302,8 +302,8 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     /// Write a frame which would result in a connection error.
-    @Test
-    func writeConnectionError() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func writeConnectionError() throws {
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
@@ -332,8 +332,8 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     /// Write a frame after closing the channel
-    @Test
-    func writeAfterClose() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func writeAfterClose() throws {
         let eventLoop = EmbeddedEventLoop()
         let sawEOF = eventLoop.makePromise(of: Bool.self)
         let handler = HTTP3StreamHandler(
@@ -364,8 +364,8 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(try !sawEOF.futureResult.wait())
     }
 
-    @Test
-    func connectionError() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func connectionError() throws {
         let eventLoop = EmbeddedEventLoop()
         let connectionErrorPromise = eventLoop.makePromise(of: HTTP3Error.self)
         let handler = HTTP3StreamHandler(
@@ -396,8 +396,8 @@ struct NIOHTTP3StreamHandlerTests {
         )
     }
 
-    @Test
-    func channelInactive() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func channelInactive() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
         let streamClosedPromise = eventLoop.makePromise(of: Bool.self)
@@ -419,8 +419,8 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(sawEOF == false)
     }
 
-    @Test
-    func channelInactiveAfterEOF() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func channelInactiveAfterEOF() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
         let streamClosedPromise = eventLoop.makePromise(of: Bool.self)
@@ -444,8 +444,8 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(sawEOF == true)
     }
 
-    @Test
-    func channelInactiveAfterEOFWaitingForDecode() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func channelInactiveAfterEOFWaitingForDecode() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
         let streamClosedPromise = eventLoop.makePromise(of: Bool.self)
@@ -494,9 +494,9 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(sawEOF == false)
     }
 
-    @Test
     // Make sure that if we have buffered data which we didn't fire read for, then we do so before forwarding channel inactive.
-    func flushBuffersWhenChannelInactive() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func flushBuffersWhenChannelInactive() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
         let streamClosedPromise = eventLoop.makePromise(of: Bool.self)
@@ -561,8 +561,8 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.isEmpty())
     }
 
-    @Test
-    func testMoreInputAfterInputClosed() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func testMoreInputAfterInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
 
         let handler = HTTP3StreamHandler(
@@ -595,8 +595,8 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenFrames.count == 1)
     }
 
-    @Test
-    func inputClosedWithIncompleteRequest() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func inputClosedWithIncompleteRequest() throws {
         let eventLoop = EmbeddedEventLoop()
 
         let handler = HTTP3StreamHandler(
@@ -645,8 +645,8 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(resetStreamEvent.code == QUICApplicationErrorCode(HTTP3ErrorCode.requestIncomplete))
     }
 
-    @Test
-    func inputClosedWithIncompleteResponse() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func inputClosedWithIncompleteResponse() throws {
         let eventLoop = EmbeddedEventLoop()
 
         let handler = HTTP3StreamHandler(

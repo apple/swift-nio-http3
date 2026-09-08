@@ -159,6 +159,7 @@ extension ByteBuffer {
     ///   - length: The number of huffman-encoded octets to read.
     /// - Returns: The decoded `String`, or nil if it can't be read.
     @discardableResult
+    @available(anyAppleOS 26.0, *)
     func getHuffmanEncodedString(at index: Int, length: Int) -> String? {
         if index + length > self.capacity {
             assertionFailure(
