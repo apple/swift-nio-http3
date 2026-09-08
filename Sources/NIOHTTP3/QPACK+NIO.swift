@@ -19,8 +19,3 @@ extension QPACKDecoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 @available(anyAppleOS 26.0, *)
 extension QPACKEncoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 
-@_spi(PackageInternal)
-extension QPACKDecoderInstructionEncoder: MessageToByteEncoder {}
-
-@_spi(PackageInternal)
-extension QPACKEncoderInstructionEncoder: MessageToByteEncoder {}
