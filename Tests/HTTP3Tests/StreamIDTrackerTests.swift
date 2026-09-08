@@ -18,6 +18,7 @@ import Testing
 
 struct StreamIDTrackerTests {
     @Test
+    @available(anyAppleOS 26, *)
     func testIDsUnique() {
         // Test add IDs
         var tracker = StreamIDTracker()
@@ -31,6 +32,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testCloseNonExistentStream() {
         var tracker = StreamIDTracker()
         let existed = tracker.streamClosed(id: 123)
@@ -38,6 +40,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testHasOpenRequestStreams() {
         var tracker = StreamIDTracker()
         tracker.streamOpened(id: 0)
@@ -49,6 +52,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testHasExhaustedStreamsWhenEmpty() {
         let tracker = StreamIDTracker()
         #expect(tracker.hasExhaustedSameTypeStreams(withIDsLessThan: 0))
@@ -63,6 +67,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testHasExhaustedStreamsWhenNotEmpty() {
         var tracker = StreamIDTracker()
         tracker.streamOpened(id: 0)
@@ -83,6 +88,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testGetStreamsMatchingPredicate() {
         var tracker = StreamIDTracker()
         tracker.streamOpened(id: 0)
@@ -95,6 +101,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func nextExpectedReturnsZeroWhenNoStreamsReceived() {
         let tracker = StreamIDTracker()
         // No streams have been received, so the next expected client-initiated bidi stream is 0.
@@ -102,6 +109,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func nextExpectedAfterSingleStream() {
         var tracker = StreamIDTracker()
         // Client-initiated bidi stream 0 received.
@@ -111,6 +119,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func nextExpectedAfterMultipleStreams() {
         var tracker = StreamIDTracker()
         // Client-initiated bidi streams: 0, 4, 8
@@ -121,6 +130,7 @@ struct StreamIDTrackerTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func nextExpectedUnaffectedByStreamClosures() {
         var tracker = StreamIDTracker()
         tracker.streamOpened(id: .init(rawValue: 0))
