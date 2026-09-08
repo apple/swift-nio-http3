@@ -23,7 +23,7 @@ public import NIOQUICHelpers
 @_spi(PackageInternal)
 public protocol QPACKOutboundEncoderStream: ~Copyable {
     /// Write instructions to the stream, in the order given.
-    func sendInstructions(_ instructions: some Collection<QPACKEncoderInstruction>)
+    mutating func sendInstructions(_ instructions: some Collection<QPACKEncoderInstruction>)
 }
 
 /// A stream to send decoder acknowledgements, stream cancellations and insert count increments on.
@@ -33,10 +33,10 @@ public protocol QPACKOutboundEncoderStream: ~Copyable {
 @_spi(PackageInternal)
 public protocol QPACKOutboundDecoderStream: ~Copyable {
     /// Write an instruction to the stream.
-    func sendInstruction(_ instruction: QPACKDecoderInstruction)
+    mutating func sendInstruction(_ instruction: QPACKDecoderInstruction)
 
     /// Write instructions to the stream, in the order given.
-    func sendInstructions(_ instruction: some Collection<QPACKDecoderInstruction>)
+    mutating func sendInstructions(_ instruction: some Collection<QPACKDecoderInstruction>)
 }
 
 /// An object representing an HTTP3Connection to forward connection level errors to.

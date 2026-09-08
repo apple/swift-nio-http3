@@ -25,8 +25,8 @@ import NIOQUICHelpers
 final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator> {
     let eventLoop: any EventLoop
     private var connectionStateMachine: HTTP3ConnectionStateMachine
-    private let outboundQPACKEncoderHandler: QPACKOutboundEncoderStreamHandler
-    private let outboundQPACKDecoderHandler: QPACKOutboundDecoderStreamHandler
+    private var outboundQPACKEncoderStream: QPACKOutboundEncoderStream?
+    private var outboundQPACKDecoderStream: QPACKOutboundDecoderStream?
     private let outboundControlStreamHandler: HTTP3OutboundControlStreamHandler
     private let streamCreator: QUICStreamCreator
     /// The connection handler.
@@ -52,8 +52,8 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     ) {
         precondition(maxBufferedDatagramBytes >= 0)
         self.eventLoop = eventLoop
-        self.outboundQPACKDecoderHandler = .init()
-        self.outboundQPACKEncoderHandler = .init()
+        self.outboundQPACKDecoderStream = nil
+        self.outboundQPACKEncoderStream = nil
         self.outboundControlStreamHandler = .init(settings: localSettings)
         self.connectionStateMachine = .init(settings: localSettings, type: type)
         self.streamCreator = streamCreator
@@ -138,25 +138,21 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     /// Create an outbound stream, write the stream type, add the handlers and tell the state machine that it's ready.
     private func createQPACKEncoderInstructionStream() {
         self.eventLoop.assertInEventLoop()
-        let preferHuffmanEncoding = self.preferHuffmanEncoding
         self.createOutboundUnidirectionalStream(ofType: .qpackEncoder) {
             let streamChannel = $0.channel
             let streamID = $0.streamID
-            return streamChannel.eventLoop.makeCompletedFuture {
-                let codingHandler = MessageToByteHandler(
-                    QPACKEncoderInstructionEncoder(preferHuffmanEncoding: preferHuffmanEncoding)
-                )
-                try streamChannel.pipeline.syncOperations.addHandlers(
-                    codingHandler,
-                    self.outboundQPACKEncoderHandler
-                )
-                self.addStreamClosedCallback(
-                    streamChannel: streamChannel,
-                    streamID: streamID,
-                    streamType: .unidirectional(.qpackEncoder)
-                )
-                return streamID
-            }
+
+            self.outboundQPACKEncoderStream = QPACKOutboundEncoderStream(
+                channel: streamChannel,
+                preferHuffmanEncoding: self.preferHuffmanEncoding
+            )
+            self.addStreamClosedCallback(
+                streamChannel: streamChannel,
+                streamID: $0.streamID,
+                streamType: .unidirectional(.qpackDecoder)
+            )
+
+            return streamChannel.eventLoop.makeSucceededFuture(streamID)
         }.assumeIsolated().whenComplete {
             switch $0 {
             case .success(let streamID):
@@ -167,7 +163,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 let action = self.connectionStateMachine.outboundEncoderStreamReady(streamID: streamID)
                 switch action {
                 case .sendEncoderInstruction(let instruction):
-                    self.outboundQPACKEncoderHandler.sendInstruction(instruction)
+                    self.outboundQPACKEncoderStream!.sendInstructions(CollectionOfOne(instruction))
                 case .none:
                     break
                 }
@@ -186,19 +182,15 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.createOutboundUnidirectionalStream(ofType: .qpackDecoder) {
             let streamChannel = $0.channel
             let streamID = $0.streamID
-            return streamChannel.eventLoop.makeCompletedFuture {
-                let codingHandler = MessageToByteHandler(QPACKDecoderInstructionEncoder())
-                try streamChannel.pipeline.syncOperations.addHandlers(
-                    codingHandler,
-                    self.outboundQPACKDecoderHandler
-                )
-                self.addStreamClosedCallback(
-                    streamChannel: streamChannel,
-                    streamID: streamID,
-                    streamType: .unidirectional(.qpackDecoder)
-                )
-                return streamID
-            }
+
+            self.outboundQPACKDecoderStream = QPACKOutboundDecoderStream(channel: streamChannel)
+            self.addStreamClosedCallback(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.qpackDecoder)
+            )
+
+            return streamChannel.eventLoop.makeSucceededFuture(streamID)
         }.assumeIsolated().whenComplete {
             switch $0 {
             case .success(let streamID):
@@ -209,7 +201,9 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 let action = self.connectionStateMachine.outboundDecoderStreamReady(streamID: streamID)
                 switch action {
                 case .sendDecoderInstructions(let instructions):
-                    self.outboundQPACKDecoderHandler.sendInstructions(instructions)
+                    if !instructions.isEmpty {
+                        self.outboundQPACKDecoderStream!.sendInstructions(instructions)
+                    }
                 case .none:
                     break
                 }
@@ -528,7 +522,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 case .emitConnectionError(let error):
                     self.connection?.emitConnectionError(error)
                 case .sendDecoderInstruction(let instruction):
-                    self.outboundQPACKDecoderHandler.sendInstruction(instruction)
+                    self.outboundQPACKDecoderStream?.sendInstruction(instruction)
                     self.checkForNewDecodes()
                 case .none:
                     break
@@ -696,9 +690,12 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     // MARK: Actions
 
     func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> HTTP3PartialFrame.Headers {
-        self.eventLoop.assertInEventLoop()
         let result = self.connectionStateMachine.encodeHeaders(headers, forStream: streamID)
-        self.outboundQPACKEncoderHandler.sendInstructions(result.instructions)
+
+        if !result.instructions.isEmpty {
+            self.outboundQPACKEncoderStream!.sendInstructions(result.instructions)
+        }
+
         return HTTP3PartialFrame.Headers(fieldSection: result.fieldSection)
     }
 
@@ -741,7 +738,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         )
         switch action {
         case .sendDecoderInstruction(let instruction, let shouldCloseConnection):
-            self.outboundQPACKDecoderHandler.sendInstruction(instruction)
+            self.outboundQPACKDecoderStream!.sendInstruction(instruction)
             if shouldCloseConnection {
                 self.logger.trace(
                     "Shutting connection because we previously got a GOAWAY, and there are now no more streams open"
@@ -808,7 +805,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             fields: result.fields
         )
         if let i = result.instructionToWrite {
-            self.outboundQPACKDecoderHandler.sendInstruction(i)
+            self.outboundQPACKDecoderStream!.sendInstruction(i)
         }
     }
 
