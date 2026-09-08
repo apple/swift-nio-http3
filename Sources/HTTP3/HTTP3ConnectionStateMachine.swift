@@ -25,6 +25,7 @@ public enum HTTP3ConnectionType: Sendable {
 }
 
 @_spi(PackageInternal)
+@available(anyAppleOS 26, *)
 public struct HTTP3ConnectionStateMachine: ~Copyable {
     struct InboundStreamCreationState: ~Copyable {
         private enum State: ~Copyable {
