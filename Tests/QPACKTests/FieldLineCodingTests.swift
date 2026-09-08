@@ -268,8 +268,8 @@ struct FieldLineCodingTests {
         assertCanDecode(encodedRequiredInsertCount: 6, totalInserts: 2, expectDecoded: 5)
     }
 
-    @Test
-    func testEncodeFieldSectionPrefixRoundtrips() {
+    @available(anyAppleOS 26.0, *)
+    @Test func encodeFieldSectionPrefixRoundtrips() {
         for maxCapacity in 200...400 {
             for requiredInsertCount in 1...20 {
                 // The encoder and decoder need to have similar insert counts for this to work
@@ -285,8 +285,8 @@ struct FieldLineCodingTests {
         }
     }
 
-    @Test
-    func testIndex() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func index() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(.indexed(.staticTable, index: 6), preferHuffmanEncoding: false)
 
@@ -299,8 +299,8 @@ struct FieldLineCodingTests {
         #expect(decoded == .indexed(.staticTable, index: 6))
     }
 
-    @Test
-    func testIndexWithPostBase() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func indexWithPostBase() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(.indexedWithPostBase(index: 6), preferHuffmanEncoding: false)
 
@@ -313,8 +313,8 @@ struct FieldLineCodingTests {
         #expect(decoded == .indexedWithPostBase(index: 6))
     }
 
-    @Test
-    func testLiteralWithNameReference() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func literalWithNameReference() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(
             .literalWithNameReference(
@@ -348,8 +348,8 @@ struct FieldLineCodingTests {
         )
     }
 
-    @Test
-    func testLiteralWithNameReferencePostBase() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func literalWithNameReferencePostBase() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(
             .literalWithNameReferenceWithPostBase(requireLiteralRepresentation: false, index: 3, value: "hello"),
@@ -373,8 +373,8 @@ struct FieldLineCodingTests {
         )
     }
 
-    @Test
-    func testLiteral() throws {
+    @available(anyAppleOS 26.0, *)
+    @Test func literal() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(
             .literal(requireLiteralRepresentation: true, name: "Name", value: "Value"),

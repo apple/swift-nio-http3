@@ -17,6 +17,7 @@ public import HTTPTypes
 public import struct NIOCore.ByteBuffer
 public import struct NIOQUICHelpers.QUICApplicationErrorCode
 
+@available(anyAppleOS 26.0, *)
 @_spi(PackageInternal)
 public struct HTTP3StreamStateMachine: ~Copyable {
     /// This state machine handles the reading side of the stream only.

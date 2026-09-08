@@ -159,6 +159,7 @@ extension ByteBuffer {
     ///   - length: The number of huffman-encoded octets to read.
     /// - Returns: The decoded `String`, or nil if it can't be read.
     @discardableResult
+    @available(anyAppleOS 26.0, *)
     func getHuffmanEncodedString(at index: Int, length: Int) -> String? {
         if index + length > self.capacity {
             assertionFailure(
@@ -172,7 +173,7 @@ extension ByteBuffer {
 
         let capacity = length * QPACKConstants.huffmanMaxCompressionRatio
 
-        return try? String(customUnsafeUninitializedCapacity: capacity) { backingStorage in
+        return try? String(unsafeUninitializedCapacity: capacity) { backingStorage in
             var state: UInt8 = 0
 
             // We do unchecked math on offset. Offset is strictly unable to get any larger than `length * 2`,

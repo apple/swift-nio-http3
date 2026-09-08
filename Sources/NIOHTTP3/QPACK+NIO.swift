@@ -16,6 +16,7 @@ public import NIOCore
 @_spi(PackageInternal) public import QPACK
 
 extension QPACKDecoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
+@available(anyAppleOS 26.0, *)
 extension QPACKEncoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 
 @_spi(PackageInternal)

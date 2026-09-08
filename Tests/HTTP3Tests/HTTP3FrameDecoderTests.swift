@@ -21,6 +21,7 @@ import Testing
 
 /// Adapts the single-step ``HTTP3FrameDecoder`` to `ByteToMessageDecoder` so that NIO's
 /// `ByteToMessageDecoderVerifier` can drive it.
+@available(anyAppleOS 26.0, *)
 private struct HTTP3FrameByteToMessageDecoder: NIOSingleStepByteToMessageDecoder {
     typealias InboundOut = HTTP3PartialFrameOrUnknown
 
@@ -52,6 +53,7 @@ struct HTTP3FrameDecoderTests {
     ///
     /// - Note: DATA frames are deliberately absent: the decoder emits one partial DATA frame per chunk of payload it
     ///   sees, so its output legitimately depends on how the bytes were fed in. They are covered separately below.
+    @available(anyAppleOS 26.0, *)
     @Test func decoderPassesVerification() throws {
         let frames: [HTTP3PartialFrame] = [
             .settings(.init(qpackMaximumTableCapacity: 1024, h3Datagram: false)),
@@ -77,6 +79,7 @@ struct HTTP3FrameDecoderTests {
     }
 
     /// A DATA frame's payload is emitted as it arrives, rather than being buffered until the frame is complete.
+    @available(anyAppleOS 26.0, *)
     @Test func dataFrameIsEmittedInChunks() throws {
         var decoder = HTTP3FrameDecoder()
 
@@ -95,6 +98,7 @@ struct HTTP3FrameDecoderTests {
         #expect(!decoder.hasPartialFrame)
     }
 
+    @available(anyAppleOS 26.0, *)
     @Test func fullDataFrameInOneBuffer() throws {
         var decoder = HTTP3FrameDecoder()
         var buffer = ByteBuffer(bytes: [0, 4, 1, 2, 3, 4])
@@ -102,8 +106,8 @@ struct HTTP3FrameDecoderTests {
         #expect(try decoder.decode(buffer: &buffer) == nil)
     }
 
-    @Test(arguments: [2, 6, 8, 9] as [UInt8])
-    func forbiddenFrameTypesAreRejected(type: UInt8) {
+    @available(anyAppleOS 26.0, *)
+    @Test(arguments: [2, 6, 8, 9] as [UInt8]) func forbiddenFrameTypesAreRejected(type: UInt8) {
         var decoder = HTTP3FrameDecoder()
         var buffer = ByteBuffer(bytes: [type])
         expectH3Error(code: .forbiddenFrameType, h3ErrorCode: .frameUnexpected) {
@@ -111,6 +115,7 @@ struct HTTP3FrameDecoderTests {
         }
     }
 
+    @available(anyAppleOS 26.0, *)
     @Test func excessivePayloadLengthIsRejected() {
         var decoder = HTTP3FrameDecoder()
         // A SETTINGS frame with a payload length of 4096, which is well above what we're prepared to buffer.
@@ -122,6 +127,7 @@ struct HTTP3FrameDecoderTests {
         }
     }
 
+    @available(anyAppleOS 26.0, *)
     @Test func invalidPayloadIsRejected() {
         var decoder = HTTP3FrameDecoder()
         // Type 4 (settings), length 1, identifier 1 - the value is missing.
@@ -133,6 +139,7 @@ struct HTTP3FrameDecoderTests {
 
     // MARK: decodeLast
 
+    @available(anyAppleOS 26.0, *)
     @Test func decodeLastOnCleanBoundaryProducesNothing() throws {
         var decoder = HTTP3FrameDecoder()
         var buffer = self.encode(.goaway(.init(rawValue: 4)))
@@ -141,6 +148,7 @@ struct HTTP3FrameDecoderTests {
         #expect(try decoder.decodeLast(buffer: &buffer, seenEOF: true) == nil)
     }
 
+    @available(anyAppleOS 26.0, *)
     @Test func decodeLastWithNoInputAtAllProducesNothing() throws {
         var decoder = HTTP3FrameDecoder()
         var buffer = ByteBuffer()
@@ -148,6 +156,7 @@ struct HTTP3FrameDecoderTests {
     }
 
     /// RFC 9114 § 7.1: a truncated final frame on a cleanly terminated stream is a H3\_FRAME\_ERROR.
+    @available(anyAppleOS 26.0, *)
     @Test(
         arguments: [
             [0],  // Frame type 0, no length
@@ -169,6 +178,7 @@ struct HTTP3FrameDecoderTests {
     }
 
     /// A stream which terminates abruptly may be reset at any point in a frame, so truncation isn't an error there.
+    @available(anyAppleOS 26.0, *)
     @Test func decodeLastWithLeftoverBytesWithoutEOFIsNotAnError() throws {
         var decoder = HTTP3FrameDecoder()
         var buffer = ByteBuffer(bytes: [0, 5, 1])

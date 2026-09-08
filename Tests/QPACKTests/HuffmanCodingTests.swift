@@ -41,6 +41,7 @@ struct HuffmanCodingTests {
         }
     }
 
+    @available(anyAppleOS 26.0, *)
     mutating func verifyHuffmanCoding(
         _ string: String,
         _ bytes: [UInt8],
@@ -61,8 +62,8 @@ struct HuffmanCodingTests {
         #expect(decoded == string, "Failed to decode '\(string)'", sourceLocation: sourceLocation)
     }
 
-    @Test
-    mutating func basicCoding() {
+    @available(anyAppleOS 26.0, *)
+    @Test mutating func basicCoding() {
         // all these values come from http://httpwg.org/specs/rfc7541.html#request.examples.with.huffman.coding
         self.verifyHuffmanCoding(
             "www.example.com",
@@ -105,8 +106,8 @@ struct HuffmanCodingTests {
         )
     }
 
-    @Test
-    mutating func complexCoding() {
+    @available(anyAppleOS 26.0, *)
+    @Test mutating func complexCoding() {
         self.verifyHuffmanCoding(
             "鯖審",
             [0xff, 0xff, 0xaf, 0xff, 0xff, 0x67, 0xff, 0xfe, 0x2f, 0xff, 0xf3, 0xff, 0xff, 0xec, 0xff, 0xff, 0x77]
