@@ -150,7 +150,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     codingHandler,
                     self.outboundQPACKEncoderHandler
                 )
-                self.addStreamClosedHandler(
+                self.addStreamClosedCallback(
                     streamChannel: streamChannel,
                     streamID: streamID,
                     streamType: .unidirectional(.qpackEncoder)
@@ -192,7 +192,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     codingHandler,
                     self.outboundQPACKDecoderHandler
                 )
-                self.addStreamClosedHandler(
+                self.addStreamClosedCallback(
                     streamChannel: streamChannel,
                     streamID: streamID,
                     streamType: .unidirectional(.qpackDecoder)
@@ -361,7 +361,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         case .emitConnectionError(let error):
             self.datagramBuffer.discardDatagrams(forStream: streamID)
             return streamChannel.eventLoop.makeCompletedFuture {
-                self.addStreamClosedHandler(
+                self.addStreamClosedCallback(
                     streamChannel: streamChannel,
                     streamID: streamID,
                     streamType: .request
@@ -372,7 +372,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             self.logger.trace("Rejecting inbound stream", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
             self.datagramBuffer.discardDatagrams(forStream: streamID)
             return streamChannel.eventLoop.makeCompletedFuture {
-                self.addStreamClosedHandler(
+                self.addStreamClosedCallback(
                     streamChannel: streamChannel,
                     streamID: streamID,
                     streamType: .request
@@ -438,14 +438,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         let action = self.connectionStateMachine.inboundPushStreamReceived(streamID: streamID)
         switch action {
         case .emitConnectionError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.push)
             )
             self.connection?.emitConnectionError(error)
         case .emitStreamError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.push)
@@ -465,7 +465,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         )
         switch action {
         case .emitStreamError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(streamType)
@@ -497,14 +497,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             )
             try streamChannel.pipeline.syncOperations.addHandler(internalHandler)
         case .emitConnectionError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.control)
             )
             self.connection?.emitConnectionError(error)
         case .emitStreamError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.control)
@@ -546,20 +546,20 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             }
             try streamChannel.pipeline.syncOperations.addHandler(decoder)
             try streamChannel.pipeline.syncOperations.addHandler(forwarder)
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.qpackEncoder)
             )
         case .emitConnectionError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.qpackEncoder)
             )
             self.connection?.emitConnectionError(error)
         case .emitStreamError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.control)
@@ -598,20 +598,20 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             }
             try streamChannel.pipeline.syncOperations.addHandler(decoder)
             try streamChannel.pipeline.syncOperations.addHandler(forwarder)
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.qpackDecoder)
             )
         case .emitConnectionError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.qpackDecoder)
             )
             self.connection?.emitConnectionError(error)
         case .emitStreamError(let error):
-            self.addStreamClosedHandler(
+            self.addStreamClosedCallback(
                 streamChannel: streamChannel,
                 streamID: streamID,
                 streamType: .unidirectional(.qpackDecoder)
@@ -657,7 +657,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     /// This should not be added to streams which already have a HTTP3StreamHandler.
     /// This is for QPACK streams and unknown streams, or rejected streams (because rejected streams don't get the HTTP3StreamHandler).
     /// It is critical because we keep state of all open streams, so we need to know when a stream has closed.
-    private func addStreamClosedHandler(
+    private func addStreamClosedCallback(
         streamChannel: any Channel,
         streamID: QUICStreamID,
         streamType: HTTP3StreamType
