@@ -1893,6 +1893,7 @@ struct EndToEndTests {
     }
 }
 
+@available(anyAppleOS 26, *)
 extension Channel {
     /// Call this on a HTTP3 connection channel to make an outbound request stream.
     /// - Returns: The request stream channel.
