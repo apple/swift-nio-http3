@@ -26,6 +26,7 @@ struct HTTP3GracefulShutdownTests {
     private let logger = Logger(label: "HTTP3GracefulShutdownTests")
 
     @Test
+    @available(anyAppleOS 26, *)
     func defaultDelayUsedWhenProviderNotSpecified() throws {
         let (connectionChannel, handler, _) = try self.makeServerHandler()
         defer { try? connectionChannel.close().wait() }
@@ -34,6 +35,7 @@ struct HTTP3GracefulShutdownTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func rttMultiplierUsed() throws {
         var configuration = HTTP3ServerConfiguration.defaults
         configuration.rttProvider = { .milliseconds(75) }
@@ -46,6 +48,7 @@ struct HTTP3GracefulShutdownTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func providerIsCalledEachTime() throws {
         let callCount = NIOLockedValueBox(0)
 
@@ -66,6 +69,7 @@ struct HTTP3GracefulShutdownTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func changingRTTValues() throws {
         let rttProviderReturnValue = NIOLockedValueBox<TimeAmount>(.milliseconds(50))
 
@@ -89,6 +93,7 @@ struct HTTP3GracefulShutdownTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func twoPhaseServerGOAWAYSequence() throws {
         var configuration = HTTP3ServerConfiguration.defaults
         configuration.rttProvider = { .milliseconds(20) }
@@ -131,6 +136,7 @@ struct HTTP3GracefulShutdownTests {
     }
 
     @Test
+    @available(anyAppleOS 26, *)
     func testGOAWAYSentByClient() throws {
         let (connectionChannel, _, streamChannel) = try self.makeClientHandler(configuration: .defaults)
         defer { try? connectionChannel.close().wait() }
@@ -161,6 +167,7 @@ struct HTTP3GracefulShutdownTests {
     }
 }
 
+@available(anyAppleOS 26, *)
 extension HTTP3GracefulShutdownTests {
     private func makeClientHandler(
         configuration: HTTP3ClientConfiguration = .defaults
