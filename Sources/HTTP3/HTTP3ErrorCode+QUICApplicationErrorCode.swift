@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+public import HTTPTypes
 public import NIOQUICHelpers
 
 extension QUICApplicationErrorCode {

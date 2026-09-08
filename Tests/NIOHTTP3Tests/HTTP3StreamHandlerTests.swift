@@ -26,6 +26,63 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 @testable import NIOHTTP3
 
+final class TestDelegate: HTTP3StreamDelegate {
+
+    static func makeStaticEncoder() -> ([HTTPField], QUICStreamID) -> HTTP3PartialFrame.Headers {
+        { fields, _ in
+            let fieldSection = StaticQPACKEncoder().encode(headers: fields)
+            return HTTP3PartialFrame.Headers(fieldSection: fieldSection)
+        }
+    }
+
+    static func makeUnexpectedStreamClose() -> (Bool, QUICStreamID, HTTP3StreamType.Framed) -> Void {
+        { eof, _, _ in
+            Issue.record("Unexpected closure of stream. Saw EOF: \(eof)")
+        }
+    }
+
+    static func makeUnexpectedConnectionError() -> (any Error) -> Void {
+        { error in
+            Issue.record("Unexpected error \(error)")
+        }
+    }
+
+    let _encodeHeaders: ([HTTPField], QUICStreamID) -> HTTP3PartialFrame.Headers
+    let _decodeHeaders: (HTTP3PartialFrame.Headers, QUICStreamID) -> Void
+    let _onStreamClosed: (Bool, QUICStreamID, HTTP3StreamType.Framed) -> Void
+    let _onConnectionError: (HTTP3Error) -> Void
+
+    init(
+        encodeHeaders: @escaping ([HTTPField], QUICStreamID) -> HTTP3PartialFrame.Headers =
+            TestDelegate.makeStaticEncoder(),
+        decodeHeaders: @escaping (HTTP3PartialFrame.Headers, QUICStreamID) -> Void,
+        onStreamClosed: @escaping (Bool, QUICStreamID, HTTP3StreamType.Framed) -> Void =
+            TestDelegate.makeUnexpectedStreamClose(),
+        onConnectionError: @escaping (HTTP3Error) -> Void = TestDelegate.makeUnexpectedConnectionError()
+    ) {
+        self._encodeHeaders = encodeHeaders
+        self._decodeHeaders = decodeHeaders
+        self._onStreamClosed = onStreamClosed
+        self._onConnectionError = onConnectionError
+    }
+
+    func encodeHeaders(_ fields: [HTTPField], forStream streamID: QUICStreamID) -> HTTP3PartialFrame.Headers {
+        self._encodeHeaders(fields, streamID)
+    }
+
+    func decodeHeaders(_ fields: HTTP3PartialFrame.Headers, forStream streamID: QUICStreamID) {
+        self._decodeHeaders(fields, streamID)
+    }
+
+    func onStreamClosed(_ sawEOF: Bool, streamID: QUICStreamID, streamType: HTTP3StreamType.Framed) {
+        self._onStreamClosed(sawEOF, streamID, streamType)
+    }
+
+    func onConnectionError(_ error: HTTP3Error) {
+        self._onConnectionError(error)
+    }
+}
+
 struct NIOHTTP3StreamHandlerTests {
     private var testRequestHeaderFields: [HTTPField] = [
         .init(name: .method, value: "GET"),
@@ -62,10 +119,11 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in headerToDecode = field },
-            onStreamClosed: { eof, _, _ in Issue.record("Unexpected closure of stream. Saw EOF: \(eof)") },
-            onConnectionError: { Issue.record("Unexpected error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    headerToDecode = field
+                }
+            ),
             logger: self.logger
         )
         let eventLoop = EmbeddedEventLoop()
@@ -84,11 +142,8 @@ struct NIOHTTP3StreamHandlerTests {
             errorCode: .internalError,
             location: .here()
         )
-        guard let headerToDecode else {
-            Issue.record("Expected to have a header to decode")
-            return
-        }
-        handler.onQPACKDecodeError(testError, forHeaders: headerToDecode)
+        #expect(headerToDecode?.fieldSection.lines.count == 4)
+        handler.onQPACKDecodeError(testError)
 
         expectH3Error(code: .qpackDecoderError, h3ErrorCode: .internalError, message: "test") {
             _ = try recorderPromise.futureResult.wait()
@@ -103,10 +158,11 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in headerToDecode = field },
-            onStreamClosed: { eof, _, _ in Issue.record("Unexpected closure of stream. Saw EOF: \(eof)") },
-            onConnectionError: { Issue.record("Unexpected error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    headerToDecode = field
+                }
+            ),
             logger: self.logger
         )
         let eventLoop = EmbeddedEventLoop()
@@ -123,11 +179,8 @@ struct NIOHTTP3StreamHandlerTests {
         try channel.writeInbound(self.testRequestPartialHeaderBytes)
 
         // Make the result available
-        guard let headerToDecode else {
-            Issue.record("Expected to have a header to decode")
-            return
-        }
-        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields, forHeaders: headerToDecode)
+        #expect(headerToDecode?.fieldSection.lines.count == 4)
+        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Make sure we read the right value
         guard let readFrameAny = seenEvents.popFirst()?.readValue else {
@@ -149,10 +202,11 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in headerToDecode = field },
-            onStreamClosed: { eof, _, _ in Issue.record("Unexpected closure of stream. Saw EOF: \(eof)") },
-            onConnectionError: { Issue.record("Unexpected error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    headerToDecode = field
+                }
+            ),
             logger: self.logger
         )
         let eventLoop = EmbeddedEventLoop()
@@ -176,7 +230,8 @@ struct NIOHTTP3StreamHandlerTests {
             Issue.record("Expected to have a header to decode")
             return
         }
-        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields, forHeaders: headerToDecode)
+        #expect(headerToDecode.fieldSection.lines.count == 4)
+        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Make sure we read the right value
         guard let readFrameAny = seenEvents.popFirst()?.readValue else {
@@ -197,10 +252,11 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in Issue.record("Unexpected header decode \(field)") },
-            onStreamClosed: { eof, _, _ in Issue.record("Unexpected closure of stream. Saw EOF: \(eof)") },
-            onConnectionError: { Issue.record("Unexpected error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    Issue.record("Unexpected header decode \(field)")
+                }
+            ),
             logger: self.logger
         )
         let eventLoop = EmbeddedEventLoop()
@@ -222,10 +278,11 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in Issue.record("Unexpected header decode \(field)") },
-            onStreamClosed: { eof, _, _ in Issue.record("Unexpected closure of stream. Saw EOF: \(eof)") },
-            onConnectionError: { Issue.record("Unexpected error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    Issue.record("Unexpected header decode \(field)")
+                }
+            ),
             logger: self.logger
         )
         let eventLoop = EmbeddedEventLoop()
@@ -251,10 +308,11 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in Issue.record("Unexpected header decode \(field)") },
-            onStreamClosed: { eof, _, _ in Issue.record("Unexpected closure of stream. Saw EOF: \(eof)") },
-            onConnectionError: { Issue.record("Unexpected error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    Issue.record("Unexpected header decode \(field)")
+                }
+            ),
             logger: self.logger
         )
         let eventLoop = EmbeddedEventLoop()
@@ -282,10 +340,12 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in Issue.record("Unexpected header decode \(field)") },
-            onStreamClosed: { eof, _, _ in sawEOF.succeed(eof) },
-            onConnectionError: { Issue.record("Unexpected error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    Issue.record("Unexpected header decode \(field)")
+                },
+                onStreamClosed: { eof, _, _ in sawEOF.succeed(eof) }
+            ),
             logger: self.logger
         )
         let errorPromise = eventLoop.makePromise(of: (any Error).self)
@@ -312,10 +372,12 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in Issue.record("Unexpected header decode \(field)") },
-            onStreamClosed: { eof, _, _ in Issue.record("Unexpected closure of stream. Saw EOF: \(eof)") },
-            onConnectionError: { connectionErrorPromise.succeed($0) },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    Issue.record("Unexpected header decode \(field)")
+                },
+                onConnectionError: { connectionErrorPromise.succeed($0) }
+            ),
             logger: self.logger
         )
         let channel = EmbeddedChannel(handlers: [handler], loop: eventLoop)
@@ -343,10 +405,12 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in Issue.record("Unexpected header decode \(field)") },
-            onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
-            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    Issue.record("Unexpected header decode \(field)")
+                },
+                onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
+            ),
             logger: self.logger
         )
         let channel = EmbeddedChannel(handlers: [handler], loop: eventLoop)
@@ -364,10 +428,12 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { field, _ in Issue.record("Unexpected header decode \(field)") },
-            onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
-            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { field, _ in
+                    Issue.record("Unexpected header decode \(field)")
+                },
+                onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
+            ),
             logger: self.logger
         )
         let channel = EmbeddedChannel(handlers: [handler], loop: eventLoop)
@@ -387,10 +453,10 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { _, _ in },
-            onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
-            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { _, _ in },
+                onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
+            ),
             logger: self.logger
         )
         let channel = EmbeddedChannel(handlers: [handler], loop: eventLoop)
@@ -438,10 +504,10 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { _, _ in },
-            onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
-            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { _, _ in },
+                onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
+            ),
             logger: self.logger
         )
         // Record events into a Deque so we can pop them as we expect them and assert nothing left at the end.
@@ -461,7 +527,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.isEmpty())
 
         // Give the stream the header decode result
-        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields, forHeaders: self.testRequestPartialHeader)
+        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         guard let headerReadEvent = seenEvents.popFirst()?.readValue else {
             Issue.record("Expected a read event")
@@ -503,10 +569,10 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: testEncoderClosure,
-            qpackDecoder: { _, _ in },
-            onStreamClosed: { _, _, _ in },
-            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { _, _ in },
+                onStreamClosed: { _, _, _ in },
+            ),
             logger: self.logger
         )
         let recorderPromise = eventLoop.makePromise(of: [HTTP3Frame].self)
@@ -515,7 +581,7 @@ struct NIOHTTP3StreamHandlerTests {
 
         // Headers frame
         try channel.writeInbound(self.testRequestPartialHeaderBytes)
-        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields, forHeaders: self.testRequestPartialHeader)
+        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Input close
         channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
@@ -537,10 +603,10 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: self.testEncoderClosure,
-            qpackDecoder: { _, _ in },
-            onStreamClosed: { _, _, _ in },
-            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { _, _ in },
+                onStreamClosed: { _, _, _ in },
+            ),
             logger: self.logger
         )
 
@@ -587,10 +653,10 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackEncoder: self.testEncoderClosure,
-            qpackDecoder: { _, _ in },
-            onStreamClosed: { _, _, _ in },
-            onConnectionError: { Issue.record("Unexpected connection error \($0)") },
+            delegate: TestDelegate(
+                decodeHeaders: { _, _ in },
+                onStreamClosed: { _, _, _ in },
+            ),
             logger: self.logger
         )
 

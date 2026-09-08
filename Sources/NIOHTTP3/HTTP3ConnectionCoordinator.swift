@@ -23,19 +23,22 @@ import NIOQUICHelpers
 /// I.e. it coordinates everything across the connection, including qpack.
 @available(anyAppleOS 26, *)
 final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator> {
-    private let eventLoop: any EventLoop
+    let eventLoop: any EventLoop
     private var connectionStateMachine: HTTP3ConnectionStateMachine
     private let outboundQPACKEncoderHandler: QPACKOutboundEncoderStreamHandler
     private let outboundQPACKDecoderHandler: QPACKOutboundDecoderStreamHandler
     private let outboundControlStreamHandler: HTTP3OutboundControlStreamHandler
     private let streamCreator: QUICStreamCreator
-    /// Send the connection error out to the peer. We should only call this if the connection state machine says so.
-    /// If we want to send a connection error, it needs to go through the connection state machine first.
-    var emitConnectionError: (HTTP3Error) -> Void
+    /// The connection handler.
+    ///
+    /// Setting this creates a strong retain cycle which is broken by the connection handler when
+    /// it's removed from the channel pipeline.
+    private var connection: HTTP3ConnectionHandler<QUICStreamCreator>?
     private let preferHuffmanEncoding: Bool
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.
-    private var streamHandlers = [QUICStreamID: HTTP3StreamHandler]()
+    private var streamHandlers = [QUICStreamID: HTTP3StreamHandler<HTTP3ConnectionCoordinator<QUICStreamCreator>>]()
+    private var datagramBuffer: HTTP3DatagramBuffer
 
     init(
         eventLoop: any EventLoop,
@@ -43,8 +46,10 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         streamCreator: QUICStreamCreator,
         type: HTTP3ConnectionType,
         preferHuffmanEncoding: Bool,
-        logger: Logger
+        maxBufferedDatagramBytes: Int,
+        logger: Logger,
     ) {
+        precondition(maxBufferedDatagramBytes >= 0)
         self.eventLoop = eventLoop
         self.outboundQPACKDecoderHandler = .init()
         self.outboundQPACKEncoderHandler = .init()
@@ -53,7 +58,12 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.streamCreator = streamCreator
         self.logger = logger
         self.preferHuffmanEncoding = preferHuffmanEncoding
-        self.emitConnectionError = { _ in fatalError() }
+        self.datagramBuffer = HTTP3DatagramBuffer(maxAllowedSize: maxBufferedDatagramBytes)
+    }
+
+    func setConnectionHandler(_ handler: HTTP3ConnectionHandler<QUICStreamCreator>?) {
+        self.eventLoop.preconditionInEventLoop()
+        self.connection = handler
     }
 
     func initialize() {
@@ -68,6 +78,56 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             self.createControlStream()
         case .none:
             break
+        }
+    }
+
+    // MARK: Datagram
+
+    enum ReceivedDatagramAction {
+        /// Deliver the datagram to the connection channel.
+        case deliver
+        /// Don't deliver the datagram: it was either buffered or dropped.
+        case drop
+        /// Close the connection with the given error.
+        case closeConnection(HTTP3Error)
+    }
+
+    /// Returns what the connection should do with the given datagram.
+    ///
+    /// Datagrams may be buffered if the stream isn't open yet or dropped if the connection
+    /// isn't in a state to receive datagrams.
+    func receivedDatagram(_ datagram: HTTP3Datagram) -> ReceivedDatagramAction {
+        self.eventLoop.assertInEventLoop()
+
+        switch self.connectionStateMachine.receivedDatagram(streamID: datagram.streamID) {
+        case .forward:
+            return .deliver
+        case .buffer:
+            self.datagramBuffer.append(datagram)
+            return .drop
+        case .discard:
+            return .drop
+        case .connectionError(let error):
+            return .closeConnection(error)
+        }
+    }
+
+    /// Whether a datagram associated with the given stream may be sent to the remote.
+    func sendDatagram(streamID: QUICStreamID) -> HTTP3ConnectionStateMachine.SendDatagramAction {
+        self.eventLoop.assertInEventLoop()
+        return self.connectionStateMachine.sendDatagram(streamID: streamID)
+    }
+
+    /// Delivers any datagrams which were buffered for the given stream.
+    ///
+    /// Must only be called once the state machine knows the stream is open, i.e. once it will stop
+    /// buffering datagrams for it, otherwise datagrams can be delivered out of order.
+    private func emitBufferedDatagrams(forStream streamID: QUICStreamID) {
+        self.eventLoop.assertInEventLoop()
+        assert(self.connectionStateMachine.isStreamOpen(streamID))
+        assert(self.connection != nil)
+        if let datagrams = self.datagramBuffer.unbufferDatagrams(forStream: streamID) {
+            self.connection?.emitDatagrams(datagrams)
         }
     }
 
@@ -226,6 +286,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     if addTypeHandlers {
                         try streamChannel.pipeline.syncOperations.addHandler(HTTP3ToHTTPClientCodec())
                     }
+                    self.emitBufferedDatagrams(forStream: streamID)
                     return HTTP3StreamInitializerParameters(params)
                 }.assumeIsolated().flatMap {
                     streamInitializer($0)
@@ -236,7 +297,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         }
     }
 
-    // MARK: Inbound streams
+    // MARK: - New Inbound streams -
 
     func inboundStreamInitializer<Output: Sendable>(
         parameters: HTTP3StreamInitializerParameters,
@@ -250,237 +311,310 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         onUserStream: @escaping @Sendable (Output) -> Void
     ) -> EventLoopFuture<Void> {
         self.eventLoop.preconditionInEventLoop()
-        let streamChannel = parameters.channel
-        let streamID = parameters.streamID
-        if streamID.isBidirectional {
+        if parameters.streamID.isBidirectional {
             // A bidirectional stream must be a request stream
             // Add the h3 handlers which will en/decode the h3 frames
-            let action = self.connectionStateMachine.inboundRequestStreamReceived(streamID: streamID)
-            switch action {
-            case .addHandlers:
-                do {
-                    try self.addHTTP3FrameHandlers(
-                        streamChannel: streamChannel,
-                        streamID: streamID,
-                        streamType: .request,
-                        incoming: true
-                    )
-                    if addTypeHandlers {
-                        try streamChannel.pipeline.syncOperations.addHandler(HTTP3ToHTTPServerCodec())
-                    }
-                    return userInboundStreamInitializer(parameters).map(onUserStream)
-                } catch {
-                    return streamChannel.eventLoop.makeFailedFuture(error)
-                }
-            case .emitConnectionError(let error):
-                return streamChannel.eventLoop.makeCompletedFuture {
-                    try self.addStreamClosedHandler(
-                        streamChannel: streamChannel,
-                        streamID: streamID,
-                        streamType: .request
-                    )
-                    self.emitConnectionError(error)
-                }
-            case .emitStreamError:
-                self.logger.trace("Rejecting inbound stream", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
-                return streamChannel.eventLoop.makeCompletedFuture {
-                    try self.addStreamClosedHandler(
-                        streamChannel: streamChannel,
-                        streamID: streamID,
-                        streamType: .request
-                    )
-                    streamChannel.triggerUserOutboundEvent(
-                        QUICStopSendingEvent(code: QUICApplicationErrorCode(.requestRejected)),
-                        promise: nil
-                    )
-                }
-            }
+            return self.inboundRequestStreamInitializer(
+                parameters: parameters,
+                addTypeHandlers: addTypeHandlers,
+                userInboundStreamInitializer: userInboundStreamInitializer,
+                onUserStream: onUserStream
+            )
         } else {
-            // An inbound unidirectional stream should send us its type in the stream header
-            // We add a handler which will read that first byte to know the type
-            // Then, it will call the provided callback and there we can add more handlers accordingly
-            let typeDecoderHandler = HTTP3UnidirectionalStreamTypeDecoderHandler(logger: logger) { streamType in
-                self.logger.trace(
-                    "Received a new inbound stream",
-                    metadata: [
-                        LoggingKeys.quicStreamID: "\(streamID)", LoggingKeys.h3StreamType: "\(streamType.rawValue)",
-                    ]
-                )
-                return streamChannel.eventLoop.makeCompletedFuture {
-                    switch streamType {
-                    case .push:
-                        let action = self.connectionStateMachine.inboundPushStreamReceived(streamID: streamID)
-                        switch action {
-                        case .emitConnectionError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.push)
-                            )
-                            self.emitConnectionError(error)
-                        case .emitStreamError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.push)
-                            )
-                            throw error
-                        }
-                    case .unknown:
-                        let action = self.connectionStateMachine.inboundUnknownStreamReceived(
-                            streamID: streamID,
-                            streamType: streamType
-                        )
-                        switch action {
-                        case .emitStreamError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(streamType)
-                            )
-                            throw error
-                        }
-                    case .control:
-                        let action = self.connectionStateMachine.inboundControlStreamReceived(streamID: streamID)
-                        switch action {
-                        case .addHandlers:
-                            // Control streams carry h3 frames
-                            try self.addHTTP3FrameHandlers(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .control,
-                                incoming: true
-                            )
+            return self.inboundUnidirectionalStreamInitializer(
+                parameters: parameters,
+                internalInboundStreamInitializer: internalInboundStreamInitializer
+            )
+        }
+    }
 
-                            // This is internal. Don't add the users handlers. Instead, add the control stream handler
-                            let internalHandler = HTTP3InboundControlStreamHandler(
-                                coordinator: self,
-                                streamID: streamID
-                            )
-                            try streamChannel.pipeline.syncOperations.addHandler(internalHandler)
-                        case .emitConnectionError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.control)
-                            )
-                            self.emitConnectionError(error)
-                        case .emitStreamError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.control)
-                            )
-                            throw error
-                        }
-                    case .qpackEncoder:
-                        let action = self.connectionStateMachine.inboundQPACKEncoderStreamReceived(streamID: streamID)
-                        switch action {
-                        case .addHandlers:
-                            // qpack streams do not carry h3 frames
-                            let decoder = ByteToMessageHandler(QPACKEncoderInstructionDecoder())
-                            let forwarder = QPACKInboundEncoderStreamHandler { instruction in
-                                let action = self.connectionStateMachine.receivedIncomingEncoderInstruction(instruction)
-                                switch action {
-                                case .emitConnectionError(let error):
-                                    self.emitConnectionError(error)
-                                case .sendDecoderInstruction(let instruction):
-                                    self.outboundQPACKDecoderHandler.sendInstruction(instruction)
-                                    self.checkForNewDecodes()
-                                case .none:
-                                    break
-                                }
-                            } onError: { error in
-                                self.emitConnectionErrorFromStream(
-                                    HTTP3Error(
-                                        code: .qpackEncoderStreamError,
-                                        message: "Invalid QPACK instruction",
-                                        cause: error,
-                                        errorCode: .qpackEncoderStreamError,
-                                        location: .here()
-                                    )
-                                )
-                            }
-                            try streamChannel.pipeline.syncOperations.addHandler(decoder)
-                            try streamChannel.pipeline.syncOperations.addHandler(forwarder)
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.qpackEncoder)
-                            )
-                        case .emitConnectionError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.qpackEncoder)
-                            )
-                            self.emitConnectionError(error)
-                        case .emitStreamError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.control)
-                            )
-                            throw error
-                        }
-                    case .qpackDecoder:
-                        let action = self.connectionStateMachine.inboundQPACKDecoderStreamReceived(streamID: streamID)
-                        switch action {
-                        case .addHandlers:
-                            // qpack streams do not carry h3 frames
-                            let decoder = ByteToMessageHandler(QPACKDecoderInstructionDecoder())
-                            let forwarder = QPACKInboundDecoderStreamHandler {
-                                let action = self.connectionStateMachine.receivedIncomingDecoderInstruction($0)
-                                switch action {
-                                case .emitConnectionError(let error):
-                                    self.emitConnectionError(error)
-                                case .none:
-                                    break
-                                }
-                            } onError: { error in
-                                self.emitConnectionErrorFromStream(
-                                    HTTP3Error(
-                                        code: .qpackEncoderStreamError,
-                                        message: "Invalid QPACK instruction",
-                                        cause: error,
-                                        errorCode: .qpackEncoderStreamError,
-                                        location: .here()
-                                    )
-                                )
-                            }
-                            try streamChannel.pipeline.syncOperations.addHandler(decoder)
-                            try streamChannel.pipeline.syncOperations.addHandler(forwarder)
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.qpackDecoder)
-                            )
-                        case .emitConnectionError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.qpackDecoder)
-                            )
-                            self.emitConnectionError(error)
-                        case .emitStreamError(let error):
-                            try self.addStreamClosedHandler(
-                                streamChannel: streamChannel,
-                                streamID: streamID,
-                                streamType: .unidirectional(.qpackDecoder)
-                            )
-                            throw error
-                        }
-                    }
-                }.assumeIsolated().flatMap { _ in
-                    if let int = internalInboundStreamInitializer {
-                        return int(streamChannel, streamID, streamType).map { _ in .ready }
-                    }
-                    return streamChannel.eventLoop.makeSucceededFuture(.ready)
-                }.nonisolated()
+    private func inboundRequestStreamInitializer<Output: Sendable>(
+        parameters: HTTP3StreamInitializerParameters,
+        addTypeHandlers: Bool,
+        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>,
+        onUserStream: @escaping @Sendable (Output) -> Void
+    ) -> EventLoopFuture<Void> {
+        let streamID = parameters.streamID
+        let streamChannel = parameters.channel
+        let action = self.connectionStateMachine.inboundRequestStreamReceived(streamID: streamID)
+        switch action {
+        case .addHandlers:
+            do {
+                try self.addHTTP3FrameHandlers(
+                    streamChannel: streamChannel,
+                    streamID: streamID,
+                    streamType: .request,
+                    incoming: true
+                )
+                if addTypeHandlers {
+                    try streamChannel.pipeline.syncOperations.addHandler(HTTP3ToHTTPServerCodec())
+                }
+                // State machine now considers the stream to be open: deliver the datagrams now.
+                self.emitBufferedDatagrams(forStream: streamID)
+                return userInboundStreamInitializer(parameters).map(onUserStream)
+            } catch {
+                self.datagramBuffer.discardDatagrams(forStream: streamID)
+                return streamChannel.eventLoop.makeFailedFuture(error)
             }
-            return streamChannel.eventLoop.assumeIsolated().makeCompletedFuture {
-                try streamChannel.pipeline.syncOperations.addHandler(typeDecoderHandler)
+        case .emitConnectionError(let error):
+            self.datagramBuffer.discardDatagrams(forStream: streamID)
+            return streamChannel.eventLoop.makeCompletedFuture {
+                try self.addStreamClosedHandler(
+                    streamChannel: streamChannel,
+                    streamID: streamID,
+                    streamType: .request
+                )
+                self.connection?.emitConnectionError(error)
             }
+        case .emitStreamError:
+            self.logger.trace("Rejecting inbound stream", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
+            self.datagramBuffer.discardDatagrams(forStream: streamID)
+            return streamChannel.eventLoop.makeCompletedFuture {
+                try self.addStreamClosedHandler(
+                    streamChannel: streamChannel,
+                    streamID: streamID,
+                    streamType: .request
+                )
+                streamChannel.triggerUserOutboundEvent(
+                    QUICStopSendingEvent(code: QUICApplicationErrorCode(.requestRejected)),
+                    promise: nil
+                )
+            }
+        }
+    }
+
+    private func inboundUnidirectionalStreamInitializer(
+        parameters: HTTP3StreamInitializerParameters,
+        internalInboundStreamInitializer: (
+            (
+                any Channel, QUICStreamID, HTTP3StreamType.Unidirectional
+            ) -> EventLoopFuture<Void>
+        )?,
+    ) -> EventLoopFuture<Void> {
+        let streamID = parameters.streamID
+        let streamChannel = parameters.channel
+
+        // An inbound unidirectional stream should send us its type in the stream header
+        // We add a handler which will read that first byte to know the type
+        // Then, it will call the provided callback and there we can add more handlers accordingly
+        let typeDecoderHandler = HTTP3UnidirectionalStreamTypeDecoderHandler(logger: logger) { streamType in
+            self.logger.trace(
+                "Received a new inbound stream",
+                metadata: [
+                    LoggingKeys.quicStreamID: "\(streamID)", LoggingKeys.h3StreamType: "\(streamType.rawValue)",
+                ]
+            )
+            return streamChannel.eventLoop.makeCompletedFuture {
+                switch streamType {
+                case .push:
+                    try self.handleInboundPushStream(streamChannel, streamID: streamID)
+                case .unknown:
+                    try self.handleInboundUnknownStream(streamChannel, streamID: streamID, streamType: streamType)
+                case .control:
+                    try self.handleInboundControlStream(streamChannel, streamID: streamID)
+                case .qpackEncoder:
+                    try self.handleInboundQPACKEncoderStream(streamChannel, streamID: streamID)
+                case .qpackDecoder:
+                    try self.handleInboundQPACKDecoderStream(streamChannel, streamID: streamID)
+                }
+            }.assumeIsolated().flatMap { _ in
+                if let int = internalInboundStreamInitializer {
+                    return int(streamChannel, streamID, streamType).map { _ in .ready }
+                }
+                return streamChannel.eventLoop.makeSucceededFuture(.ready)
+            }.nonisolated()
+        }
+        return streamChannel.eventLoop.assumeIsolated().makeCompletedFuture {
+            try streamChannel.pipeline.syncOperations.addHandler(typeDecoderHandler)
+        }
+    }
+
+    private func handleInboundPushStream(
+        _ streamChannel: any Channel,
+        streamID: QUICStreamID,
+    ) throws {
+        let action = self.connectionStateMachine.inboundPushStreamReceived(streamID: streamID)
+        switch action {
+        case .emitConnectionError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.push)
+            )
+            self.connection?.emitConnectionError(error)
+        case .emitStreamError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.push)
+            )
+            throw error
+        }
+    }
+
+    private func handleInboundUnknownStream(
+        _ streamChannel: any Channel,
+        streamID: QUICStreamID,
+        streamType: HTTP3StreamType.Unidirectional
+    ) throws {
+        let action = self.connectionStateMachine.inboundUnknownStreamReceived(
+            streamID: streamID,
+            streamType: streamType
+        )
+        switch action {
+        case .emitStreamError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(streamType)
+            )
+            throw error
+        }
+
+    }
+
+    private func handleInboundControlStream(
+        _ streamChannel: any Channel,
+        streamID: QUICStreamID,
+    ) throws {
+        let action = self.connectionStateMachine.inboundControlStreamReceived(streamID: streamID)
+        switch action {
+        case .addHandlers:
+            // Control streams carry h3 frames
+            try self.addHTTP3FrameHandlers(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .control,
+                incoming: true
+            )
+
+            // This is internal. Don't add the users handlers. Instead, add the control stream handler
+            let internalHandler = HTTP3InboundControlStreamHandler(
+                coordinator: self,
+                streamID: streamID
+            )
+            try streamChannel.pipeline.syncOperations.addHandler(internalHandler)
+        case .emitConnectionError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.control)
+            )
+            self.connection?.emitConnectionError(error)
+        case .emitStreamError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.control)
+            )
+            throw error
+        }
+    }
+
+    private func handleInboundQPACKEncoderStream(
+        _ streamChannel: any Channel,
+        streamID: QUICStreamID,
+    ) throws {
+        let action = self.connectionStateMachine.inboundQPACKEncoderStreamReceived(streamID: streamID)
+        switch action {
+        case .addHandlers:
+            // qpack streams do not carry h3 frames
+            let decoder = ByteToMessageHandler(QPACKEncoderInstructionDecoder())
+            let forwarder = QPACKInboundEncoderStreamHandler { instruction in
+                let action = self.connectionStateMachine.receivedIncomingEncoderInstruction(instruction)
+                switch action {
+                case .emitConnectionError(let error):
+                    self.connection?.emitConnectionError(error)
+                case .sendDecoderInstruction(let instruction):
+                    self.outboundQPACKDecoderHandler.sendInstruction(instruction)
+                    self.checkForNewDecodes()
+                case .none:
+                    break
+                }
+            } onError: { error in
+                self.emitConnectionErrorFromStream(
+                    HTTP3Error(
+                        code: .qpackEncoderStreamError,
+                        message: "Invalid QPACK instruction",
+                        cause: error,
+                        errorCode: .qpackEncoderStreamError,
+                        location: .here()
+                    )
+                )
+            }
+            try streamChannel.pipeline.syncOperations.addHandler(decoder)
+            try streamChannel.pipeline.syncOperations.addHandler(forwarder)
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.qpackEncoder)
+            )
+        case .emitConnectionError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.qpackEncoder)
+            )
+            self.connection?.emitConnectionError(error)
+        case .emitStreamError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.control)
+            )
+            throw error
+        }
+    }
+
+    private func handleInboundQPACKDecoderStream(
+        _ streamChannel: any Channel,
+        streamID: QUICStreamID,
+    ) throws {
+        let action = self.connectionStateMachine.inboundQPACKDecoderStreamReceived(streamID: streamID)
+        switch action {
+        case .addHandlers:
+            // qpack streams do not carry h3 frames
+            let decoder = ByteToMessageHandler(QPACKDecoderInstructionDecoder())
+            let forwarder = QPACKInboundDecoderStreamHandler {
+                let action = self.connectionStateMachine.receivedIncomingDecoderInstruction($0)
+                switch action {
+                case .emitConnectionError(let error):
+                    self.connection?.emitConnectionError(error)
+                case .none:
+                    break
+                }
+            } onError: { error in
+                self.emitConnectionErrorFromStream(
+                    HTTP3Error(
+                        code: .qpackEncoderStreamError,
+                        message: "Invalid QPACK instruction",
+                        cause: error,
+                        errorCode: .qpackEncoderStreamError,
+                        location: .here()
+                    )
+                )
+            }
+            try streamChannel.pipeline.syncOperations.addHandler(decoder)
+            try streamChannel.pipeline.syncOperations.addHandler(forwarder)
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.qpackDecoder)
+            )
+        case .emitConnectionError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.qpackDecoder)
+            )
+            self.connection?.emitConnectionError(error)
+        case .emitStreamError(let error):
+            try self.addStreamClosedHandler(
+                streamChannel: streamChannel,
+                streamID: streamID,
+                streamType: .unidirectional(.qpackDecoder)
+            )
+            throw error
         }
     }
 
@@ -499,9 +633,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         case .none:
             break
         case .emitConnectionError(let error):
-            self.emitConnectionError(error)
-        case .makeEncoderInstructionStream:
-            self.createQPACKEncoderInstructionStream()
+            self.connection?.emitConnectionError(error)
+        case .onSettings(let onSettings):
+            if onSettings.makeEncoderInstructionStream {
+                self.createQPACKEncoderInstructionStream()
+            }
+            self.connection?.fireReceivedSettingsEvent(
+                ReceivedSettings(datagramsSupported: onSettings.datagramsNegotiated)
+            )
         case .cancelStreams(let ids):
             self.cancelStreamsDueToReceivingGoaway(ids)
         case .closeConnection:
@@ -548,12 +687,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             ),
             streamID: streamID,
             streamType: streamType,
-            qpackEncoder: self.encodeHeaders,
-            qpackDecoder: self.decodeHeaders,
-            onStreamClosed: { seenEOF, streamID, streamType in
-                self.onStreamClosed(streamID: streamID, seenEOF: seenEOF, streamType: .init(streamType))
-            },
-            onConnectionError: self.emitConnectionErrorFromStream,
+            delegate: self,
             logger: logger
         )
         try streamChannel.pipeline.syncOperations.addHandler(streamHandler)
@@ -562,14 +696,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
     // MARK: Actions
 
-    private func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> HTTP3PartialFrame.Headers {
+    func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> HTTP3PartialFrame.Headers {
         self.eventLoop.assertInEventLoop()
         let result = self.connectionStateMachine.encodeHeaders(headers, forStream: streamID)
         self.outboundQPACKEncoderHandler.sendInstructions(result.instructions)
         return HTTP3PartialFrame.Headers(fieldSection: result.fieldSection)
     }
 
-    private func decodeHeaders(_ headers: HTTP3PartialFrame.Headers, forStream streamID: QUICStreamID) {
+    func decodeHeaders(_ headers: HTTP3PartialFrame.Headers, forStream streamID: QUICStreamID) {
         self.eventLoop.assertInEventLoop()
         let action = self.connectionStateMachine.decodeHeaders(headers, forStream: streamID)
         switch action {
@@ -579,12 +713,11 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             // And stream closing would have triggered pending decodes to be dropped, so we wouldn't have reached here.
             self.streamHandlers[payload.streamID]!.onQPACKDecodeError(
                 payload.error,
-                forHeaders: payload.headers
             )
         case .informDecodeResult(let payload):
             self.processQPACKDecodeResult(payload)
         case .emitConnectionError(let error):
-            self.emitConnectionError(error)
+            self.connection?.emitConnectionError(error)
         case .none:
             break
         }
@@ -600,6 +733,8 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.logger.trace("Stream has closed", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
         // It's safe to remove this now. When we tell the state machine about the closure, it'll remove any queued QPACK decodes.
         self.streamHandlers[streamID] = nil
+        // Anything buffered will never be delivered, drop them.
+        self.datagramBuffer.discardDatagrams(forStream: streamID)
         let action = self.connectionStateMachine.streamClosed(
             streamID: streamID,
             seenEOF: seenEOF,
@@ -620,7 +755,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             )
             self.shutdownConnectionImmediately()
         case .emitConnectionError(let error):
-            self.emitConnectionError(error)
+            self.connection?.emitConnectionError(error)
         case .none:
             break
         }
@@ -633,7 +768,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         let action = self.connectionStateMachine.shutdownConnectionImmediately()
         switch action {
         case .shutdown:
-            self.emitConnectionError(
+            self.connection?.emitConnectionError(
                 .init(
                     code: .none,
                     message: "",
@@ -656,12 +791,11 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 // And stream closing would have triggered pending decodes to be dropped, so we wouldn't have reached here.
                 self.streamHandlers[payload.streamID]!.onQPACKDecodeError(
                     payload.error,
-                    forHeaders: payload.headers
                 )
             case .informDecodeResult(let payload):
                 self.processQPACKDecodeResult(payload)
             case .emitConnectionError(let error):
-                self.emitConnectionError(error)
+                self.connection?.emitConnectionError(error)
             }
         }
     }
@@ -672,8 +806,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         // And that handler cannot have been removed yet because removal only happens when the stream closes.
         // And stream closing would have triggered pending decodes to be dropped, so we wouldn't have reached here.
         self.streamHandlers[result.streamID]!.onQPACKDecodeResult(
-            fields: result.fields,
-            forHeaders: result.headers
+            fields: result.fields
         )
         if let i = result.instructionToWrite {
             self.outboundQPACKDecoderHandler.sendInstruction(i)
@@ -739,10 +872,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             // We will only reach here if the connection state machine is in the `.notStarted` case; the state machine
             // can only be in the `.notStarted` case if `channelActive` has not been called.
             self.shutdownConnectionImmediately()
-        case .sendGoaway(let id, let streamsToCancel):
+        case .sendGoaway(let id, let streamsToCancel, let lowestRejectedStreamID):
             self.logger.trace("Sending goaway", metadata: [LoggingKeys.goawayID: "\(id)"])
             self.outboundControlStreamHandler.sendGoaway(id: id)
             self.cancelStreamsDueToSendingGoaway(streamsToCancel)
+            if let lowestRejectedStreamID {
+                // These streams will never be opened: drop any datagrams for them.
+                self.datagramBuffer.discardDatagrams(forStreamsAtOrAbove: lowestRejectedStreamID)
+            }
         case .throwError(let error):
             throw error
         case .none:
@@ -767,9 +904,22 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         let action = self.connectionStateMachine.emitConnectionErrorFromStream(error: error)
         switch action {
         case .emitConnectionError(let error):
-            self.emitConnectionError(error)
+            self.connection?.emitConnectionError(error)
         case .none:
             assertionFailure("Tried to emit stream error when already finished.")
+        }
+    }
+
+    /// Call this when the remote sends a datagram which can't be accepted, i.e. it can't be parsed
+    /// or wasn't negotiated.
+    func receivedInvalidDatagram(_ error: HTTP3Error) {
+        self.eventLoop.assertInEventLoop()
+        self.logger.debug("Emitting connection error", metadata: [LoggingKeys.error: "\(error)"])
+        switch self.connectionStateMachine.emitConnectionErrorFromStream(error: error, allowNotStarted: true) {
+        case .emitConnectionError(let error):
+            self.connection?.emitConnectionError(error)
+        case .none:
+            ()  // Already closed, nothing to do.
         }
     }
 
@@ -794,4 +944,16 @@ extension Channel {
         buffer.writeEncodedInteger(streamType.rawValue, strategy: .quic)
         self.writeAndFlush(buffer, promise: nil)
     }
+}
+
+extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
+    func onStreamClosed(_ sawEOF: Bool, streamID: NIOQUICHelpers.QUICStreamID, streamType: HTTP3.HTTP3StreamType.Framed)
+    {
+        self.onStreamClosed(streamID: streamID, seenEOF: sawEOF, streamType: .init(streamType))
+    }
+
+    func onConnectionError(_ error: HTTP3.HTTP3Error) {
+        self.emitConnectionErrorFromStream(error)
+    }
+
 }

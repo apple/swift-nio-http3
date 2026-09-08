@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 @_spi(PackageInternal) import HTTP3
+import HTTPTypes
 public import NIOCore
 public import NIOQUICHelpers
 
@@ -82,6 +83,16 @@ extension HTTP3Datagram {
     // RFC 9297 § 2.1: "the largest legal value of the Quarter Stream ID field is 2^60-1"
     static var largestValidQuarterStreamID: UInt64 {
         (1 << 60) - 1
+    }
+}
+
+/// Fired on the connection channel once the peer's SETTINGS have been received.
+public struct ReceivedSettings: Hashable, Sendable {
+    /// Whether both peers advertised support for HTTP datagrams.
+    public var datagramsSupported: Bool
+
+    public init(datagramsSupported: Bool) {
+        self.datagramsSupported = datagramsSupported
     }
 }
 

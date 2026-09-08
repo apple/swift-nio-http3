@@ -12,7 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+internal import DequeModule
 @_spi(PackageInternal) public import HTTP3
+import HTTPTypes
 public import Logging
 public import NIOCore
 public import NIOQUICHelpers
@@ -35,8 +37,10 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ChannelInboundHandler,
     ChannelOutboundHandler
 {
-    public typealias InboundIn = Any
-    public typealias OutboundIn = Any
+    public typealias InboundIn = ByteBuffer
+    public typealias InboundOut = HTTP3Datagram
+    public typealias OutboundIn = HTTP3Datagram
+    public typealias OutboundOut = ByteBuffer
 
     private let addTypeHandlers: Bool
     private let coordinator: HTTP3ConnectionCoordinator<StreamCreator>
@@ -65,6 +69,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         streamCreator: StreamCreator,
         type: HTTP3ConnectionType,
         preferHuffmanEncoding: Bool,
+        maxBufferedDatagramBytes: Int,
         logger: Logger,
         inboundStreamInitializer: H3InboundStreamInitializer,
         internalInboundStreamInitializer: (
@@ -88,6 +93,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             streamCreator: streamCreator,
             type: type,
             preferHuffmanEncoding: preferHuffmanEncoding,
+            maxBufferedDatagramBytes: maxBufferedDatagramBytes,
             logger: logger
         )
         self.type = type
@@ -95,22 +101,6 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         self.gracefulShutdownRTTMultiplier = gracefulShutdownRTTMultiplier
         self.inboundStreamInitializer = inboundStreamInitializer
         self.internalInboundStreamInitializer = internalInboundStreamInitializer
-
-        self.coordinator.emitConnectionError = { error in
-            self.logger.debug(
-                "Closing connection",
-                metadata: [
-                    LoggingKeys.error: "\(error.h3ErrorCode ?? .noError)", LoggingKeys.reason: "\(error.message)",
-                ]
-            )
-            self.context?.triggerUserOutboundEvent(
-                QUICCloseConnectionEvent(
-                    code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError),
-                    reasonPhrase: error.message
-                ),
-                promise: nil
-            )
-        }
     }
 
     /// Create a ``HTTP3ConnectionHandler`` for use in a server.
@@ -223,6 +213,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             streamCreator: streamCreator,
             type: .server,
             preferHuffmanEncoding: configuration.preferHuffmanEncoding,
+            maxBufferedDatagramBytes: configuration.maxBufferedDatagramBytes,
             logger: logger,
             inboundStreamInitializer: inboundRequestStreamInitializer,
             internalInboundStreamInitializer: internalInboundStreamInitializer,
@@ -255,6 +246,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             streamCreator: streamCreator,
             type: .client,
             preferHuffmanEncoding: configuration.preferHuffmanEncoding,
+            maxBufferedDatagramBytes: configuration.maxBufferedDatagramBytes,
             logger: logger,
             inboundStreamInitializer: .closure(inboundPushStreamInitializer),
             internalInboundStreamInitializer: nil,
@@ -293,6 +285,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             streamCreator: streamCreator,
             type: .client,
             preferHuffmanEncoding: configuration.preferHuffmanEncoding,
+            maxBufferedDatagramBytes: configuration.maxBufferedDatagramBytes,
             logger: logger,
             inboundStreamInitializer: .closure(inboundPushStreamInitializer),
             internalInboundStreamInitializer: internalInboundStreamInitializer,
@@ -308,12 +301,13 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             fatalError("HTTP3ConnectionHandler must only be added to one Channel")
         }
         self.context = context
+        self.coordinator.setConnectionHandler(self)
     }
 
     public func handlerRemoved(context: ChannelHandlerContext) {
         self.context = nil
         // Break the reference cycle
-        self.coordinator.emitConnectionError = { _ in }
+        self.coordinator.setConnectionHandler(nil)
     }
 
     public func channelActive(context: ChannelHandlerContext) {
@@ -338,9 +332,49 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         context.fireChannelInactive()
     }
 
+    public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        var buffer = self.unwrapInboundIn(data)
+
+        let datagram: HTTP3Datagram
+
+        do {
+            datagram = try buffer.parseDatagram()
+        } catch {
+            // RFC 9297 § 2.1: an unparsable datagram is a connection error.
+            self.coordinator.receivedInvalidDatagram(error)
+            context.fireErrorCaught(error)
+            return
+        }
+
+        switch self.coordinator.receivedDatagram(datagram) {
+        case .deliver:
+            context.fireChannelRead(self.wrapInboundOut(datagram))
+        case .drop:
+            ()  // Buffered or dropped by the coordinator.
+        case .closeConnection(let error):
+            self.coordinator.receivedInvalidDatagram(error)
+            context.fireErrorCaught(error)
+        }
+    }
+
+    public func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
+        let datagram = self.unwrapOutboundIn(data)
+
+        switch self.coordinator.sendDatagram(streamID: datagram.streamID) {
+        case .send:
+            var buffer = context.channel.allocator.buffer(capacity: 8 + datagram.payload.readableBytes)
+            buffer.writeDatagram(datagram)
+            context.write(self.wrapOutboundOut(buffer), promise: promise)
+
+        case .drop(let error):
+            promise?.fail(error)
+        }
+    }
+
     /// Ask the handler to initialize a new incoming stream. This must be called for every incoming QUIC stream _before_ that stream channel is activated.
     /// - Precondition: You must call this function on the eventloop.
     public func inboundStreamReceived(_ streamChannel: any Channel) -> EventLoopFuture<Void> {
+        self.coordinator.eventLoop.preconditionInEventLoop()
         self.logger.trace("Connection got inbound stream")
         if let sync = streamChannel.syncOptions {
             let result = Result { try sync.getOption(.quicStreamID) }
@@ -393,10 +427,10 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         _ streamChannel: any Channel,
         streamID streamIDResult: Result<UInt64, any Error>
     ) -> EventLoopFuture<Void> {
-        let streamID: UInt64
+        let streamID: QUICStreamID
         switch streamIDResult {
         case .success(let id):
-            streamID = id
+            streamID = QUICStreamID(rawValue: id)
         case .failure(let cause):
             return streamChannel.eventLoop.makeFailedFuture(
                 HTTP3Error(
@@ -412,7 +446,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         switch self.inboundStreamInitializer {
         case .closure(let closure):
             return self.coordinator.inboundStreamInitializer(
-                parameters: .init(channel: streamChannel, streamID: .init(rawValue: streamID)),
+                parameters: .init(channel: streamChannel, streamID: streamID),
                 addTypeHandlers: self.addTypeHandlers,
                 userInboundStreamInitializer: closure,
                 internalInboundStreamInitializer: self.internalInboundStreamInitializer,
@@ -420,7 +454,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             )
         case .multiplexer(let multiplexer):
             return self.coordinator.inboundStreamInitializer(
-                parameters: .init(channel: streamChannel, streamID: .init(rawValue: streamID)),
+                parameters: .init(channel: streamChannel, streamID: streamID),
                 addTypeHandlers: self.addTypeHandlers,
                 userInboundStreamInitializer: multiplexer.initialize(parameters:),
                 internalInboundStreamInitializer: self.internalInboundStreamInitializer,
@@ -597,6 +631,38 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     }
 }
 
+extension HTTP3ConnectionHandler {
+    func emitDatagrams(_ datagrams: Deque<HTTP3Datagram>) {
+        guard let context = self.context else { return }
+        if datagrams.isEmpty { return }
+
+        for datagram in datagrams {
+            context.fireChannelRead(self.wrapInboundOut(datagram))
+        }
+        context.fireChannelReadComplete()
+    }
+
+    func fireReceivedSettingsEvent(_ event: ReceivedSettings) {
+        self.context?.fireUserInboundEventTriggered(event)
+    }
+
+    func emitConnectionError(_ error: HTTP3Error) {
+        self.logger.debug(
+            "Closing connection",
+            metadata: [
+                LoggingKeys.error: "\(error.h3ErrorCode ?? .noError)", LoggingKeys.reason: "\(error.message)",
+            ]
+        )
+        self.context?.triggerUserOutboundEvent(
+            QUICCloseConnectionEvent(
+                code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError),
+                reasonPhrase: error.message
+            ),
+            promise: nil
+        )
+    }
+}
+
 @available(*, unavailable)
 extension HTTP3ConnectionHandler: Sendable {}
 
@@ -620,6 +686,10 @@ public struct HTTP3ServerConfiguration: Sendable {
     /// GOAWAY frame during graceful shutdown. Defaults to 1.
     public var gracefulShutdownRTTMultiplier: Int = 1
 
+    /// The maximum number of bytes from HTTP/3 datagrams that can be buffered at one time per
+    /// connection.
+    public var maxBufferedDatagramBytes: Int = 64 * 1024
+
     private init(rttProvider: @escaping (@Sendable () -> TimeAmount)) {
         self.rttProvider = rttProvider
     }
@@ -639,6 +709,10 @@ public struct HTTP3ClientConfiguration: Sendable {
     /// If true, Huffman encoding will be used where applicable, e.g. for header field sections.
     /// - Note: Huffman encoding will not be used if it would result in a larger payload than not using it, even if this property is true.
     public var preferHuffmanEncoding = true
+
+    /// The maximum number of bytes from HTTP/3 datagrams that can be buffered at one time per
+    /// connection.
+    public var maxBufferedDatagramBytes: Int = 64 * 1024
 
     private init() {}
 

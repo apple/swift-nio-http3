@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+public import HTTPTypes
+
 /// An error thrown by the HTTP/3 library.
 ///
 /// All errors have a high-level ``HTTP3Error/Code-swift.struct`` which identifies the domain.
@@ -264,8 +266,8 @@ extension HTTP3Error {
             Self(.peerTerminatedInboundStream)
         }
 
-        // Attempted to send a datagram but the remote peer hasn't advertised that it's willing
-        /// to receive datagrams.
+        /// A datagram was sent or received on a connection where the endpoint receiving it hasn't
+        /// advertised that it's willing to receive datagrams.
         public static var datagramsNotNegotiated: Self {
             Self(.datagramsNotNegotiated)
         }

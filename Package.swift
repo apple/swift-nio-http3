@@ -28,7 +28,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.82.0"),
-        .package(url: "https://github.com/apple/swift-http-types.git", from: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-http-types.git", from: "1.8.0"),
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0-beta.1"),
@@ -81,6 +81,8 @@ let package = Package(
                 .target(name: "HTTP3"),
                 .target(name: "QPACK"),
                 .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOEmbedded", package: "swift-nio"),
+                .product(name: "NIOTestUtils", package: "swift-nio"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
             swiftSettings: swiftSettings

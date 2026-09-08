@@ -66,6 +66,24 @@ final class InboundSlowingHandler: ChannelInboundHandler {
     }
 }
 
+/// Records the ``ReceivedSettings`` events fired on a connection channel.
+final class ReceivedSettingsRecorder: ChannelInboundHandler, Sendable {
+    typealias InboundIn = HTTP3Datagram
+
+    private let events = NIOLockedValueBox([ReceivedSettings]())
+
+    var recordedEvents: [ReceivedSettings] {
+        self.events.withLockedValue { $0 }
+    }
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if let event = event as? ReceivedSettings {
+            self.events.withLockedValue { $0.append(event) }
+        }
+        context.fireUserInboundEventTriggered(event)
+    }
+}
+
 final class InboundDataRecorder<DataType: Sendable>: ChannelInboundHandler {
     typealias InboundIn = DataType
     typealias InboundOut = DataType
@@ -669,7 +687,9 @@ struct EndToEndTests {
         // Write a settings frame, which is illegal on the request stream
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler
         _ = requestStreamChannel.eventLoop.submit {
-            let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(type: HTTP3StreamHandler.self)
+            let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(
+                type: HTTP3StreamHandler<HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>>.self
+            )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             var buffer = ByteBuffer()
             buffer.writeHTTP3PartialFrame(.settings(HTTP3Settings()), preferHuffmanEncoding: false)
@@ -900,7 +920,9 @@ struct EndToEndTests {
         // Write a malformed header, which can't decode.
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler.
         _ = requestStreamChannel.eventLoop.submit {
-            let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(type: HTTP3StreamHandler.self)
+            let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(
+                type: HTTP3StreamHandler<HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>>.self
+            )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             var buffer = ByteBuffer()
             buffer.writeHTTP3PartialFrame(
@@ -1473,6 +1495,240 @@ struct EndToEndTests {
 
         // Tear down
         try await serverChannel.close()
+    }
+
+    // MARK: - Datagrams
+
+    /// Sets up a client and server, waits until each has received the other's SETTINGS frame, then calls `execute` with
+    /// the two connection channels and the ID of a request stream which the client has opened and the server has
+    /// accepted.
+    @available(anyAppleOS 26, *)
+    private func withDatagramConnection(
+        authenticationConfiguration: AuthenticationConfiguration,
+        clientSettings: HTTP3Settings = HTTP3Settings(h3Datagram: true),
+        serverSettings: HTTP3Settings = HTTP3Settings(h3Datagram: true),
+        serverDatagrams: (promise: EventLoopPromise<[HTTP3Datagram]>, count: Int)? = nil,
+        clientDatagrams: (promise: EventLoopPromise<[HTTP3Datagram]>, count: Int)? = nil,
+        recorders: (client: ReceivedSettingsRecorder, server: ReceivedSettingsRecorder)? = nil,
+        execute: (
+            _ clientConnection: any Channel,
+            _ serverConnection: any Channel,
+            _ streamID: QUICStreamID
+        ) async throws -> Void
+    ) async throws {
+        let host = "127.0.0.1"
+        let clientLogger = Logger(label: "Client")
+        let serverLogger = Logger(label: "Server")
+
+        let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
+
+        // The first frame on the inbound control stream is always SETTINGS, so recording one frame
+        // tells us the peer's datagram support is known.
+        let serverGotSettings = self.eventLoopGroup.any().makePromise(of: [HTTP3Frame].self)
+        let clientGotSettings = self.eventLoopGroup.any().makePromise(of: [HTTP3Frame].self)
+        let serverConnection = self.eventLoopGroup.any().makePromise(of: (any Channel).self)
+        let serverStreamID = self.eventLoopGroup.any().makePromise(of: QUICStreamID.self)
+
+        defer {
+            serverGotSettings.fail(NeverFulfilled())
+            clientGotSettings.fail(NeverFulfilled())
+            serverConnection.fail(NeverFulfilled())
+            serverStreamID.fail(NeverFulfilled())
+            serverDatagrams?.promise.fail(NeverFulfilled())
+            clientDatagrams?.promise.fail(NeverFulfilled())
+        }
+
+        let serverChannel = try await self.makeServer(
+            credentials: credentials,
+            host: host,
+            settings: serverSettings,
+            logger: serverLogger,
+            inboundConnectionInitializer: { connection in
+                connection.eventLoop.makeCompletedFuture {
+                    if let recorders {
+                        try connection.pipeline.syncOperations.addHandler(recorders.server)
+                    }
+                    if let serverDatagrams {
+                        try connection.pipeline.syncOperations.addHandler(
+                            InboundDataRecorder<HTTP3Datagram>(
+                                promise: serverDatagrams.promise,
+                                targetCount: serverDatagrams.count
+                            )
+                        )
+                    }
+                    serverConnection.succeed(connection)
+                }
+            },
+            inboundStreamInitializer: { params in
+                serverStreamID.succeed(params.streamID)
+                return params.channel.eventLoop.makeSucceededVoidFuture()
+            },
+            internalInboundStreamInitializer: { channel, _, streamType in
+                channel.eventLoop.makeCompletedFuture {
+                    switch streamType {
+                    case .control:
+                        try channel.pipeline.syncOperations.addHandler(
+                            InboundDataRecorder<HTTP3Frame>(promise: serverGotSettings, targetCount: 1)
+                        )
+                    case .push, .qpackEncoder, .qpackDecoder, .unknown:
+                        ()  // Not interesting for datagrams.
+                    }
+                }
+            }
+        )
+
+        let clientConnection = try await self.makeClient(
+            credentials: credentials,
+            host: host,
+            port: serverChannel.localAddress!.port!,
+            settings: clientSettings,
+            logger: clientLogger,
+            internalInboundStreamInitializer: { channel, _, streamType in
+                channel.eventLoop.makeCompletedFuture {
+                    switch streamType {
+                    case .control:
+                        try channel.pipeline.syncOperations.addHandler(
+                            InboundDataRecorder<HTTP3Frame>(promise: clientGotSettings, targetCount: 1)
+                        )
+                    case .push, .qpackEncoder, .qpackDecoder, .unknown:
+                        ()  // Not interesting for datagrams.
+                    }
+                }
+            },
+            connectionInitializer: { connection in
+                connection.eventLoop.makeCompletedFuture {
+                    if let recorders {
+                        try connection.pipeline.syncOperations.addHandler(recorders.client)
+                    }
+                    if let clientDatagrams {
+                        try connection.pipeline.syncOperations.addHandler(
+                            InboundDataRecorder<HTTP3Datagram>(
+                                promise: clientDatagrams.promise,
+                                targetCount: clientDatagrams.count
+                            )
+                        )
+                    }
+                }
+            }
+        )
+
+        _ = try await clientGotSettings.futureResult.get()
+        _ = try await serverGotSettings.futureResult.get()
+
+        let requestStream = try await clientConnection.makeHTTP3RequestChannel().get()
+        let streamID = QUICStreamID(rawValue: try await requestStream.getOption(.quicStreamID).get())
+
+        // Opening a QUIC stream sends nothing, so the server won't see it until something is written
+        // on it. The server can't be given datagrams for a stream it doesn't know about, so send the
+        // request headers and wait for the server to accept the stream. The stream is deliberately
+        // left open: datagrams can't be sent for a closed stream.
+        try await requestStream.writeAndFlush(
+            HTTP3Frame.headers([
+                .init(name: .method, value: "GET"),
+                .init(name: .path, value: "/"),
+                .init(name: .scheme, value: "https"),
+                .init(name: .authority, value: "test"),
+            ])
+        )
+        #expect(try await serverStreamID.futureResult.get() == streamID)
+
+        try await execute(clientConnection, try await serverConnection.futureResult.get(), streamID)
+
+        try await clientConnection.close()
+        try await serverChannel.close()
+    }
+
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 26, *)
+    func testClientSendsDatagramToServer(authenticationConfiguration: AuthenticationConfiguration) async throws {
+        let serverDatagrams = self.eventLoopGroup.any().makePromise(of: [HTTP3Datagram].self)
+
+        try await self.withDatagramConnection(
+            authenticationConfiguration: authenticationConfiguration,
+            serverDatagrams: (serverDatagrams, 2)
+        ) { clientConnection, _, streamID in
+            try await clientConnection.writeAndFlush(
+                HTTP3Datagram(streamID: streamID, payload: ByteBuffer(string: "hello"))
+            )
+            try await clientConnection.writeAndFlush(
+                HTTP3Datagram(streamID: streamID, payload: ByteBuffer(string: "again"))
+            )
+
+            let received = try await serverDatagrams.futureResult.get()
+            #expect(received.map { $0.streamID } == [streamID, streamID])
+            #expect(received.map { String(buffer: $0.payload) } == ["hello", "again"])
+        }
+    }
+
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 26, *)
+    func testServerSendsDatagramToClient(authenticationConfiguration: AuthenticationConfiguration) async throws {
+        let clientDatagrams = self.eventLoopGroup.any().makePromise(of: [HTTP3Datagram].self)
+
+        try await self.withDatagramConnection(
+            authenticationConfiguration: authenticationConfiguration,
+            clientDatagrams: (clientDatagrams, 1)
+        ) { _, serverConnection, streamID in
+            try await serverConnection.writeAndFlush(
+                HTTP3Datagram(streamID: streamID, payload: ByteBuffer(string: "from the server"))
+            )
+
+            let received = try await clientDatagrams.futureResult.get()
+            #expect(received.map { $0.streamID } == [streamID])
+            #expect(received.map { String(buffer: $0.payload) } == ["from the server"])
+        }
+    }
+
+    @Test(
+        arguments: Self.standardAuthenticationConfigurations,
+        [
+            (client: true, server: true),
+            (client: true, server: false),
+            (client: false, server: true),
+            (client: false, server: false),
+        ]
+    )
+    @available(anyAppleOS 26, *)
+    func testDatagramsNegotiated(
+        authenticationConfiguration: AuthenticationConfiguration,
+        support: (client: Bool, server: Bool)
+    ) async throws {
+        let recorders = (client: ReceivedSettingsRecorder(), server: ReceivedSettingsRecorder())
+
+        try await self.withDatagramConnection(
+            authenticationConfiguration: authenticationConfiguration,
+            clientSettings: HTTP3Settings(h3Datagram: support.client),
+            serverSettings: HTTP3Settings(h3Datagram: support.server),
+            recorders: recorders
+        ) { _, _, _ in
+            // Both peers must advertise support for datagrams to be negotiated.
+            let expected = ReceivedSettings(datagramsSupported: support.client && support.server)
+            #expect(recorders.client.recordedEvents == [expected])
+            #expect(recorders.server.recordedEvents == [expected])
+        }
+    }
+
+    // The remote hasn't advertised 'SETTINGS_H3_DATAGRAM', so we must not send it datagrams.
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 26, *)
+    func testSendingDatagramWithoutRemoteSupportFails(
+        authenticationConfiguration: AuthenticationConfiguration
+    ) async throws {
+        try await self.withDatagramConnection(
+            authenticationConfiguration: authenticationConfiguration,
+            serverSettings: HTTP3Settings(h3Datagram: false)
+        ) { clientConnection, _, streamID in
+            let error = await #expect(throws: HTTP3Error.self) {
+                try await clientConnection.writeAndFlush(
+                    HTTP3Datagram(streamID: streamID, payload: ByteBuffer(string: "nope"))
+                )
+            }
+            expectH3ErrorEqual(
+                error: error,
+                expectedCode: .datagramsNotNegotiated,
+                expectedH3ErrorCode: nil
+            )
+        }
     }
 
     // MARK: - Helper Functions

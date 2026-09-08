@@ -21,7 +21,7 @@ public import struct NIOCore.ByteBuffer
 ///
 /// The types are identical to ``HTTP3Frame`` except that the ``HTTP3PartialFrame/headers(_:)`` and ``HTTP3PartialFrame/pushPromise(_:)`` cases hold encoded field sections instead of fields.
 @_spi(PackageInternal)
-public enum HTTP3PartialFrame: Hashable {
+public enum HTTP3PartialFrame: Hashable, Sendable {
     /// A headers frame for which we don't have the dynamic table references yet.
     /// Pass this to a QPACK decoder to get the full HTTP3Frame.
     @_spi(PackageInternal)
