@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+@_spi(PackageInternal) import HTTP3
 import NIOCore
 @_spi(PackageInternal) import QPACK
-@_spi(PackageInternal) import HTTP3
 
 struct QPACKOutboundDecoderStream: ~Copyable, HTTP3.QPACKOutboundDecoderStream {
     private let channel: any Channel
