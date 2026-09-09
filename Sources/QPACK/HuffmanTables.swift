@@ -14,114 +14,6 @@
 
 typealias HuffmanTableEntry = (bits: UInt32, nbits: Int)
 
-/// Base-64 decoding has been jovially purloined from swift-corelibs-foundation/.../NSData.swift.
-/// The ranges of ASCII characters that are used to encode data in Base64.
-private let base64ByteMappings: [Range<UInt8>] = [
-    65..<91,  // A-Z
-    97..<123,  // a-z
-    48..<58,  // 0-9
-    43..<44,  // +
-    47..<48,  // /
-]
-/**
- Padding character used when the number of bytes to encode is not divisible by 3
- */
-// =
-private let base64Padding: UInt8 = 61
-
-/// This method takes a byte with a character from Base64-encoded string
-/// and gets the binary value that the character corresponds to.
-///
-/// - parameter byte:       The byte with the Base64 character.
-/// - returns:              Base64DecodedByte value containing the result (Valid , Invalid, Padding).
-private enum Base64DecodedByte {
-    case valid(UInt8)
-    case invalid
-    case padding
-}
-
-private func base64DecodeByte(_ byte: UInt8) -> Base64DecodedByte {
-    guard byte != base64Padding else { return .padding }
-    var decodedStart: UInt8 = 0
-    for range in base64ByteMappings {
-        if range.contains(byte) {
-            let result = decodedStart + (byte - range.lowerBound)
-            return .valid(result)
-        }
-        decodedStart += range.upperBound - range.lowerBound
-    }
-    return .invalid
-}
-
-/// This method decodes Base64-encoded data.
-///
-/// If the input contains any bytes that are not valid Base64 characters, and `ignoreUnknownCharacters` is true,
-/// this will return nil.
-///
-/// - Parameters:
-///   - bytes: The Base64 bytes.
-///   - ignoreUnknownCharacters: Whether to ignore unknown characters.
-/// - Returns: The decoded bytes.
-private func base64DecodeBytes(_ bytes: some Collection<UInt8>, ignoreUnknownCharacters: Bool = false) -> [UInt8]? {
-    var decodedBytes = [UInt8]()
-    decodedBytes.reserveCapacity((bytes.count / 3) * 2)
-
-    var currentByte: UInt8 = 0
-    var validCharacterCount = 0
-    var paddingCount = 0
-    var index = 0
-
-    for base64Char in bytes {
-        let value: UInt8
-
-        switch base64DecodeByte(base64Char) {
-        case .valid(let v):
-            value = v
-            validCharacterCount += 1
-        case .invalid:
-            if ignoreUnknownCharacters {
-                continue
-            } else {
-                return nil
-            }
-        case .padding:
-            paddingCount += 1
-            continue
-        }
-
-        // padding found in the middle of the sequence is invalid
-        if paddingCount > 0 {
-            return nil
-        }
-
-        switch index % 4 {
-        case 0:
-            currentByte = (value << 2)
-        case 1:
-            currentByte |= (value >> 4)
-            decodedBytes.append(currentByte)
-            currentByte = (value << 4)
-        case 2:
-            currentByte |= (value >> 2)
-            decodedBytes.append(currentByte)
-            currentByte = (value << 6)
-        case 3:
-            currentByte |= value
-            decodedBytes.append(currentByte)
-        default:
-            fatalError()
-        }
-
-        index += 1
-    }
-
-    guard (validCharacterCount + paddingCount) % 4 == 0 else {
-        // invalid character count
-        return nil
-    }
-    return decodedBytes
-}
-
 internal let staticHuffmanTable: [HuffmanTableEntry] = [
     (0x1ff8, 13), (0x7fffd8, 23), (0xfffffe2, 28), (0xfffffe3, 28), (0xfffffe4, 28), (0xfffffe5, 28),
     (0xfffffe6, 28), (0xfffffe7, 28), (0xfffffe8, 28), (0xffffea, 24), (0x3fff_fffc, 30), (0xfffffe9, 28),
@@ -197,7 +89,33 @@ internal let staticHuffmanTable: [HuffmanTableEntry] = [
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-typealias HuffmanDecodeEntry = (state: UInt8, flags: HuffmanDecoderFlags, sym: UInt8)
+/// A single decoder state-machine transition.
+///
+/// Entries are stored packed into a `UInt32` — state in the low byte, flags in
+/// the second byte, symbol in the third — rather than as a three-byte tuple.
+/// A power-of-two stride lets the table index fold into a single scaled load,
+/// and the three fields arrive together in one register. The accessors below
+/// unpack on demand; `HuffmanDecoderFlags` is reconstructed at the use site and
+/// costs nothing once inlined.
+struct HuffmanDecodeEntry {
+    private let packed: UInt32
+
+    fileprivate init(packed: UInt32) {
+        self.packed = packed
+    }
+
+    var state: UInt8 {
+        UInt8(truncatingIfNeeded: self.packed)
+    }
+
+    var flags: HuffmanDecoderFlags {
+        HuffmanDecoderFlags(rawValue: UInt8(truncatingIfNeeded: self.packed >> 8))
+    }
+
+    var sym: UInt8 {
+        UInt8(truncatingIfNeeded: self.packed >> 16)
+    }
+}
 
 internal struct HuffmanDecoderFlags: OptionSet {
     var rawValue: UInt8
@@ -216,21 +134,20 @@ internal struct HuffmanDecoderFlags: OptionSet {
 ///
 /// For the sake of efficiency, the in-memory representation of the states,
 /// transitions, and result values of the state machine are represented as a long
-/// list containing three-tuples. This list is enormously long, and viewing it as
+/// flat list of packed words. This list is enormously long, and viewing it as
 /// an in-memory representation is not very clear, but it is laid out here in a way
 /// that is intended to be *somewhat* more clear.
 ///
 /// Essentially, the list is structured as 256 collections of 16 entries (one for
-/// each nybble) of three-tuples. Each collection is called a "node", and the
-/// zeroth collection is called the "root node". The state machine tracks one
-/// value: the "state" byte.
+/// each nybble). Each collection is called a "node", and the zeroth collection is
+/// called the "root node". The state machine tracks one value: the "state" byte.
 ///
 /// For each nybble passed to the state machine, it first multiplies the "state"
 /// byte by 16 and adds the numerical value of the nybble. This number is the index
 /// into the large flat list.
 ///
-/// The three-tuple that is found by looking up that index consists of three
-/// values:
+/// The entry found by looking up that index carries three values, unpacked by
+/// ``HuffmanDecodeEntry``:
 ///
 /// - a new state value, used for subsequent decoding
 /// - a collection of flags, used to determine whether data is emitted or whether
@@ -244,285 +161,795 @@ internal struct HuffmanDecoderFlags: OptionSet {
 /// This approach has relatively little indirection, and therefore performs
 /// relatively well. The total number of loop
 /// iterations is 4x the number of bytes passed to the decoder.
+@available(anyAppleOS 26.0, *)
 internal struct HuffmanDecoderTable {
     static let shared = HuffmanDecoderTable()
 
     subscript(state state: UInt8, nybble nybble: UInt8) -> HuffmanDecodeEntry {
         assert(nybble < 16)
         let index = (Int(state) * 16) + Int(nybble)
-        return HuffmanDecoderTable.rawTable[index]
+        return HuffmanDecodeEntry(packed: HuffmanDecoderTable.rawTable[index])
     }
 
-    private static let rawTable: [HuffmanDecodeEntry] = {
-        let base64_table_bytes: StaticString = """
-            BAAABQAABwAACAAACwAADAAAEAAAEwAAGQAAHAAAIAAAIwAAKgAAMQAAOQAAQAEA
-            AAMwAAMxAAMyAANhAANjAANlAANpAANvAANzAAN0DQAADgAAEQAAEgAAFAAAFQAA
-            AQIwFgMwAQIxFgMxAQIyFgMyAQJhFgNhAQJjFgNjAQJlFgNlAQJpFgNpAQJvFgNv
-            AgIwCQIwFwIwKAMwAgIxCQIxFwIxKAMxAgIyCQIyFwIyKAMyAgJhCQJhFwJhKANh
-            AwIwBgIwCgIwDwIwGAIwHwIwKQIwOAMwAwIxBgIxCgIxDwIxGAIxHwIxKQIxOAMx
-            AwIyBgIyCgIyDwIyGAIyHwIyKQIyOAMyAwJhBgJhCgJhDwJhGAJhHwJhKQJhOANh
-            AgJjCQJjFwJjKANjAgJlCQJlFwJlKANlAgJpCQJpFwJpKANpAgJvCQJvFwJvKANv
-            AwJjBgJjCgJjDwJjGAJjHwJjKQJjOANjAwJlBgJlCgJlDwJlGAJlHwJlKQJlOANl
-            AwJpBgJpCgJpDwJpGAJpHwJpKQJpOANpAwJvBgJvCgJvDwJvGAJvHwJvKQJvOANv
-            AQJzFgNzAQJ0FgN0AAMgAAMlAAMtAAMuAAMvAAMzAAM0AAM1AAM2AAM3AAM4AAM5
-            AgJzCQJzFwJzKANzAgJ0CQJ0FwJ0KAN0AQIgFgMgAQIlFgMlAQItFgMtAQIuFgMu
-            AwJzBgJzCgJzDwJzGAJzHwJzKQJzOANzAwJ0BgJ0CgJ0DwJ0GAJ0HwJ0KQJ0OAN0
-            AgIgCQIgFwIgKAMgAgIlCQIlFwIlKAMlAgItCQItFwItKAMtAgIuCQIuFwIuKAMu
-            AwIgBgIgCgIgDwIgGAIgHwIgKQIgOAMgAwIlBgIlCgIlDwIlGAIlHwIlKQIlOAMl
-            AwItBgItCgItDwItGAItHwItKQItOAMtAwIuBgIuCgIuDwIuGAIuHwIuKQIuOAMu
-            AQIvFgMvAQIzFgMzAQI0FgM0AQI1FgM1AQI2FgM2AQI3FgM3AQI4FgM4AQI5FgM5
-            AgIvCQIvFwIvKAMvAgIzCQIzFwIzKAMzAgI0CQI0FwI0KAM0AgI1CQI1FwI1KAM1
-            AwIvBgIvCgIvDwIvGAIvHwIvKQIvOAMvAwIzBgIzCgIzDwIzGAIzHwIzKQIzOAMz
-            AwI0BgI0CgI0DwI0GAI0HwI0KQI0OAM0AwI1BgI1CgI1DwI1GAI1HwI1KQI1OAM1
-            AgI2CQI2FwI2KAM2AgI3CQI3FwI3KAM3AgI4CQI4FwI4KAM4AgI5CQI5FwI5KAM5
-            AwI2BgI2CgI2DwI2GAI2HwI2KQI2OAM2AwI3BgI3CgI3DwI3GAI3HwI3KQI3OAM3
-            AwI4BgI4CgI4DwI4GAI4HwI4KQI4OAM4AwI5BgI5CgI5DwI5GAI5HwI5KQI5OAM5
-            GgAAGwAAHQAAHgAAIQAAIgAAJAAAJQAAKwAALgAAMgAANQAAOgAAPQAAQQAARAEA
-            AAM9AANBAANfAANiAANkAANmAANnAANoAANsAANtAANuAANwAANyAAN1JgAAJwAA
-            AQI9FgM9AQJBFgNBAQJfFgNfAQJiFgNiAQJkFgNkAQJmFgNmAQJnFgNnAQJoFgNo
-            AgI9CQI9FwI9KAM9AgJBCQJBFwJBKANBAgJfCQJfFwJfKANfAgJiCQJiFwJiKANi
-            AwI9BgI9CgI9DwI9GAI9HwI9KQI9OAM9AwJBBgJBCgJBDwJBGAJBHwJBKQJBOANB
-            AwJfBgJfCgJfDwJfGAJfHwJfKQJfOANfAwJiBgJiCgJiDwJiGAJiHwJiKQJiOANi
-            AgJkCQJkFwJkKANkAgJmCQJmFwJmKANmAgJnCQJnFwJnKANnAgJoCQJoFwJoKANo
-            AwJkBgJkCgJkDwJkGAJkHwJkKQJkOANkAwJmBgJmCgJmDwJmGAJmHwJmKQJmOANm
-            AwJnBgJnCgJnDwJnGAJnHwJnKQJnOANnAwJoBgJoCgJoDwJoGAJoHwJoKQJoOANo
-            AQJsFgNsAQJtFgNtAQJuFgNuAQJwFgNwAQJyFgNyAQJ1FgN1AAM6AANCAANDAANE
-            AgJsCQJsFwJsKANsAgJtCQJtFwJtKANtAgJuCQJuFwJuKANuAgJwCQJwFwJwKANw
-            AwJsBgJsCgJsDwJsGAJsHwJsKQJsOANsAwJtBgJtCgJtDwJtGAJtHwJtKQJtOANt
-            AwJuBgJuCgJuDwJuGAJuHwJuKQJuOANuAwJwBgJwCgJwDwJwGAJwHwJwKQJwOANw
-            AgJyCQJyFwJyKANyAgJ1CQJ1FwJ1KAN1AQI6FgM6AQJCFgNCAQJDFgNDAQJEFgNE
-            AwJyBgJyCgJyDwJyGAJyHwJyKQJyOANyAwJ1BgJ1CgJ1DwJ1GAJ1HwJ1KQJ1OAN1
-            AgI6CQI6FwI6KAM6AgJCCQJCFwJCKANCAgJDCQJDFwJDKANDAgJECQJEFwJEKANE
-            AwI6BgI6CgI6DwI6GAI6HwI6KQI6OAM6AwJCBgJCCgJCDwJCGAJCHwJCKQJCOANC
-            AwJDBgJDCgJDDwJDGAJDHwJDKQJDOANDAwJEBgJECgJEDwJEGAJEHwJEKQJEOANE
-            LAAALQAALwAAMAAAMwAANAAANgAANwAAOwAAPAAAPgAAPwAAQgAAQwAARQAASAEA
-            AANFAANGAANHAANIAANJAANKAANLAANMAANNAANOAANPAANQAANRAANSAANTAANU
-            AQJFFgNFAQJGFgNGAQJHFgNHAQJIFgNIAQJJFgNJAQJKFgNKAQJLFgNLAQJMFgNM
-            AgJFCQJFFwJFKANFAgJGCQJGFwJGKANGAgJHCQJHFwJHKANHAgJICQJIFwJIKANI
-            AwJFBgJFCgJFDwJFGAJFHwJFKQJFOANFAwJGBgJGCgJGDwJGGAJGHwJGKQJGOANG
-            AwJHBgJHCgJHDwJHGAJHHwJHKQJHOANHAwJIBgJICgJIDwJIGAJIHwJIKQJIOANI
-            AgJJCQJJFwJJKANJAgJKCQJKFwJKKANKAgJLCQJLFwJLKANLAgJMCQJMFwJMKANM
-            AwJJBgJJCgJJDwJJGAJJHwJJKQJJOANJAwJKBgJKCgJKDwJKGAJKHwJKKQJKOANK
-            AwJLBgJLCgJLDwJLGAJLHwJLKQJLOANLAwJMBgJMCgJMDwJMGAJMHwJMKQJMOANM
-            AQJNFgNNAQJOFgNOAQJPFgNPAQJQFgNQAQJRFgNRAQJSFgNSAQJTFgNTAQJUFgNU
-            AgJNCQJNFwJNKANNAgJOCQJOFwJOKANOAgJPCQJPFwJPKANPAgJQCQJQFwJQKANQ
-            AwJNBgJNCgJNDwJNGAJNHwJNKQJNOANNAwJOBgJOCgJODwJOGAJOHwJOKQJOOANO
-            AwJPBgJPCgJPDwJPGAJPHwJPKQJPOANPAwJQBgJQCgJQDwJQGAJQHwJQKQJQOANQ
-            AgJRCQJRFwJRKANRAgJSCQJSFwJSKANSAgJTCQJTFwJTKANTAgJUCQJUFwJUKANU
-            AwJRBgJRCgJRDwJRGAJRHwJRKQJROANRAwJSBgJSCgJSDwJSGAJSHwJSKQJSOANS
-            AwJTBgJTCgJTDwJTGAJTHwJTKQJTOANTAwJUBgJUCgJUDwJUGAJUHwJUKQJUOANU
-            AANVAANWAANXAANZAANqAANrAANxAAN2AAN3AAN4AAN5AAN6RgAARwAASQAASgEA
-            AQJVFgNVAQJWFgNWAQJXFgNXAQJZFgNZAQJqFgNqAQJrFgNrAQJxFgNxAQJ2FgN2
-            AgJVCQJVFwJVKANVAgJWCQJWFwJWKANWAgJXCQJXFwJXKANXAgJZCQJZFwJZKANZ
-            AwJVBgJVCgJVDwJVGAJVHwJVKQJVOANVAwJWBgJWCgJWDwJWGAJWHwJWKQJWOANW
-            AwJXBgJXCgJXDwJXGAJXHwJXKQJXOANXAwJZBgJZCgJZDwJZGAJZHwJZKQJZOANZ
-            AgJqCQJqFwJqKANqAgJrCQJrFwJrKANrAgJxCQJxFwJxKANxAgJ2CQJ2FwJ2KAN2
-            AwJqBgJqCgJqDwJqGAJqHwJqKQJqOANqAwJrBgJrCgJrDwJrGAJrHwJrKQJrOANr
-            AwJxBgJxCgJxDwJxGAJxHwJxKQJxOANxAwJ2BgJ2CgJ2DwJ2GAJ2HwJ2KQJ2OAN2
-            AQJ3FgN3AQJ4FgN4AQJ5FgN5AQJ6FgN6AAMmAAMqAAMsAAM7AANYAANaSwAATgAA
-            AgJ3CQJ3FwJ3KAN3AgJ4CQJ4FwJ4KAN4AgJ5CQJ5FwJ5KAN5AgJ6CQJ6FwJ6KAN6
-            AwJ3BgJ3CgJ3DwJ3GAJ3HwJ3KQJ3OAN3AwJ4BgJ4CgJ4DwJ4GAJ4HwJ4KQJ4OAN4
-            AwJ5BgJ5CgJ5DwJ5GAJ5HwJ5KQJ5OAN5AwJ6BgJ6CgJ6DwJ6GAJ6HwJ6KQJ6OAN6
-            AQImFgMmAQIqFgMqAQIsFgMsAQI7FgM7AQJYFgNYAQJaFgNaTAAATQAATwAAUQAA
-            AgImCQImFwImKAMmAgIqCQIqFwIqKAMqAgIsCQIsFwIsKAMsAgI7CQI7FwI7KAM7
-            AwImBgImCgImDwImGAImHwImKQImOAMmAwIqBgIqCgIqDwIqGAIqHwIqKQIqOAMq
-            AwIsBgIsCgIsDwIsGAIsHwIsKQIsOAMsAwI7BgI7CgI7DwI7GAI7HwI7KQI7OAM7
-            AgJYCQJYFwJYKANYAgJaCQJaFwJaKANaAAMhAAMiAAMoAAMpAAM/UAAAUgAAVAAA
-            AwJYBgJYCgJYDwJYGAJYHwJYKQJYOANYAwJaBgJaCgJaDwJaGAJaHwJaKQJaOANa
-            AQIhFgMhAQIiFgMiAQIoFgMoAQIpFgMpAQI/FgM/AAMnAAMrAAN8UwAAVQAAWAAA
-            AgIhCQIhFwIhKAMhAgIiCQIiFwIiKAMiAgIoCQIoFwIoKAMoAgIpCQIpFwIpKAMp
-            AwIhBgIhCgIhDwIhGAIhHwIhKQIhOAMhAwIiBgIiCgIiDwIiGAIiHwIiKQIiOAMi
-            AwIoBgIoCgIoDwIoGAIoHwIoKQIoOAMoAwIpBgIpCgIpDwIpGAIpHwIpKQIpOAMp
-            AgI/CQI/FwI/KAM/AQInFgMnAQIrFgMrAQJ8FgN8AAMjAAM+VgAAVwAAWQAAWgAA
-            AwI/BgI/CgI/DwI/GAI/HwI/KQI/OAM/AgInCQInFwInKAMnAgIrCQIrFwIrKAMr
-            AwInBgInCgInDwInGAInHwInKQInOAMnAwIrBgIrCgIrDwIrGAIrHwIrKQIrOAMr
-            AgJ8CQJ8FwJ8KAN8AQIjFgMjAQI+FgM+AAMAAAMkAANAAANbAANdAAN+WwAAXAAA
-            AwJ8BgJ8CgJ8DwJ8GAJ8HwJ8KQJ8OAN8AgIjCQIjFwIjKAMjAgI+CQI+FwI+KAM+
-            AwIjBgIjCgIjDwIjGAIjHwIjKQIjOAMjAwI+BgI+CgI+DwI+GAI+HwI+KQI+OAM+
-            AQIAFgMAAQIkFgMkAQJAFgNAAQJbFgNbAQJdFgNdAQJ+FgN+AANeAAN9XQAAXgAA
-            AgIACQIAFwIAKAMAAgIkCQIkFwIkKAMkAgJACQJAFwJAKANAAgJbCQJbFwJbKANb
-            AwIABgIACgIADwIAGAIAHwIAKQIAOAMAAwIkBgIkCgIkDwIkGAIkHwIkKQIkOAMk
-            AwJABgJACgJADwJAGAJAHwJAKQJAOANAAwJbBgJbCgJbDwJbGAJbHwJbKQJbOANb
-            AgJdCQJdFwJdKANdAgJ+CQJ+FwJ+KAN+AQJeFgNeAQJ9FgN9AAM8AANgAAN7XwAA
-            AwJdBgJdCgJdDwJdGAJdHwJdKQJdOANdAwJ+BgJ+CgJ+DwJ+GAJ+HwJ+KQJ+OAN+
-            AgJeCQJeFwJeKANeAgJ9CQJ9FwJ9KAN9AQI8FgM8AQJgFgNgAQJ7FgN7YAAAbgAA
-            AwJeBgJeCgJeDwJeGAJeHwJeKQJeOANeAwJ9BgJ9CgJ9DwJ9GAJ9HwJ9KQJ9OAN9
-            AgI8CQI8FwI8KAM8AgJgCQJgFwJgKANgAgJ7CQJ7FwJ7KAN7YQAAZQAAbwAAhQAA
-            AwI8BgI8CgI8DwI8GAI8HwI8KQI8OAM8AwJgBgJgCgJgDwJgGAJgHwJgKQJgOANg
-            AwJ7BgJ7CgJ7DwJ7GAJ7HwJ7KQJ7OAN7YgAAYwAAZgAAaQAAcAAAdwAAhgAAmQAA
-            AANcAAPDAAPQZAAAZwAAaAAAagAAawAAcQAAdAAAeAAAfgAAhwAAjgAAmgAAqQAA
-            AQJcFgNcAQLDFgPDAQLQFgPQAAOAAAOCAAODAAOiAAO4AAPCAAPgAAPibAAAbQAA
-            AgJcCQJcFwJcKANcAgLDCQLDFwLDKAPDAgLQCQLQFwLQKAPQAQKAFgOAAQKCFgOC
-            AwJcBgJcCgJcDwJcGAJcHwJcKQJcOANcAwLDBgLDCgLDDwLDGALDHwLDKQLDOAPD
-            AwLQBgLQCgLQDwLQGALQHwLQKQLQOAPQAgKACQKAFwKAKAOAAgKCCQKCFwKCKAOC
-            AwKABgKACgKADwKAGAKAHwKAKQKAOAOAAwKCBgKCCgKCDwKCGAKCHwKCKQKCOAOC
-            AQKDFgODAQKiFgOiAQK4FgO4AQLCFgPCAQLgFgPgAQLiFgPiAAOZAAOhAAOnAAOs
-            AgKDCQKDFwKDKAODAgKiCQKiFwKiKAOiAgK4CQK4FwK4KAO4AgLCCQLCFwLCKAPC
-            AwKDBgKDCgKDDwKDGAKDHwKDKQKDOAODAwKiBgKiCgKiDwKiGAKiHwKiKQKiOAOi
-            AwK4BgK4CgK4DwK4GAK4HwK4KQK4OAO4AwLCBgLCCgLCDwLCGALCHwLCKQLCOAPC
-            AgLgCQLgFwLgKAPgAgLiCQLiFwLiKAPiAQKZFgOZAQKhFgOhAQKnFgOnAQKsFgOs
-            AwLgBgLgCgLgDwLgGALgHwLgKQLgOAPgAwLiBgLiCgLiDwLiGALiHwLiKQLiOAPi
-            AgKZCQKZFwKZKAOZAgKhCQKhFwKhKAOhAgKnCQKnFwKnKAOnAgKsCQKsFwKsKAOs
-            AwKZBgKZCgKZDwKZGAKZHwKZKQKZOAOZAwKhBgKhCgKhDwKhGAKhHwKhKQKhOAOh
-            AwKnBgKnCgKnDwKnGAKnHwKnKQKnOAOnAwKsBgKsCgKsDwKsGAKsHwKsKQKsOAOs
-            cgAAcwAAdQAAdgAAeQAAewAAfwAAggAAiAAAiwAAjwAAkgAAmwAAogAAqgAAtAAA
-            AAOwAAOxAAOzAAPRAAPYAAPZAAPjAAPlAAPmegAAfAAAfQAAgAAAgQAAgwAAhAAA
-            AQKwFgOwAQKxFgOxAQKzFgOzAQLRFgPRAQLYFgPYAQLZFgPZAQLjFgPjAQLlFgPl
-            AgKwCQKwFwKwKAOwAgKxCQKxFwKxKAOxAgKzCQKzFwKzKAOzAgLRCQLRFwLRKAPR
-            AwKwBgKwCgKwDwKwGAKwHwKwKQKwOAOwAwKxBgKxCgKxDwKxGAKxHwKxKQKxOAOx
-            AwKzBgKzCgKzDwKzGAKzHwKzKQKzOAOzAwLRBgLRCgLRDwLRGALRHwLRKQLROAPR
-            AgLYCQLYFwLYKAPYAgLZCQLZFwLZKAPZAgLjCQLjFwLjKAPjAgLlCQLlFwLlKAPl
-            AwLYBgLYCgLYDwLYGALYHwLYKQLYOAPYAwLZBgLZCgLZDwLZGALZHwLZKQLZOAPZ
-            AwLjBgLjCgLjDwLjGALjHwLjKQLjOAPjAwLlBgLlCgLlDwLlGALlHwLlKQLlOAPl
-            AQLmFgPmAAOBAAOEAAOFAAOGAAOIAAOSAAOaAAOcAAOgAAOjAAOkAAOpAAOqAAOt
-            AgLmCQLmFwLmKAPmAQKBFgOBAQKEFgOEAQKFFgOFAQKGFgOGAQKIFgOIAQKSFgOS
-            AwLmBgLmCgLmDwLmGALmHwLmKQLmOAPmAgKBCQKBFwKBKAOBAgKECQKEFwKEKAOE
-            AwKBBgKBCgKBDwKBGAKBHwKBKQKBOAOBAwKEBgKECgKEDwKEGAKEHwKEKQKEOAOE
-            AgKFCQKFFwKFKAOFAgKGCQKGFwKGKAOGAgKICQKIFwKIKAOIAgKSCQKSFwKSKAOS
-            AwKFBgKFCgKFDwKFGAKFHwKFKQKFOAOFAwKGBgKGCgKGDwKGGAKGHwKGKQKGOAOG
-            AwKIBgKICgKIDwKIGAKIHwKIKQKIOAOIAwKSBgKSCgKSDwKSGAKSHwKSKQKSOAOS
-            AQKaFgOaAQKcFgOcAQKgFgOgAQKjFgOjAQKkFgOkAQKpFgOpAQKqFgOqAQKtFgOt
-            AgKaCQKaFwKaKAOaAgKcCQKcFwKcKAOcAgKgCQKgFwKgKAOgAgKjCQKjFwKjKAOj
-            AwKaBgKaCgKaDwKaGAKaHwKaKQKaOAOaAwKcBgKcCgKcDwKcGAKcHwKcKQKcOAOc
-            AwKgBgKgCgKgDwKgGAKgHwKgKQKgOAOgAwKjBgKjCgKjDwKjGAKjHwKjKQKjOAOj
-            AgKkCQKkFwKkKAOkAgKpCQKpFwKpKAOpAgKqCQKqFwKqKAOqAgKtCQKtFwKtKAOt
-            AwKkBgKkCgKkDwKkGAKkHwKkKQKkOAOkAwKpBgKpCgKpDwKpGAKpHwKpKQKpOAOp
-            AwKqBgKqCgKqDwKqGAKqHwKqKQKqOAOqAwKtBgKtCgKtDwKtGAKtHwKtKQKtOAOt
-            iQAAigAAjAAAjQAAkAAAkQAAkwAAlgAAnAAAnwAAowAApgAAqwAArgAAtQAAvgAA
-            AAOyAAO1AAO5AAO6AAO7AAO9AAO+AAPEAAPGAAPkAAPoAAPplAAAlQAAlwAAmAAA
-            AQKyFgOyAQK1FgO1AQK5FgO5AQK6FgO6AQK7FgO7AQK9FgO9AQK+FgO+AQLEFgPE
-            AgKyCQKyFwKyKAOyAgK1CQK1FwK1KAO1AgK5CQK5FwK5KAO5AgK6CQK6FwK6KAO6
-            AwKyBgKyCgKyDwKyGAKyHwKyKQKyOAOyAwK1BgK1CgK1DwK1GAK1HwK1KQK1OAO1
-            AwK5BgK5CgK5DwK5GAK5HwK5KQK5OAO5AwK6BgK6CgK6DwK6GAK6HwK6KQK6OAO6
-            AgK7CQK7FwK7KAO7AgK9CQK9FwK9KAO9AgK+CQK+FwK+KAO+AgLECQLEFwLEKAPE
-            AwK7BgK7CgK7DwK7GAK7HwK7KQK7OAO7AwK9BgK9CgK9DwK9GAK9HwK9KQK9OAO9
-            AwK+BgK+CgK+DwK+GAK+HwK+KQK+OAO+AwLEBgLECgLEDwLEGALEHwLEKQLEOAPE
-            AQLGFgPGAQLkFgPkAQLoFgPoAQLpFgPpAAMBAAOHAAOJAAOKAAOLAAOMAAONAAOP
-            AgLGCQLGFwLGKAPGAgLkCQLkFwLkKAPkAgLoCQLoFwLoKAPoAgLpCQLpFwLpKAPp
-            AwLGBgLGCgLGDwLGGALGHwLGKQLGOAPGAwLkBgLkCgLkDwLkGALkHwLkKQLkOAPk
-            AwLoBgLoCgLoDwLoGALoHwLoKQLoOAPoAwLpBgLpCgLpDwLpGALpHwLpKQLpOAPp
-            AQIBFgMBAQKHFgOHAQKJFgOJAQKKFgOKAQKLFgOLAQKMFgOMAQKNFgONAQKPFgOP
-            AgIBCQIBFwIBKAMBAgKHCQKHFwKHKAOHAgKJCQKJFwKJKAOJAgKKCQKKFwKKKAOK
-            AwIBBgIBCgIBDwIBGAIBHwIBKQIBOAMBAwKHBgKHCgKHDwKHGAKHHwKHKQKHOAOH
-            AwKJBgKJCgKJDwKJGAKJHwKJKQKJOAOJAwKKBgKKCgKKDwKKGAKKHwKKKQKKOAOK
-            AgKLCQKLFwKLKAOLAgKMCQKMFwKMKAOMAgKNCQKNFwKNKAONAgKPCQKPFwKPKAOP
-            AwKLBgKLCgKLDwKLGAKLHwKLKQKLOAOLAwKMBgKMCgKMDwKMGAKMHwKMKQKMOAOM
-            AwKNBgKNCgKNDwKNGAKNHwKNKQKNOAONAwKPBgKPCgKPDwKPGAKPHwKPKQKPOAOP
-            nQAAngAAoAAAoQAApAAApQAApwAAqAAArAAArQAArwAAsQAAtgAAuQAAvwAAzwAA
-            AAOTAAOVAAOWAAOXAAOYAAObAAOdAAOeAAOlAAOmAAOoAAOuAAOvAAO0AAO2AAO3
-            AQKTFgOTAQKVFgOVAQKWFgOWAQKXFgOXAQKYFgOYAQKbFgObAQKdFgOdAQKeFgOe
-            AgKTCQKTFwKTKAOTAgKVCQKVFwKVKAOVAgKWCQKWFwKWKAOWAgKXCQKXFwKXKAOX
-            AwKTBgKTCgKTDwKTGAKTHwKTKQKTOAOTAwKVBgKVCgKVDwKVGAKVHwKVKQKVOAOV
-            AwKWBgKWCgKWDwKWGAKWHwKWKQKWOAOWAwKXBgKXCgKXDwKXGAKXHwKXKQKXOAOX
-            AgKYCQKYFwKYKAOYAgKbCQKbFwKbKAObAgKdCQKdFwKdKAOdAgKeCQKeFwKeKAOe
-            AwKYBgKYCgKYDwKYGAKYHwKYKQKYOAOYAwKbBgKbCgKbDwKbGAKbHwKbKQKbOAOb
-            AwKdBgKdCgKdDwKdGAKdHwKdKQKdOAOdAwKeBgKeCgKeDwKeGAKeHwKeKQKeOAOe
-            AQKlFgOlAQKmFgOmAQKoFgOoAQKuFgOuAQKvFgOvAQK0FgO0AQK2FgO2AQK3FgO3
-            AgKlCQKlFwKlKAOlAgKmCQKmFwKmKAOmAgKoCQKoFwKoKAOoAgKuCQKuFwKuKAOu
-            AwKlBgKlCgKlDwKlGAKlHwKlKQKlOAOlAwKmBgKmCgKmDwKmGAKmHwKmKQKmOAOm
-            AwKoBgKoCgKoDwKoGAKoHwKoKQKoOAOoAwKuBgKuCgKuDwKuGAKuHwKuKQKuOAOu
-            AgKvCQKvFwKvKAOvAgK0CQK0FwK0KAO0AgK2CQK2FwK2KAO2AgK3CQK3FwK3KAO3
-            AwKvBgKvCgKvDwKvGAKvHwKvKQKvOAOvAwK0BgK0CgK0DwK0GAK0HwK0KQK0OAO0
-            AwK2BgK2CgK2DwK2GAK2HwK2KQK2OAO2AwK3BgK3CgK3DwK3GAK3HwK3KQK3OAO3
-            AAO8AAO/AAPFAAPnAAPvsAAAsgAAswAAtwAAuAAAugAAuwAAwAAAxwAA0AAA3wAA
-            AQK8FgO8AQK/FgO/AQLFFgPFAQLnFgPnAQLvFgPvAAMJAAOOAAOQAAORAAOUAAOf
-            AgK8CQK8FwK8KAO8AgK/CQK/FwK/KAO/AgLFCQLFFwLFKAPFAgLnCQLnFwLnKAPn
-            AwK8BgK8CgK8DwK8GAK8HwK8KQK8OAO8AwK/BgK/CgK/DwK/GAK/HwK/KQK/OAO/
-            AwLFBgLFCgLFDwLFGALFHwLFKQLFOAPFAwLnBgLnCgLnDwLnGALnHwLnKQLnOAPn
-            AgLvCQLvFwLvKAPvAQIJFgMJAQKOFgOOAQKQFgOQAQKRFgORAQKUFgOUAQKfFgOf
-            AwLvBgLvCgLvDwLvGALvHwLvKQLvOAPvAgIJCQIJFwIJKAMJAgKOCQKOFwKOKAOO
-            AwIJBgIJCgIJDwIJGAIJHwIJKQIJOAMJAwKOBgKOCgKODwKOGAKOHwKOKQKOOAOO
-            AgKQCQKQFwKQKAOQAgKRCQKRFwKRKAORAgKUCQKUFwKUKAOUAgKfCQKfFwKfKAOf
-            AwKQBgKQCgKQDwKQGAKQHwKQKQKQOAOQAwKRBgKRCgKRDwKRGAKRHwKRKQKROAOR
-            AwKUBgKUCgKUDwKUGAKUHwKUKQKUOAOUAwKfBgKfCgKfDwKfGAKfHwKfKQKfOAOf
-            AAOrAAPOAAPXAAPhAAPsAAPtvAAAvQAAwQAAxAAAyAAAywAA0QAA2AAA4AAA7gAA
-            AQKrFgOrAQLOFgPOAQLXFgPXAQLhFgPhAQLsFgPsAQLtFgPtAAPHAAPPAAPqAAPr
-            AgKrCQKrFwKrKAOrAgLOCQLOFwLOKAPOAgLXCQLXFwLXKAPXAgLhCQLhFwLhKAPh
-            AwKrBgKrCgKrDwKrGAKrHwKrKQKrOAOrAwLOBgLOCgLODwLOGALOHwLOKQLOOAPO
-            AwLXBgLXCgLXDwLXGALXHwLXKQLXOAPXAwLhBgLhCgLhDwLhGALhHwLhKQLhOAPh
-            AgLsCQLsFwLsKAPsAgLtCQLtFwLtKAPtAQLHFgPHAQLPFgPPAQLqFgPqAQLrFgPr
-            AwLsBgLsCgLsDwLsGALsHwLsKQLsOAPsAwLtBgLtCgLtDwLtGALtHwLtKQLtOAPt
-            AgLHCQLHFwLHKAPHAgLPCQLPFwLPKAPPAgLqCQLqFwLqKAPqAgLrCQLrFwLrKAPr
-            AwLHBgLHCgLHDwLHGALHHwLHKQLHOAPHAwLPBgLPCgLPDwLPGALPHwLPKQLPOAPP
-            AwLqBgLqCgLqDwLqGALqHwLqKQLqOAPqAwLrBgLrCgLrDwLrGALrHwLrKQLrOAPr
-            wgAAwwAAxQAAxgAAyQAAygAAzAAAzQAA0gAA1QAA2QAA3AAA4QAA5wAA7wAA9gAA
-            AAPAAAPBAAPIAAPJAAPKAAPNAAPSAAPVAAPaAAPbAAPuAAPwAAPyAAPzAAP/zgAA
-            AQLAFgPAAQLBFgPBAQLIFgPIAQLJFgPJAQLKFgPKAQLNFgPNAQLSFgPSAQLVFgPV
-            AgLACQLAFwLAKAPAAgLBCQLBFwLBKAPBAgLICQLIFwLIKAPIAgLJCQLJFwLJKAPJ
-            AwLABgLACgLADwLAGALAHwLAKQLAOAPAAwLBBgLBCgLBDwLBGALBHwLBKQLBOAPB
-            AwLIBgLICgLIDwLIGALIHwLIKQLIOAPIAwLJBgLJCgLJDwLJGALJHwLJKQLJOAPJ
-            AgLKCQLKFwLKKAPKAgLNCQLNFwLNKAPNAgLSCQLSFwLSKAPSAgLVCQLVFwLVKAPV
-            AwLKBgLKCgLKDwLKGALKHwLKKQLKOAPKAwLNBgLNCgLNDwLNGALNHwLNKQLNOAPN
-            AwLSBgLSCgLSDwLSGALSHwLSKQLSOAPSAwLVBgLVCgLVDwLVGALVHwLVKQLVOAPV
-            AQLaFgPaAQLbFgPbAQLuFgPuAQLwFgPwAQLyFgPyAQLzFgPzAQL/FgP/AAPLAAPM
-            AgLaCQLaFwLaKAPaAgLbCQLbFwLbKAPbAgLuCQLuFwLuKAPuAgLwCQLwFwLwKAPw
-            AwLaBgLaCgLaDwLaGALaHwLaKQLaOAPaAwLbBgLbCgLbDwLbGALbHwLbKQLbOAPb
-            AwLuBgLuCgLuDwLuGALuHwLuKQLuOAPuAwLwBgLwCgLwDwLwGALwHwLwKQLwOAPw
-            AgLyCQLyFwLyKAPyAgLzCQLzFwLzKAPzAgL/CQL/FwL/KAP/AQLLFgPLAQLMFgPM
-            AwLyBgLyCgLyDwLyGALyHwLyKQLyOAPyAwLzBgLzCgLzDwLzGALzHwLzKQLzOAPz
-            AwL/BgL/CgL/DwL/GAL/HwL/KQL/OAP/AgLLCQLLFwLLKAPLAgLMCQLMFwLMKAPM
-            AwLLBgLLCgLLDwLLGALLHwLLKQLLOAPLAwLMBgLMCgLMDwLMGALMHwLMKQLMOAPM
-            0wAA1AAA1gAA1wAA2gAA2wAA3QAA3gAA4gAA5AAA6AAA6wAA8AAA8wAA9wAA+gAA
-            AAPTAAPUAAPWAAPdAAPeAAPfAAPxAAP0AAP1AAP2AAP3AAP4AAP6AAP7AAP8AAP9
-            AQLTFgPTAQLUFgPUAQLWFgPWAQLdFgPdAQLeFgPeAQLfFgPfAQLxFgPxAQL0FgP0
-            AgLTCQLTFwLTKAPTAgLUCQLUFwLUKAPUAgLWCQLWFwLWKAPWAgLdCQLdFwLdKAPd
-            AwLTBgLTCgLTDwLTGALTHwLTKQLTOAPTAwLUBgLUCgLUDwLUGALUHwLUKQLUOAPU
-            AwLWBgLWCgLWDwLWGALWHwLWKQLWOAPWAwLdBgLdCgLdDwLdGALdHwLdKQLdOAPd
-            AgLeCQLeFwLeKAPeAgLfCQLfFwLfKAPfAgLxCQLxFwLxKAPxAgL0CQL0FwL0KAP0
-            AwLeBgLeCgLeDwLeGALeHwLeKQLeOAPeAwLfBgLfCgLfDwLfGALfHwLfKQLfOAPf
-            AwLxBgLxCgLxDwLxGALxHwLxKQLxOAPxAwL0BgL0CgL0DwL0GAL0HwL0KQL0OAP0
-            AQL1FgP1AQL2FgP2AQL3FgP3AQL4FgP4AQL6FgP6AQL7FgP7AQL8FgP8AQL9FgP9
-            AgL1CQL1FwL1KAP1AgL2CQL2FwL2KAP2AgL3CQL3FwL3KAP3AgL4CQL4FwL4KAP4
-            AwL1BgL1CgL1DwL1GAL1HwL1KQL1OAP1AwL2BgL2CgL2DwL2GAL2HwL2KQL2OAP2
-            AwL3BgL3CgL3DwL3GAL3HwL3KQL3OAP3AwL4BgL4CgL4DwL4GAL4HwL4KQL4OAP4
-            AgL6CQL6FwL6KAP6AgL7CQL7FwL7KAP7AgL8CQL8FwL8KAP8AgL9CQL9FwL9KAP9
-            AwL6BgL6CgL6DwL6GAL6HwL6KQL6OAP6AwL7BgL7CgL7DwL7GAL7HwL7KQL7OAP7
-            AwL8BgL8CgL8DwL8GAL8HwL8KQL8OAP8AwL9BgL9CgL9DwL9GAL9HwL9KQL9OAP9
-            AAP+4wAA5QAA5gAA6QAA6gAA7AAA7QAA8QAA8gAA9AAA9QAA+AAA+QAA+wAA/AAA
-            AQL+FgP+AAMCAAMDAAMEAAMFAAMGAAMHAAMIAAMLAAMMAAMOAAMPAAMQAAMRAAMS
-            AgL+CQL+FwL+KAP+AQICFgMCAQIDFgMDAQIEFgMEAQIFFgMFAQIGFgMGAQIHFgMH
-            AwL+BgL+CgL+DwL+GAL+HwL+KQL+OAP+AgICCQICFwICKAMCAgIDCQIDFwIDKAMD
-            AwICBgICCgICDwICGAICHwICKQICOAMCAwIDBgIDCgIDDwIDGAIDHwIDKQIDOAMD
-            AgIECQIEFwIEKAMEAgIFCQIFFwIFKAMFAgIGCQIGFwIGKAMGAgIHCQIHFwIHKAMH
-            AwIEBgIECgIEDwIEGAIEHwIEKQIEOAMEAwIFBgIFCgIFDwIFGAIFHwIFKQIFOAMF
-            AwIGBgIGCgIGDwIGGAIGHwIGKQIGOAMGAwIHBgIHCgIHDwIHGAIHHwIHKQIHOAMH
-            AQIIFgMIAQILFgMLAQIMFgMMAQIOFgMOAQIPFgMPAQIQFgMQAQIRFgMRAQISFgMS
-            AgIICQIIFwIIKAMIAgILCQILFwILKAMLAgIMCQIMFwIMKAMMAgIOCQIOFwIOKAMO
-            AwIIBgIICgIIDwIIGAIIHwIIKQIIOAMIAwILBgILCgILDwILGAILHwILKQILOAML
-            AwIMBgIMCgIMDwIMGAIMHwIMKQIMOAMMAwIOBgIOCgIODwIOGAIOHwIOKQIOOAMO
-            AgIPCQIPFwIPKAMPAgIQCQIQFwIQKAMQAgIRCQIRFwIRKAMRAgISCQISFwISKAMS
-            AwIPBgIPCgIPDwIPGAIPHwIPKQIPOAMPAwIQBgIQCgIQDwIQGAIQHwIQKQIQOAMQ
-            AwIRBgIRCgIRDwIRGAIRHwIRKQIROAMRAwISBgISCgISDwISGAISHwISKQISOAMS
-            AAMTAAMUAAMVAAMXAAMYAAMZAAMaAAMbAAMcAAMdAAMeAAMfAAN/AAPcAAP5/QAA
-            AQITFgMTAQIUFgMUAQIVFgMVAQIXFgMXAQIYFgMYAQIZFgMZAQIaFgMaAQIbFgMb
-            AgITCQITFwITKAMTAgIUCQIUFwIUKAMUAgIVCQIVFwIVKAMVAgIXCQIXFwIXKAMX
-            AwITBgITCgITDwITGAITHwITKQITOAMTAwIUBgIUCgIUDwIUGAIUHwIUKQIUOAMU
-            AwIVBgIVCgIVDwIVGAIVHwIVKQIVOAMVAwIXBgIXCgIXDwIXGAIXHwIXKQIXOAMX
-            AgIYCQIYFwIYKAMYAgIZCQIZFwIZKAMZAgIaCQIaFwIaKAMaAgIbCQIbFwIbKAMb
-            AwIYBgIYCgIYDwIYGAIYHwIYKQIYOAMYAwIZBgIZCgIZDwIZGAIZHwIZKQIZOAMZ
-            AwIaBgIaCgIaDwIaGAIaHwIaKQIaOAMaAwIbBgIbCgIbDwIbGAIbHwIbKQIbOAMb
-            AQIcFgMcAQIdFgMdAQIeFgMeAQIfFgMfAQJ/FgN/AQLcFgPcAQL5FgP5/gAA/wAA
-            AgIcCQIcFwIcKAMcAgIdCQIdFwIdKAMdAgIeCQIeFwIeKAMeAgIfCQIfFwIfKAMf
-            AwIcBgIcCgIcDwIcGAIcHwIcKQIcOAMcAwIdBgIdCgIdDwIdGAIdHwIdKQIdOAMd
-            AwIeBgIeCgIeDwIeGAIeHwIeKQIeOAMeAwIfBgIfCgIfDwIfGAIfHwIfKQIfOAMf
-            AgJ/CQJ/FwJ/KAN/AgLcCQLcFwLcKAPcAgL5CQL5FwL5KAP5AAMKAAMNAAMWAAQA
-            AwJ/BgJ/CgJ/DwJ/GAJ/HwJ/KQJ/OAN/AwLcBgLcCgLcDwLcGALcHwLcKQLcOAPc
-            AwL5BgL5CgL5DwL5GAL5HwL5KQL5OAP5AQIKFgMKAQINFgMNAQIWFgMWAAQAAAQA
-            AgIKCQIKFwIKKAMKAgINCQINFwINKAMNAgIWCQIWFwIWKAMWAAQAAAQAAAQAAAQA
-            AwIKBgIKCgIKDwIKGAIKHwIKKQIKOAMKAwINBgINCgINDwINGAINHwINKQINOAMN
-            AwIWBgIWCgIWDwIWGAIWHwIWKQIWOAMWAAQAAAQAAAQAAAQAAAQAAAQAAAQAAAQA
-            """
-        return base64_table_bytes.withUTF8Buffer { buf in
-            // ignore newlines in the input
-            guard let result = base64DecodeBytes(buf, ignoreUnknownCharacters: true) else {
-                fatalError("Failed to decode huffman decoder table from base-64 encoding")
-            }
-            return result.withUnsafeBytes { ptr in
-                assert(ptr.count % 3 == 0)
-                let dptr = ptr.baseAddress!.assumingMemoryBound(to: HuffmanDecodeEntry.self)
-                let dbuf = UnsafeBufferPointer(start: dptr, count: ptr.count / 3)
-                return Array(dbuf)
-            }
-        }
-    }()
+    /// The state machine, as 256 nodes of 16 entries each.
+    ///
+    /// Each entry is one packed word, written `0xSS_FF_TT` — symbol, flags,
+    /// target state — matching the layout ``HuffmanDecodeEntry`` unpacks.
+    ///
+    /// Written out as integer literals rather than decoded from a base64 string
+    /// at first use: the compiler emits this straight into read-only data, so
+    /// there is no lazy initialiser, no heap allocation, and no decode on the
+    /// first request. Note that the literals must stay a plain builtin integer
+    /// type — spelling them as struct or tuple literals makes this file take
+    /// tens of seconds to type-check.
+    private static let rawTable: InlineArray<4096, UInt32> = [
+        // 0
+        0x00_00_04, 0x00_00_05, 0x00_00_07, 0x00_00_08, 0x00_00_0b, 0x00_00_0c, 0x00_00_10, 0x00_00_13,
+        0x00_00_19, 0x00_00_1c, 0x00_00_20, 0x00_00_23, 0x00_00_2a, 0x00_00_31, 0x00_00_39, 0x00_01_40,
+        // 1
+        0x30_03_00, 0x31_03_00, 0x32_03_00, 0x61_03_00, 0x63_03_00, 0x65_03_00, 0x69_03_00, 0x6f_03_00,
+        0x73_03_00, 0x74_03_00, 0x00_00_0d, 0x00_00_0e, 0x00_00_11, 0x00_00_12, 0x00_00_14, 0x00_00_15,
+        // 2
+        0x30_02_01, 0x30_03_16, 0x31_02_01, 0x31_03_16, 0x32_02_01, 0x32_03_16, 0x61_02_01, 0x61_03_16,
+        0x63_02_01, 0x63_03_16, 0x65_02_01, 0x65_03_16, 0x69_02_01, 0x69_03_16, 0x6f_02_01, 0x6f_03_16,
+        // 3
+        0x30_02_02, 0x30_02_09, 0x30_02_17, 0x30_03_28, 0x31_02_02, 0x31_02_09, 0x31_02_17, 0x31_03_28,
+        0x32_02_02, 0x32_02_09, 0x32_02_17, 0x32_03_28, 0x61_02_02, 0x61_02_09, 0x61_02_17, 0x61_03_28,
+        // 4
+        0x30_02_03, 0x30_02_06, 0x30_02_0a, 0x30_02_0f, 0x30_02_18, 0x30_02_1f, 0x30_02_29, 0x30_03_38,
+        0x31_02_03, 0x31_02_06, 0x31_02_0a, 0x31_02_0f, 0x31_02_18, 0x31_02_1f, 0x31_02_29, 0x31_03_38,
+        // 5
+        0x32_02_03, 0x32_02_06, 0x32_02_0a, 0x32_02_0f, 0x32_02_18, 0x32_02_1f, 0x32_02_29, 0x32_03_38,
+        0x61_02_03, 0x61_02_06, 0x61_02_0a, 0x61_02_0f, 0x61_02_18, 0x61_02_1f, 0x61_02_29, 0x61_03_38,
+        // 6
+        0x63_02_02, 0x63_02_09, 0x63_02_17, 0x63_03_28, 0x65_02_02, 0x65_02_09, 0x65_02_17, 0x65_03_28,
+        0x69_02_02, 0x69_02_09, 0x69_02_17, 0x69_03_28, 0x6f_02_02, 0x6f_02_09, 0x6f_02_17, 0x6f_03_28,
+        // 7
+        0x63_02_03, 0x63_02_06, 0x63_02_0a, 0x63_02_0f, 0x63_02_18, 0x63_02_1f, 0x63_02_29, 0x63_03_38,
+        0x65_02_03, 0x65_02_06, 0x65_02_0a, 0x65_02_0f, 0x65_02_18, 0x65_02_1f, 0x65_02_29, 0x65_03_38,
+        // 8
+        0x69_02_03, 0x69_02_06, 0x69_02_0a, 0x69_02_0f, 0x69_02_18, 0x69_02_1f, 0x69_02_29, 0x69_03_38,
+        0x6f_02_03, 0x6f_02_06, 0x6f_02_0a, 0x6f_02_0f, 0x6f_02_18, 0x6f_02_1f, 0x6f_02_29, 0x6f_03_38,
+        // 9
+        0x73_02_01, 0x73_03_16, 0x74_02_01, 0x74_03_16, 0x20_03_00, 0x25_03_00, 0x2d_03_00, 0x2e_03_00,
+        0x2f_03_00, 0x33_03_00, 0x34_03_00, 0x35_03_00, 0x36_03_00, 0x37_03_00, 0x38_03_00, 0x39_03_00,
+        // 10
+        0x73_02_02, 0x73_02_09, 0x73_02_17, 0x73_03_28, 0x74_02_02, 0x74_02_09, 0x74_02_17, 0x74_03_28,
+        0x20_02_01, 0x20_03_16, 0x25_02_01, 0x25_03_16, 0x2d_02_01, 0x2d_03_16, 0x2e_02_01, 0x2e_03_16,
+        // 11
+        0x73_02_03, 0x73_02_06, 0x73_02_0a, 0x73_02_0f, 0x73_02_18, 0x73_02_1f, 0x73_02_29, 0x73_03_38,
+        0x74_02_03, 0x74_02_06, 0x74_02_0a, 0x74_02_0f, 0x74_02_18, 0x74_02_1f, 0x74_02_29, 0x74_03_38,
+        // 12
+        0x20_02_02, 0x20_02_09, 0x20_02_17, 0x20_03_28, 0x25_02_02, 0x25_02_09, 0x25_02_17, 0x25_03_28,
+        0x2d_02_02, 0x2d_02_09, 0x2d_02_17, 0x2d_03_28, 0x2e_02_02, 0x2e_02_09, 0x2e_02_17, 0x2e_03_28,
+        // 13
+        0x20_02_03, 0x20_02_06, 0x20_02_0a, 0x20_02_0f, 0x20_02_18, 0x20_02_1f, 0x20_02_29, 0x20_03_38,
+        0x25_02_03, 0x25_02_06, 0x25_02_0a, 0x25_02_0f, 0x25_02_18, 0x25_02_1f, 0x25_02_29, 0x25_03_38,
+        // 14
+        0x2d_02_03, 0x2d_02_06, 0x2d_02_0a, 0x2d_02_0f, 0x2d_02_18, 0x2d_02_1f, 0x2d_02_29, 0x2d_03_38,
+        0x2e_02_03, 0x2e_02_06, 0x2e_02_0a, 0x2e_02_0f, 0x2e_02_18, 0x2e_02_1f, 0x2e_02_29, 0x2e_03_38,
+        // 15
+        0x2f_02_01, 0x2f_03_16, 0x33_02_01, 0x33_03_16, 0x34_02_01, 0x34_03_16, 0x35_02_01, 0x35_03_16,
+        0x36_02_01, 0x36_03_16, 0x37_02_01, 0x37_03_16, 0x38_02_01, 0x38_03_16, 0x39_02_01, 0x39_03_16,
+        // 16
+        0x2f_02_02, 0x2f_02_09, 0x2f_02_17, 0x2f_03_28, 0x33_02_02, 0x33_02_09, 0x33_02_17, 0x33_03_28,
+        0x34_02_02, 0x34_02_09, 0x34_02_17, 0x34_03_28, 0x35_02_02, 0x35_02_09, 0x35_02_17, 0x35_03_28,
+        // 17
+        0x2f_02_03, 0x2f_02_06, 0x2f_02_0a, 0x2f_02_0f, 0x2f_02_18, 0x2f_02_1f, 0x2f_02_29, 0x2f_03_38,
+        0x33_02_03, 0x33_02_06, 0x33_02_0a, 0x33_02_0f, 0x33_02_18, 0x33_02_1f, 0x33_02_29, 0x33_03_38,
+        // 18
+        0x34_02_03, 0x34_02_06, 0x34_02_0a, 0x34_02_0f, 0x34_02_18, 0x34_02_1f, 0x34_02_29, 0x34_03_38,
+        0x35_02_03, 0x35_02_06, 0x35_02_0a, 0x35_02_0f, 0x35_02_18, 0x35_02_1f, 0x35_02_29, 0x35_03_38,
+        // 19
+        0x36_02_02, 0x36_02_09, 0x36_02_17, 0x36_03_28, 0x37_02_02, 0x37_02_09, 0x37_02_17, 0x37_03_28,
+        0x38_02_02, 0x38_02_09, 0x38_02_17, 0x38_03_28, 0x39_02_02, 0x39_02_09, 0x39_02_17, 0x39_03_28,
+        // 20
+        0x36_02_03, 0x36_02_06, 0x36_02_0a, 0x36_02_0f, 0x36_02_18, 0x36_02_1f, 0x36_02_29, 0x36_03_38,
+        0x37_02_03, 0x37_02_06, 0x37_02_0a, 0x37_02_0f, 0x37_02_18, 0x37_02_1f, 0x37_02_29, 0x37_03_38,
+        // 21
+        0x38_02_03, 0x38_02_06, 0x38_02_0a, 0x38_02_0f, 0x38_02_18, 0x38_02_1f, 0x38_02_29, 0x38_03_38,
+        0x39_02_03, 0x39_02_06, 0x39_02_0a, 0x39_02_0f, 0x39_02_18, 0x39_02_1f, 0x39_02_29, 0x39_03_38,
+        // 22
+        0x00_00_1a, 0x00_00_1b, 0x00_00_1d, 0x00_00_1e, 0x00_00_21, 0x00_00_22, 0x00_00_24, 0x00_00_25,
+        0x00_00_2b, 0x00_00_2e, 0x00_00_32, 0x00_00_35, 0x00_00_3a, 0x00_00_3d, 0x00_00_41, 0x00_01_44,
+        // 23
+        0x3d_03_00, 0x41_03_00, 0x5f_03_00, 0x62_03_00, 0x64_03_00, 0x66_03_00, 0x67_03_00, 0x68_03_00,
+        0x6c_03_00, 0x6d_03_00, 0x6e_03_00, 0x70_03_00, 0x72_03_00, 0x75_03_00, 0x00_00_26, 0x00_00_27,
+        // 24
+        0x3d_02_01, 0x3d_03_16, 0x41_02_01, 0x41_03_16, 0x5f_02_01, 0x5f_03_16, 0x62_02_01, 0x62_03_16,
+        0x64_02_01, 0x64_03_16, 0x66_02_01, 0x66_03_16, 0x67_02_01, 0x67_03_16, 0x68_02_01, 0x68_03_16,
+        // 25
+        0x3d_02_02, 0x3d_02_09, 0x3d_02_17, 0x3d_03_28, 0x41_02_02, 0x41_02_09, 0x41_02_17, 0x41_03_28,
+        0x5f_02_02, 0x5f_02_09, 0x5f_02_17, 0x5f_03_28, 0x62_02_02, 0x62_02_09, 0x62_02_17, 0x62_03_28,
+        // 26
+        0x3d_02_03, 0x3d_02_06, 0x3d_02_0a, 0x3d_02_0f, 0x3d_02_18, 0x3d_02_1f, 0x3d_02_29, 0x3d_03_38,
+        0x41_02_03, 0x41_02_06, 0x41_02_0a, 0x41_02_0f, 0x41_02_18, 0x41_02_1f, 0x41_02_29, 0x41_03_38,
+        // 27
+        0x5f_02_03, 0x5f_02_06, 0x5f_02_0a, 0x5f_02_0f, 0x5f_02_18, 0x5f_02_1f, 0x5f_02_29, 0x5f_03_38,
+        0x62_02_03, 0x62_02_06, 0x62_02_0a, 0x62_02_0f, 0x62_02_18, 0x62_02_1f, 0x62_02_29, 0x62_03_38,
+        // 28
+        0x64_02_02, 0x64_02_09, 0x64_02_17, 0x64_03_28, 0x66_02_02, 0x66_02_09, 0x66_02_17, 0x66_03_28,
+        0x67_02_02, 0x67_02_09, 0x67_02_17, 0x67_03_28, 0x68_02_02, 0x68_02_09, 0x68_02_17, 0x68_03_28,
+        // 29
+        0x64_02_03, 0x64_02_06, 0x64_02_0a, 0x64_02_0f, 0x64_02_18, 0x64_02_1f, 0x64_02_29, 0x64_03_38,
+        0x66_02_03, 0x66_02_06, 0x66_02_0a, 0x66_02_0f, 0x66_02_18, 0x66_02_1f, 0x66_02_29, 0x66_03_38,
+        // 30
+        0x67_02_03, 0x67_02_06, 0x67_02_0a, 0x67_02_0f, 0x67_02_18, 0x67_02_1f, 0x67_02_29, 0x67_03_38,
+        0x68_02_03, 0x68_02_06, 0x68_02_0a, 0x68_02_0f, 0x68_02_18, 0x68_02_1f, 0x68_02_29, 0x68_03_38,
+        // 31
+        0x6c_02_01, 0x6c_03_16, 0x6d_02_01, 0x6d_03_16, 0x6e_02_01, 0x6e_03_16, 0x70_02_01, 0x70_03_16,
+        0x72_02_01, 0x72_03_16, 0x75_02_01, 0x75_03_16, 0x3a_03_00, 0x42_03_00, 0x43_03_00, 0x44_03_00,
+        // 32
+        0x6c_02_02, 0x6c_02_09, 0x6c_02_17, 0x6c_03_28, 0x6d_02_02, 0x6d_02_09, 0x6d_02_17, 0x6d_03_28,
+        0x6e_02_02, 0x6e_02_09, 0x6e_02_17, 0x6e_03_28, 0x70_02_02, 0x70_02_09, 0x70_02_17, 0x70_03_28,
+        // 33
+        0x6c_02_03, 0x6c_02_06, 0x6c_02_0a, 0x6c_02_0f, 0x6c_02_18, 0x6c_02_1f, 0x6c_02_29, 0x6c_03_38,
+        0x6d_02_03, 0x6d_02_06, 0x6d_02_0a, 0x6d_02_0f, 0x6d_02_18, 0x6d_02_1f, 0x6d_02_29, 0x6d_03_38,
+        // 34
+        0x6e_02_03, 0x6e_02_06, 0x6e_02_0a, 0x6e_02_0f, 0x6e_02_18, 0x6e_02_1f, 0x6e_02_29, 0x6e_03_38,
+        0x70_02_03, 0x70_02_06, 0x70_02_0a, 0x70_02_0f, 0x70_02_18, 0x70_02_1f, 0x70_02_29, 0x70_03_38,
+        // 35
+        0x72_02_02, 0x72_02_09, 0x72_02_17, 0x72_03_28, 0x75_02_02, 0x75_02_09, 0x75_02_17, 0x75_03_28,
+        0x3a_02_01, 0x3a_03_16, 0x42_02_01, 0x42_03_16, 0x43_02_01, 0x43_03_16, 0x44_02_01, 0x44_03_16,
+        // 36
+        0x72_02_03, 0x72_02_06, 0x72_02_0a, 0x72_02_0f, 0x72_02_18, 0x72_02_1f, 0x72_02_29, 0x72_03_38,
+        0x75_02_03, 0x75_02_06, 0x75_02_0a, 0x75_02_0f, 0x75_02_18, 0x75_02_1f, 0x75_02_29, 0x75_03_38,
+        // 37
+        0x3a_02_02, 0x3a_02_09, 0x3a_02_17, 0x3a_03_28, 0x42_02_02, 0x42_02_09, 0x42_02_17, 0x42_03_28,
+        0x43_02_02, 0x43_02_09, 0x43_02_17, 0x43_03_28, 0x44_02_02, 0x44_02_09, 0x44_02_17, 0x44_03_28,
+        // 38
+        0x3a_02_03, 0x3a_02_06, 0x3a_02_0a, 0x3a_02_0f, 0x3a_02_18, 0x3a_02_1f, 0x3a_02_29, 0x3a_03_38,
+        0x42_02_03, 0x42_02_06, 0x42_02_0a, 0x42_02_0f, 0x42_02_18, 0x42_02_1f, 0x42_02_29, 0x42_03_38,
+        // 39
+        0x43_02_03, 0x43_02_06, 0x43_02_0a, 0x43_02_0f, 0x43_02_18, 0x43_02_1f, 0x43_02_29, 0x43_03_38,
+        0x44_02_03, 0x44_02_06, 0x44_02_0a, 0x44_02_0f, 0x44_02_18, 0x44_02_1f, 0x44_02_29, 0x44_03_38,
+        // 40
+        0x00_00_2c, 0x00_00_2d, 0x00_00_2f, 0x00_00_30, 0x00_00_33, 0x00_00_34, 0x00_00_36, 0x00_00_37,
+        0x00_00_3b, 0x00_00_3c, 0x00_00_3e, 0x00_00_3f, 0x00_00_42, 0x00_00_43, 0x00_00_45, 0x00_01_48,
+        // 41
+        0x45_03_00, 0x46_03_00, 0x47_03_00, 0x48_03_00, 0x49_03_00, 0x4a_03_00, 0x4b_03_00, 0x4c_03_00,
+        0x4d_03_00, 0x4e_03_00, 0x4f_03_00, 0x50_03_00, 0x51_03_00, 0x52_03_00, 0x53_03_00, 0x54_03_00,
+        // 42
+        0x45_02_01, 0x45_03_16, 0x46_02_01, 0x46_03_16, 0x47_02_01, 0x47_03_16, 0x48_02_01, 0x48_03_16,
+        0x49_02_01, 0x49_03_16, 0x4a_02_01, 0x4a_03_16, 0x4b_02_01, 0x4b_03_16, 0x4c_02_01, 0x4c_03_16,
+        // 43
+        0x45_02_02, 0x45_02_09, 0x45_02_17, 0x45_03_28, 0x46_02_02, 0x46_02_09, 0x46_02_17, 0x46_03_28,
+        0x47_02_02, 0x47_02_09, 0x47_02_17, 0x47_03_28, 0x48_02_02, 0x48_02_09, 0x48_02_17, 0x48_03_28,
+        // 44
+        0x45_02_03, 0x45_02_06, 0x45_02_0a, 0x45_02_0f, 0x45_02_18, 0x45_02_1f, 0x45_02_29, 0x45_03_38,
+        0x46_02_03, 0x46_02_06, 0x46_02_0a, 0x46_02_0f, 0x46_02_18, 0x46_02_1f, 0x46_02_29, 0x46_03_38,
+        // 45
+        0x47_02_03, 0x47_02_06, 0x47_02_0a, 0x47_02_0f, 0x47_02_18, 0x47_02_1f, 0x47_02_29, 0x47_03_38,
+        0x48_02_03, 0x48_02_06, 0x48_02_0a, 0x48_02_0f, 0x48_02_18, 0x48_02_1f, 0x48_02_29, 0x48_03_38,
+        // 46
+        0x49_02_02, 0x49_02_09, 0x49_02_17, 0x49_03_28, 0x4a_02_02, 0x4a_02_09, 0x4a_02_17, 0x4a_03_28,
+        0x4b_02_02, 0x4b_02_09, 0x4b_02_17, 0x4b_03_28, 0x4c_02_02, 0x4c_02_09, 0x4c_02_17, 0x4c_03_28,
+        // 47
+        0x49_02_03, 0x49_02_06, 0x49_02_0a, 0x49_02_0f, 0x49_02_18, 0x49_02_1f, 0x49_02_29, 0x49_03_38,
+        0x4a_02_03, 0x4a_02_06, 0x4a_02_0a, 0x4a_02_0f, 0x4a_02_18, 0x4a_02_1f, 0x4a_02_29, 0x4a_03_38,
+        // 48
+        0x4b_02_03, 0x4b_02_06, 0x4b_02_0a, 0x4b_02_0f, 0x4b_02_18, 0x4b_02_1f, 0x4b_02_29, 0x4b_03_38,
+        0x4c_02_03, 0x4c_02_06, 0x4c_02_0a, 0x4c_02_0f, 0x4c_02_18, 0x4c_02_1f, 0x4c_02_29, 0x4c_03_38,
+        // 49
+        0x4d_02_01, 0x4d_03_16, 0x4e_02_01, 0x4e_03_16, 0x4f_02_01, 0x4f_03_16, 0x50_02_01, 0x50_03_16,
+        0x51_02_01, 0x51_03_16, 0x52_02_01, 0x52_03_16, 0x53_02_01, 0x53_03_16, 0x54_02_01, 0x54_03_16,
+        // 50
+        0x4d_02_02, 0x4d_02_09, 0x4d_02_17, 0x4d_03_28, 0x4e_02_02, 0x4e_02_09, 0x4e_02_17, 0x4e_03_28,
+        0x4f_02_02, 0x4f_02_09, 0x4f_02_17, 0x4f_03_28, 0x50_02_02, 0x50_02_09, 0x50_02_17, 0x50_03_28,
+        // 51
+        0x4d_02_03, 0x4d_02_06, 0x4d_02_0a, 0x4d_02_0f, 0x4d_02_18, 0x4d_02_1f, 0x4d_02_29, 0x4d_03_38,
+        0x4e_02_03, 0x4e_02_06, 0x4e_02_0a, 0x4e_02_0f, 0x4e_02_18, 0x4e_02_1f, 0x4e_02_29, 0x4e_03_38,
+        // 52
+        0x4f_02_03, 0x4f_02_06, 0x4f_02_0a, 0x4f_02_0f, 0x4f_02_18, 0x4f_02_1f, 0x4f_02_29, 0x4f_03_38,
+        0x50_02_03, 0x50_02_06, 0x50_02_0a, 0x50_02_0f, 0x50_02_18, 0x50_02_1f, 0x50_02_29, 0x50_03_38,
+        // 53
+        0x51_02_02, 0x51_02_09, 0x51_02_17, 0x51_03_28, 0x52_02_02, 0x52_02_09, 0x52_02_17, 0x52_03_28,
+        0x53_02_02, 0x53_02_09, 0x53_02_17, 0x53_03_28, 0x54_02_02, 0x54_02_09, 0x54_02_17, 0x54_03_28,
+        // 54
+        0x51_02_03, 0x51_02_06, 0x51_02_0a, 0x51_02_0f, 0x51_02_18, 0x51_02_1f, 0x51_02_29, 0x51_03_38,
+        0x52_02_03, 0x52_02_06, 0x52_02_0a, 0x52_02_0f, 0x52_02_18, 0x52_02_1f, 0x52_02_29, 0x52_03_38,
+        // 55
+        0x53_02_03, 0x53_02_06, 0x53_02_0a, 0x53_02_0f, 0x53_02_18, 0x53_02_1f, 0x53_02_29, 0x53_03_38,
+        0x54_02_03, 0x54_02_06, 0x54_02_0a, 0x54_02_0f, 0x54_02_18, 0x54_02_1f, 0x54_02_29, 0x54_03_38,
+        // 56
+        0x55_03_00, 0x56_03_00, 0x57_03_00, 0x59_03_00, 0x6a_03_00, 0x6b_03_00, 0x71_03_00, 0x76_03_00,
+        0x77_03_00, 0x78_03_00, 0x79_03_00, 0x7a_03_00, 0x00_00_46, 0x00_00_47, 0x00_00_49, 0x00_01_4a,
+        // 57
+        0x55_02_01, 0x55_03_16, 0x56_02_01, 0x56_03_16, 0x57_02_01, 0x57_03_16, 0x59_02_01, 0x59_03_16,
+        0x6a_02_01, 0x6a_03_16, 0x6b_02_01, 0x6b_03_16, 0x71_02_01, 0x71_03_16, 0x76_02_01, 0x76_03_16,
+        // 58
+        0x55_02_02, 0x55_02_09, 0x55_02_17, 0x55_03_28, 0x56_02_02, 0x56_02_09, 0x56_02_17, 0x56_03_28,
+        0x57_02_02, 0x57_02_09, 0x57_02_17, 0x57_03_28, 0x59_02_02, 0x59_02_09, 0x59_02_17, 0x59_03_28,
+        // 59
+        0x55_02_03, 0x55_02_06, 0x55_02_0a, 0x55_02_0f, 0x55_02_18, 0x55_02_1f, 0x55_02_29, 0x55_03_38,
+        0x56_02_03, 0x56_02_06, 0x56_02_0a, 0x56_02_0f, 0x56_02_18, 0x56_02_1f, 0x56_02_29, 0x56_03_38,
+        // 60
+        0x57_02_03, 0x57_02_06, 0x57_02_0a, 0x57_02_0f, 0x57_02_18, 0x57_02_1f, 0x57_02_29, 0x57_03_38,
+        0x59_02_03, 0x59_02_06, 0x59_02_0a, 0x59_02_0f, 0x59_02_18, 0x59_02_1f, 0x59_02_29, 0x59_03_38,
+        // 61
+        0x6a_02_02, 0x6a_02_09, 0x6a_02_17, 0x6a_03_28, 0x6b_02_02, 0x6b_02_09, 0x6b_02_17, 0x6b_03_28,
+        0x71_02_02, 0x71_02_09, 0x71_02_17, 0x71_03_28, 0x76_02_02, 0x76_02_09, 0x76_02_17, 0x76_03_28,
+        // 62
+        0x6a_02_03, 0x6a_02_06, 0x6a_02_0a, 0x6a_02_0f, 0x6a_02_18, 0x6a_02_1f, 0x6a_02_29, 0x6a_03_38,
+        0x6b_02_03, 0x6b_02_06, 0x6b_02_0a, 0x6b_02_0f, 0x6b_02_18, 0x6b_02_1f, 0x6b_02_29, 0x6b_03_38,
+        // 63
+        0x71_02_03, 0x71_02_06, 0x71_02_0a, 0x71_02_0f, 0x71_02_18, 0x71_02_1f, 0x71_02_29, 0x71_03_38,
+        0x76_02_03, 0x76_02_06, 0x76_02_0a, 0x76_02_0f, 0x76_02_18, 0x76_02_1f, 0x76_02_29, 0x76_03_38,
+        // 64
+        0x77_02_01, 0x77_03_16, 0x78_02_01, 0x78_03_16, 0x79_02_01, 0x79_03_16, 0x7a_02_01, 0x7a_03_16,
+        0x26_03_00, 0x2a_03_00, 0x2c_03_00, 0x3b_03_00, 0x58_03_00, 0x5a_03_00, 0x00_00_4b, 0x00_00_4e,
+        // 65
+        0x77_02_02, 0x77_02_09, 0x77_02_17, 0x77_03_28, 0x78_02_02, 0x78_02_09, 0x78_02_17, 0x78_03_28,
+        0x79_02_02, 0x79_02_09, 0x79_02_17, 0x79_03_28, 0x7a_02_02, 0x7a_02_09, 0x7a_02_17, 0x7a_03_28,
+        // 66
+        0x77_02_03, 0x77_02_06, 0x77_02_0a, 0x77_02_0f, 0x77_02_18, 0x77_02_1f, 0x77_02_29, 0x77_03_38,
+        0x78_02_03, 0x78_02_06, 0x78_02_0a, 0x78_02_0f, 0x78_02_18, 0x78_02_1f, 0x78_02_29, 0x78_03_38,
+        // 67
+        0x79_02_03, 0x79_02_06, 0x79_02_0a, 0x79_02_0f, 0x79_02_18, 0x79_02_1f, 0x79_02_29, 0x79_03_38,
+        0x7a_02_03, 0x7a_02_06, 0x7a_02_0a, 0x7a_02_0f, 0x7a_02_18, 0x7a_02_1f, 0x7a_02_29, 0x7a_03_38,
+        // 68
+        0x26_02_01, 0x26_03_16, 0x2a_02_01, 0x2a_03_16, 0x2c_02_01, 0x2c_03_16, 0x3b_02_01, 0x3b_03_16,
+        0x58_02_01, 0x58_03_16, 0x5a_02_01, 0x5a_03_16, 0x00_00_4c, 0x00_00_4d, 0x00_00_4f, 0x00_00_51,
+        // 69
+        0x26_02_02, 0x26_02_09, 0x26_02_17, 0x26_03_28, 0x2a_02_02, 0x2a_02_09, 0x2a_02_17, 0x2a_03_28,
+        0x2c_02_02, 0x2c_02_09, 0x2c_02_17, 0x2c_03_28, 0x3b_02_02, 0x3b_02_09, 0x3b_02_17, 0x3b_03_28,
+        // 70
+        0x26_02_03, 0x26_02_06, 0x26_02_0a, 0x26_02_0f, 0x26_02_18, 0x26_02_1f, 0x26_02_29, 0x26_03_38,
+        0x2a_02_03, 0x2a_02_06, 0x2a_02_0a, 0x2a_02_0f, 0x2a_02_18, 0x2a_02_1f, 0x2a_02_29, 0x2a_03_38,
+        // 71
+        0x2c_02_03, 0x2c_02_06, 0x2c_02_0a, 0x2c_02_0f, 0x2c_02_18, 0x2c_02_1f, 0x2c_02_29, 0x2c_03_38,
+        0x3b_02_03, 0x3b_02_06, 0x3b_02_0a, 0x3b_02_0f, 0x3b_02_18, 0x3b_02_1f, 0x3b_02_29, 0x3b_03_38,
+        // 72
+        0x58_02_02, 0x58_02_09, 0x58_02_17, 0x58_03_28, 0x5a_02_02, 0x5a_02_09, 0x5a_02_17, 0x5a_03_28,
+        0x21_03_00, 0x22_03_00, 0x28_03_00, 0x29_03_00, 0x3f_03_00, 0x00_00_50, 0x00_00_52, 0x00_00_54,
+        // 73
+        0x58_02_03, 0x58_02_06, 0x58_02_0a, 0x58_02_0f, 0x58_02_18, 0x58_02_1f, 0x58_02_29, 0x58_03_38,
+        0x5a_02_03, 0x5a_02_06, 0x5a_02_0a, 0x5a_02_0f, 0x5a_02_18, 0x5a_02_1f, 0x5a_02_29, 0x5a_03_38,
+        // 74
+        0x21_02_01, 0x21_03_16, 0x22_02_01, 0x22_03_16, 0x28_02_01, 0x28_03_16, 0x29_02_01, 0x29_03_16,
+        0x3f_02_01, 0x3f_03_16, 0x27_03_00, 0x2b_03_00, 0x7c_03_00, 0x00_00_53, 0x00_00_55, 0x00_00_58,
+        // 75
+        0x21_02_02, 0x21_02_09, 0x21_02_17, 0x21_03_28, 0x22_02_02, 0x22_02_09, 0x22_02_17, 0x22_03_28,
+        0x28_02_02, 0x28_02_09, 0x28_02_17, 0x28_03_28, 0x29_02_02, 0x29_02_09, 0x29_02_17, 0x29_03_28,
+        // 76
+        0x21_02_03, 0x21_02_06, 0x21_02_0a, 0x21_02_0f, 0x21_02_18, 0x21_02_1f, 0x21_02_29, 0x21_03_38,
+        0x22_02_03, 0x22_02_06, 0x22_02_0a, 0x22_02_0f, 0x22_02_18, 0x22_02_1f, 0x22_02_29, 0x22_03_38,
+        // 77
+        0x28_02_03, 0x28_02_06, 0x28_02_0a, 0x28_02_0f, 0x28_02_18, 0x28_02_1f, 0x28_02_29, 0x28_03_38,
+        0x29_02_03, 0x29_02_06, 0x29_02_0a, 0x29_02_0f, 0x29_02_18, 0x29_02_1f, 0x29_02_29, 0x29_03_38,
+        // 78
+        0x3f_02_02, 0x3f_02_09, 0x3f_02_17, 0x3f_03_28, 0x27_02_01, 0x27_03_16, 0x2b_02_01, 0x2b_03_16,
+        0x7c_02_01, 0x7c_03_16, 0x23_03_00, 0x3e_03_00, 0x00_00_56, 0x00_00_57, 0x00_00_59, 0x00_00_5a,
+        // 79
+        0x3f_02_03, 0x3f_02_06, 0x3f_02_0a, 0x3f_02_0f, 0x3f_02_18, 0x3f_02_1f, 0x3f_02_29, 0x3f_03_38,
+        0x27_02_02, 0x27_02_09, 0x27_02_17, 0x27_03_28, 0x2b_02_02, 0x2b_02_09, 0x2b_02_17, 0x2b_03_28,
+        // 80
+        0x27_02_03, 0x27_02_06, 0x27_02_0a, 0x27_02_0f, 0x27_02_18, 0x27_02_1f, 0x27_02_29, 0x27_03_38,
+        0x2b_02_03, 0x2b_02_06, 0x2b_02_0a, 0x2b_02_0f, 0x2b_02_18, 0x2b_02_1f, 0x2b_02_29, 0x2b_03_38,
+        // 81
+        0x7c_02_02, 0x7c_02_09, 0x7c_02_17, 0x7c_03_28, 0x23_02_01, 0x23_03_16, 0x3e_02_01, 0x3e_03_16,
+        0x00_03_00, 0x24_03_00, 0x40_03_00, 0x5b_03_00, 0x5d_03_00, 0x7e_03_00, 0x00_00_5b, 0x00_00_5c,
+        // 82
+        0x7c_02_03, 0x7c_02_06, 0x7c_02_0a, 0x7c_02_0f, 0x7c_02_18, 0x7c_02_1f, 0x7c_02_29, 0x7c_03_38,
+        0x23_02_02, 0x23_02_09, 0x23_02_17, 0x23_03_28, 0x3e_02_02, 0x3e_02_09, 0x3e_02_17, 0x3e_03_28,
+        // 83
+        0x23_02_03, 0x23_02_06, 0x23_02_0a, 0x23_02_0f, 0x23_02_18, 0x23_02_1f, 0x23_02_29, 0x23_03_38,
+        0x3e_02_03, 0x3e_02_06, 0x3e_02_0a, 0x3e_02_0f, 0x3e_02_18, 0x3e_02_1f, 0x3e_02_29, 0x3e_03_38,
+        // 84
+        0x00_02_01, 0x00_03_16, 0x24_02_01, 0x24_03_16, 0x40_02_01, 0x40_03_16, 0x5b_02_01, 0x5b_03_16,
+        0x5d_02_01, 0x5d_03_16, 0x7e_02_01, 0x7e_03_16, 0x5e_03_00, 0x7d_03_00, 0x00_00_5d, 0x00_00_5e,
+        // 85
+        0x00_02_02, 0x00_02_09, 0x00_02_17, 0x00_03_28, 0x24_02_02, 0x24_02_09, 0x24_02_17, 0x24_03_28,
+        0x40_02_02, 0x40_02_09, 0x40_02_17, 0x40_03_28, 0x5b_02_02, 0x5b_02_09, 0x5b_02_17, 0x5b_03_28,
+        // 86
+        0x00_02_03, 0x00_02_06, 0x00_02_0a, 0x00_02_0f, 0x00_02_18, 0x00_02_1f, 0x00_02_29, 0x00_03_38,
+        0x24_02_03, 0x24_02_06, 0x24_02_0a, 0x24_02_0f, 0x24_02_18, 0x24_02_1f, 0x24_02_29, 0x24_03_38,
+        // 87
+        0x40_02_03, 0x40_02_06, 0x40_02_0a, 0x40_02_0f, 0x40_02_18, 0x40_02_1f, 0x40_02_29, 0x40_03_38,
+        0x5b_02_03, 0x5b_02_06, 0x5b_02_0a, 0x5b_02_0f, 0x5b_02_18, 0x5b_02_1f, 0x5b_02_29, 0x5b_03_38,
+        // 88
+        0x5d_02_02, 0x5d_02_09, 0x5d_02_17, 0x5d_03_28, 0x7e_02_02, 0x7e_02_09, 0x7e_02_17, 0x7e_03_28,
+        0x5e_02_01, 0x5e_03_16, 0x7d_02_01, 0x7d_03_16, 0x3c_03_00, 0x60_03_00, 0x7b_03_00, 0x00_00_5f,
+        // 89
+        0x5d_02_03, 0x5d_02_06, 0x5d_02_0a, 0x5d_02_0f, 0x5d_02_18, 0x5d_02_1f, 0x5d_02_29, 0x5d_03_38,
+        0x7e_02_03, 0x7e_02_06, 0x7e_02_0a, 0x7e_02_0f, 0x7e_02_18, 0x7e_02_1f, 0x7e_02_29, 0x7e_03_38,
+        // 90
+        0x5e_02_02, 0x5e_02_09, 0x5e_02_17, 0x5e_03_28, 0x7d_02_02, 0x7d_02_09, 0x7d_02_17, 0x7d_03_28,
+        0x3c_02_01, 0x3c_03_16, 0x60_02_01, 0x60_03_16, 0x7b_02_01, 0x7b_03_16, 0x00_00_60, 0x00_00_6e,
+        // 91
+        0x5e_02_03, 0x5e_02_06, 0x5e_02_0a, 0x5e_02_0f, 0x5e_02_18, 0x5e_02_1f, 0x5e_02_29, 0x5e_03_38,
+        0x7d_02_03, 0x7d_02_06, 0x7d_02_0a, 0x7d_02_0f, 0x7d_02_18, 0x7d_02_1f, 0x7d_02_29, 0x7d_03_38,
+        // 92
+        0x3c_02_02, 0x3c_02_09, 0x3c_02_17, 0x3c_03_28, 0x60_02_02, 0x60_02_09, 0x60_02_17, 0x60_03_28,
+        0x7b_02_02, 0x7b_02_09, 0x7b_02_17, 0x7b_03_28, 0x00_00_61, 0x00_00_65, 0x00_00_6f, 0x00_00_85,
+        // 93
+        0x3c_02_03, 0x3c_02_06, 0x3c_02_0a, 0x3c_02_0f, 0x3c_02_18, 0x3c_02_1f, 0x3c_02_29, 0x3c_03_38,
+        0x60_02_03, 0x60_02_06, 0x60_02_0a, 0x60_02_0f, 0x60_02_18, 0x60_02_1f, 0x60_02_29, 0x60_03_38,
+        // 94
+        0x7b_02_03, 0x7b_02_06, 0x7b_02_0a, 0x7b_02_0f, 0x7b_02_18, 0x7b_02_1f, 0x7b_02_29, 0x7b_03_38,
+        0x00_00_62, 0x00_00_63, 0x00_00_66, 0x00_00_69, 0x00_00_70, 0x00_00_77, 0x00_00_86, 0x00_00_99,
+        // 95
+        0x5c_03_00, 0xc3_03_00, 0xd0_03_00, 0x00_00_64, 0x00_00_67, 0x00_00_68, 0x00_00_6a, 0x00_00_6b,
+        0x00_00_71, 0x00_00_74, 0x00_00_78, 0x00_00_7e, 0x00_00_87, 0x00_00_8e, 0x00_00_9a, 0x00_00_a9,
+        // 96
+        0x5c_02_01, 0x5c_03_16, 0xc3_02_01, 0xc3_03_16, 0xd0_02_01, 0xd0_03_16, 0x80_03_00, 0x82_03_00,
+        0x83_03_00, 0xa2_03_00, 0xb8_03_00, 0xc2_03_00, 0xe0_03_00, 0xe2_03_00, 0x00_00_6c, 0x00_00_6d,
+        // 97
+        0x5c_02_02, 0x5c_02_09, 0x5c_02_17, 0x5c_03_28, 0xc3_02_02, 0xc3_02_09, 0xc3_02_17, 0xc3_03_28,
+        0xd0_02_02, 0xd0_02_09, 0xd0_02_17, 0xd0_03_28, 0x80_02_01, 0x80_03_16, 0x82_02_01, 0x82_03_16,
+        // 98
+        0x5c_02_03, 0x5c_02_06, 0x5c_02_0a, 0x5c_02_0f, 0x5c_02_18, 0x5c_02_1f, 0x5c_02_29, 0x5c_03_38,
+        0xc3_02_03, 0xc3_02_06, 0xc3_02_0a, 0xc3_02_0f, 0xc3_02_18, 0xc3_02_1f, 0xc3_02_29, 0xc3_03_38,
+        // 99
+        0xd0_02_03, 0xd0_02_06, 0xd0_02_0a, 0xd0_02_0f, 0xd0_02_18, 0xd0_02_1f, 0xd0_02_29, 0xd0_03_38,
+        0x80_02_02, 0x80_02_09, 0x80_02_17, 0x80_03_28, 0x82_02_02, 0x82_02_09, 0x82_02_17, 0x82_03_28,
+        // 100
+        0x80_02_03, 0x80_02_06, 0x80_02_0a, 0x80_02_0f, 0x80_02_18, 0x80_02_1f, 0x80_02_29, 0x80_03_38,
+        0x82_02_03, 0x82_02_06, 0x82_02_0a, 0x82_02_0f, 0x82_02_18, 0x82_02_1f, 0x82_02_29, 0x82_03_38,
+        // 101
+        0x83_02_01, 0x83_03_16, 0xa2_02_01, 0xa2_03_16, 0xb8_02_01, 0xb8_03_16, 0xc2_02_01, 0xc2_03_16,
+        0xe0_02_01, 0xe0_03_16, 0xe2_02_01, 0xe2_03_16, 0x99_03_00, 0xa1_03_00, 0xa7_03_00, 0xac_03_00,
+        // 102
+        0x83_02_02, 0x83_02_09, 0x83_02_17, 0x83_03_28, 0xa2_02_02, 0xa2_02_09, 0xa2_02_17, 0xa2_03_28,
+        0xb8_02_02, 0xb8_02_09, 0xb8_02_17, 0xb8_03_28, 0xc2_02_02, 0xc2_02_09, 0xc2_02_17, 0xc2_03_28,
+        // 103
+        0x83_02_03, 0x83_02_06, 0x83_02_0a, 0x83_02_0f, 0x83_02_18, 0x83_02_1f, 0x83_02_29, 0x83_03_38,
+        0xa2_02_03, 0xa2_02_06, 0xa2_02_0a, 0xa2_02_0f, 0xa2_02_18, 0xa2_02_1f, 0xa2_02_29, 0xa2_03_38,
+        // 104
+        0xb8_02_03, 0xb8_02_06, 0xb8_02_0a, 0xb8_02_0f, 0xb8_02_18, 0xb8_02_1f, 0xb8_02_29, 0xb8_03_38,
+        0xc2_02_03, 0xc2_02_06, 0xc2_02_0a, 0xc2_02_0f, 0xc2_02_18, 0xc2_02_1f, 0xc2_02_29, 0xc2_03_38,
+        // 105
+        0xe0_02_02, 0xe0_02_09, 0xe0_02_17, 0xe0_03_28, 0xe2_02_02, 0xe2_02_09, 0xe2_02_17, 0xe2_03_28,
+        0x99_02_01, 0x99_03_16, 0xa1_02_01, 0xa1_03_16, 0xa7_02_01, 0xa7_03_16, 0xac_02_01, 0xac_03_16,
+        // 106
+        0xe0_02_03, 0xe0_02_06, 0xe0_02_0a, 0xe0_02_0f, 0xe0_02_18, 0xe0_02_1f, 0xe0_02_29, 0xe0_03_38,
+        0xe2_02_03, 0xe2_02_06, 0xe2_02_0a, 0xe2_02_0f, 0xe2_02_18, 0xe2_02_1f, 0xe2_02_29, 0xe2_03_38,
+        // 107
+        0x99_02_02, 0x99_02_09, 0x99_02_17, 0x99_03_28, 0xa1_02_02, 0xa1_02_09, 0xa1_02_17, 0xa1_03_28,
+        0xa7_02_02, 0xa7_02_09, 0xa7_02_17, 0xa7_03_28, 0xac_02_02, 0xac_02_09, 0xac_02_17, 0xac_03_28,
+        // 108
+        0x99_02_03, 0x99_02_06, 0x99_02_0a, 0x99_02_0f, 0x99_02_18, 0x99_02_1f, 0x99_02_29, 0x99_03_38,
+        0xa1_02_03, 0xa1_02_06, 0xa1_02_0a, 0xa1_02_0f, 0xa1_02_18, 0xa1_02_1f, 0xa1_02_29, 0xa1_03_38,
+        // 109
+        0xa7_02_03, 0xa7_02_06, 0xa7_02_0a, 0xa7_02_0f, 0xa7_02_18, 0xa7_02_1f, 0xa7_02_29, 0xa7_03_38,
+        0xac_02_03, 0xac_02_06, 0xac_02_0a, 0xac_02_0f, 0xac_02_18, 0xac_02_1f, 0xac_02_29, 0xac_03_38,
+        // 110
+        0x00_00_72, 0x00_00_73, 0x00_00_75, 0x00_00_76, 0x00_00_79, 0x00_00_7b, 0x00_00_7f, 0x00_00_82,
+        0x00_00_88, 0x00_00_8b, 0x00_00_8f, 0x00_00_92, 0x00_00_9b, 0x00_00_a2, 0x00_00_aa, 0x00_00_b4,
+        // 111
+        0xb0_03_00, 0xb1_03_00, 0xb3_03_00, 0xd1_03_00, 0xd8_03_00, 0xd9_03_00, 0xe3_03_00, 0xe5_03_00,
+        0xe6_03_00, 0x00_00_7a, 0x00_00_7c, 0x00_00_7d, 0x00_00_80, 0x00_00_81, 0x00_00_83, 0x00_00_84,
+        // 112
+        0xb0_02_01, 0xb0_03_16, 0xb1_02_01, 0xb1_03_16, 0xb3_02_01, 0xb3_03_16, 0xd1_02_01, 0xd1_03_16,
+        0xd8_02_01, 0xd8_03_16, 0xd9_02_01, 0xd9_03_16, 0xe3_02_01, 0xe3_03_16, 0xe5_02_01, 0xe5_03_16,
+        // 113
+        0xb0_02_02, 0xb0_02_09, 0xb0_02_17, 0xb0_03_28, 0xb1_02_02, 0xb1_02_09, 0xb1_02_17, 0xb1_03_28,
+        0xb3_02_02, 0xb3_02_09, 0xb3_02_17, 0xb3_03_28, 0xd1_02_02, 0xd1_02_09, 0xd1_02_17, 0xd1_03_28,
+        // 114
+        0xb0_02_03, 0xb0_02_06, 0xb0_02_0a, 0xb0_02_0f, 0xb0_02_18, 0xb0_02_1f, 0xb0_02_29, 0xb0_03_38,
+        0xb1_02_03, 0xb1_02_06, 0xb1_02_0a, 0xb1_02_0f, 0xb1_02_18, 0xb1_02_1f, 0xb1_02_29, 0xb1_03_38,
+        // 115
+        0xb3_02_03, 0xb3_02_06, 0xb3_02_0a, 0xb3_02_0f, 0xb3_02_18, 0xb3_02_1f, 0xb3_02_29, 0xb3_03_38,
+        0xd1_02_03, 0xd1_02_06, 0xd1_02_0a, 0xd1_02_0f, 0xd1_02_18, 0xd1_02_1f, 0xd1_02_29, 0xd1_03_38,
+        // 116
+        0xd8_02_02, 0xd8_02_09, 0xd8_02_17, 0xd8_03_28, 0xd9_02_02, 0xd9_02_09, 0xd9_02_17, 0xd9_03_28,
+        0xe3_02_02, 0xe3_02_09, 0xe3_02_17, 0xe3_03_28, 0xe5_02_02, 0xe5_02_09, 0xe5_02_17, 0xe5_03_28,
+        // 117
+        0xd8_02_03, 0xd8_02_06, 0xd8_02_0a, 0xd8_02_0f, 0xd8_02_18, 0xd8_02_1f, 0xd8_02_29, 0xd8_03_38,
+        0xd9_02_03, 0xd9_02_06, 0xd9_02_0a, 0xd9_02_0f, 0xd9_02_18, 0xd9_02_1f, 0xd9_02_29, 0xd9_03_38,
+        // 118
+        0xe3_02_03, 0xe3_02_06, 0xe3_02_0a, 0xe3_02_0f, 0xe3_02_18, 0xe3_02_1f, 0xe3_02_29, 0xe3_03_38,
+        0xe5_02_03, 0xe5_02_06, 0xe5_02_0a, 0xe5_02_0f, 0xe5_02_18, 0xe5_02_1f, 0xe5_02_29, 0xe5_03_38,
+        // 119
+        0xe6_02_01, 0xe6_03_16, 0x81_03_00, 0x84_03_00, 0x85_03_00, 0x86_03_00, 0x88_03_00, 0x92_03_00,
+        0x9a_03_00, 0x9c_03_00, 0xa0_03_00, 0xa3_03_00, 0xa4_03_00, 0xa9_03_00, 0xaa_03_00, 0xad_03_00,
+        // 120
+        0xe6_02_02, 0xe6_02_09, 0xe6_02_17, 0xe6_03_28, 0x81_02_01, 0x81_03_16, 0x84_02_01, 0x84_03_16,
+        0x85_02_01, 0x85_03_16, 0x86_02_01, 0x86_03_16, 0x88_02_01, 0x88_03_16, 0x92_02_01, 0x92_03_16,
+        // 121
+        0xe6_02_03, 0xe6_02_06, 0xe6_02_0a, 0xe6_02_0f, 0xe6_02_18, 0xe6_02_1f, 0xe6_02_29, 0xe6_03_38,
+        0x81_02_02, 0x81_02_09, 0x81_02_17, 0x81_03_28, 0x84_02_02, 0x84_02_09, 0x84_02_17, 0x84_03_28,
+        // 122
+        0x81_02_03, 0x81_02_06, 0x81_02_0a, 0x81_02_0f, 0x81_02_18, 0x81_02_1f, 0x81_02_29, 0x81_03_38,
+        0x84_02_03, 0x84_02_06, 0x84_02_0a, 0x84_02_0f, 0x84_02_18, 0x84_02_1f, 0x84_02_29, 0x84_03_38,
+        // 123
+        0x85_02_02, 0x85_02_09, 0x85_02_17, 0x85_03_28, 0x86_02_02, 0x86_02_09, 0x86_02_17, 0x86_03_28,
+        0x88_02_02, 0x88_02_09, 0x88_02_17, 0x88_03_28, 0x92_02_02, 0x92_02_09, 0x92_02_17, 0x92_03_28,
+        // 124
+        0x85_02_03, 0x85_02_06, 0x85_02_0a, 0x85_02_0f, 0x85_02_18, 0x85_02_1f, 0x85_02_29, 0x85_03_38,
+        0x86_02_03, 0x86_02_06, 0x86_02_0a, 0x86_02_0f, 0x86_02_18, 0x86_02_1f, 0x86_02_29, 0x86_03_38,
+        // 125
+        0x88_02_03, 0x88_02_06, 0x88_02_0a, 0x88_02_0f, 0x88_02_18, 0x88_02_1f, 0x88_02_29, 0x88_03_38,
+        0x92_02_03, 0x92_02_06, 0x92_02_0a, 0x92_02_0f, 0x92_02_18, 0x92_02_1f, 0x92_02_29, 0x92_03_38,
+        // 126
+        0x9a_02_01, 0x9a_03_16, 0x9c_02_01, 0x9c_03_16, 0xa0_02_01, 0xa0_03_16, 0xa3_02_01, 0xa3_03_16,
+        0xa4_02_01, 0xa4_03_16, 0xa9_02_01, 0xa9_03_16, 0xaa_02_01, 0xaa_03_16, 0xad_02_01, 0xad_03_16,
+        // 127
+        0x9a_02_02, 0x9a_02_09, 0x9a_02_17, 0x9a_03_28, 0x9c_02_02, 0x9c_02_09, 0x9c_02_17, 0x9c_03_28,
+        0xa0_02_02, 0xa0_02_09, 0xa0_02_17, 0xa0_03_28, 0xa3_02_02, 0xa3_02_09, 0xa3_02_17, 0xa3_03_28,
+        // 128
+        0x9a_02_03, 0x9a_02_06, 0x9a_02_0a, 0x9a_02_0f, 0x9a_02_18, 0x9a_02_1f, 0x9a_02_29, 0x9a_03_38,
+        0x9c_02_03, 0x9c_02_06, 0x9c_02_0a, 0x9c_02_0f, 0x9c_02_18, 0x9c_02_1f, 0x9c_02_29, 0x9c_03_38,
+        // 129
+        0xa0_02_03, 0xa0_02_06, 0xa0_02_0a, 0xa0_02_0f, 0xa0_02_18, 0xa0_02_1f, 0xa0_02_29, 0xa0_03_38,
+        0xa3_02_03, 0xa3_02_06, 0xa3_02_0a, 0xa3_02_0f, 0xa3_02_18, 0xa3_02_1f, 0xa3_02_29, 0xa3_03_38,
+        // 130
+        0xa4_02_02, 0xa4_02_09, 0xa4_02_17, 0xa4_03_28, 0xa9_02_02, 0xa9_02_09, 0xa9_02_17, 0xa9_03_28,
+        0xaa_02_02, 0xaa_02_09, 0xaa_02_17, 0xaa_03_28, 0xad_02_02, 0xad_02_09, 0xad_02_17, 0xad_03_28,
+        // 131
+        0xa4_02_03, 0xa4_02_06, 0xa4_02_0a, 0xa4_02_0f, 0xa4_02_18, 0xa4_02_1f, 0xa4_02_29, 0xa4_03_38,
+        0xa9_02_03, 0xa9_02_06, 0xa9_02_0a, 0xa9_02_0f, 0xa9_02_18, 0xa9_02_1f, 0xa9_02_29, 0xa9_03_38,
+        // 132
+        0xaa_02_03, 0xaa_02_06, 0xaa_02_0a, 0xaa_02_0f, 0xaa_02_18, 0xaa_02_1f, 0xaa_02_29, 0xaa_03_38,
+        0xad_02_03, 0xad_02_06, 0xad_02_0a, 0xad_02_0f, 0xad_02_18, 0xad_02_1f, 0xad_02_29, 0xad_03_38,
+        // 133
+        0x00_00_89, 0x00_00_8a, 0x00_00_8c, 0x00_00_8d, 0x00_00_90, 0x00_00_91, 0x00_00_93, 0x00_00_96,
+        0x00_00_9c, 0x00_00_9f, 0x00_00_a3, 0x00_00_a6, 0x00_00_ab, 0x00_00_ae, 0x00_00_b5, 0x00_00_be,
+        // 134
+        0xb2_03_00, 0xb5_03_00, 0xb9_03_00, 0xba_03_00, 0xbb_03_00, 0xbd_03_00, 0xbe_03_00, 0xc4_03_00,
+        0xc6_03_00, 0xe4_03_00, 0xe8_03_00, 0xe9_03_00, 0x00_00_94, 0x00_00_95, 0x00_00_97, 0x00_00_98,
+        // 135
+        0xb2_02_01, 0xb2_03_16, 0xb5_02_01, 0xb5_03_16, 0xb9_02_01, 0xb9_03_16, 0xba_02_01, 0xba_03_16,
+        0xbb_02_01, 0xbb_03_16, 0xbd_02_01, 0xbd_03_16, 0xbe_02_01, 0xbe_03_16, 0xc4_02_01, 0xc4_03_16,
+        // 136
+        0xb2_02_02, 0xb2_02_09, 0xb2_02_17, 0xb2_03_28, 0xb5_02_02, 0xb5_02_09, 0xb5_02_17, 0xb5_03_28,
+        0xb9_02_02, 0xb9_02_09, 0xb9_02_17, 0xb9_03_28, 0xba_02_02, 0xba_02_09, 0xba_02_17, 0xba_03_28,
+        // 137
+        0xb2_02_03, 0xb2_02_06, 0xb2_02_0a, 0xb2_02_0f, 0xb2_02_18, 0xb2_02_1f, 0xb2_02_29, 0xb2_03_38,
+        0xb5_02_03, 0xb5_02_06, 0xb5_02_0a, 0xb5_02_0f, 0xb5_02_18, 0xb5_02_1f, 0xb5_02_29, 0xb5_03_38,
+        // 138
+        0xb9_02_03, 0xb9_02_06, 0xb9_02_0a, 0xb9_02_0f, 0xb9_02_18, 0xb9_02_1f, 0xb9_02_29, 0xb9_03_38,
+        0xba_02_03, 0xba_02_06, 0xba_02_0a, 0xba_02_0f, 0xba_02_18, 0xba_02_1f, 0xba_02_29, 0xba_03_38,
+        // 139
+        0xbb_02_02, 0xbb_02_09, 0xbb_02_17, 0xbb_03_28, 0xbd_02_02, 0xbd_02_09, 0xbd_02_17, 0xbd_03_28,
+        0xbe_02_02, 0xbe_02_09, 0xbe_02_17, 0xbe_03_28, 0xc4_02_02, 0xc4_02_09, 0xc4_02_17, 0xc4_03_28,
+        // 140
+        0xbb_02_03, 0xbb_02_06, 0xbb_02_0a, 0xbb_02_0f, 0xbb_02_18, 0xbb_02_1f, 0xbb_02_29, 0xbb_03_38,
+        0xbd_02_03, 0xbd_02_06, 0xbd_02_0a, 0xbd_02_0f, 0xbd_02_18, 0xbd_02_1f, 0xbd_02_29, 0xbd_03_38,
+        // 141
+        0xbe_02_03, 0xbe_02_06, 0xbe_02_0a, 0xbe_02_0f, 0xbe_02_18, 0xbe_02_1f, 0xbe_02_29, 0xbe_03_38,
+        0xc4_02_03, 0xc4_02_06, 0xc4_02_0a, 0xc4_02_0f, 0xc4_02_18, 0xc4_02_1f, 0xc4_02_29, 0xc4_03_38,
+        // 142
+        0xc6_02_01, 0xc6_03_16, 0xe4_02_01, 0xe4_03_16, 0xe8_02_01, 0xe8_03_16, 0xe9_02_01, 0xe9_03_16,
+        0x01_03_00, 0x87_03_00, 0x89_03_00, 0x8a_03_00, 0x8b_03_00, 0x8c_03_00, 0x8d_03_00, 0x8f_03_00,
+        // 143
+        0xc6_02_02, 0xc6_02_09, 0xc6_02_17, 0xc6_03_28, 0xe4_02_02, 0xe4_02_09, 0xe4_02_17, 0xe4_03_28,
+        0xe8_02_02, 0xe8_02_09, 0xe8_02_17, 0xe8_03_28, 0xe9_02_02, 0xe9_02_09, 0xe9_02_17, 0xe9_03_28,
+        // 144
+        0xc6_02_03, 0xc6_02_06, 0xc6_02_0a, 0xc6_02_0f, 0xc6_02_18, 0xc6_02_1f, 0xc6_02_29, 0xc6_03_38,
+        0xe4_02_03, 0xe4_02_06, 0xe4_02_0a, 0xe4_02_0f, 0xe4_02_18, 0xe4_02_1f, 0xe4_02_29, 0xe4_03_38,
+        // 145
+        0xe8_02_03, 0xe8_02_06, 0xe8_02_0a, 0xe8_02_0f, 0xe8_02_18, 0xe8_02_1f, 0xe8_02_29, 0xe8_03_38,
+        0xe9_02_03, 0xe9_02_06, 0xe9_02_0a, 0xe9_02_0f, 0xe9_02_18, 0xe9_02_1f, 0xe9_02_29, 0xe9_03_38,
+        // 146
+        0x01_02_01, 0x01_03_16, 0x87_02_01, 0x87_03_16, 0x89_02_01, 0x89_03_16, 0x8a_02_01, 0x8a_03_16,
+        0x8b_02_01, 0x8b_03_16, 0x8c_02_01, 0x8c_03_16, 0x8d_02_01, 0x8d_03_16, 0x8f_02_01, 0x8f_03_16,
+        // 147
+        0x01_02_02, 0x01_02_09, 0x01_02_17, 0x01_03_28, 0x87_02_02, 0x87_02_09, 0x87_02_17, 0x87_03_28,
+        0x89_02_02, 0x89_02_09, 0x89_02_17, 0x89_03_28, 0x8a_02_02, 0x8a_02_09, 0x8a_02_17, 0x8a_03_28,
+        // 148
+        0x01_02_03, 0x01_02_06, 0x01_02_0a, 0x01_02_0f, 0x01_02_18, 0x01_02_1f, 0x01_02_29, 0x01_03_38,
+        0x87_02_03, 0x87_02_06, 0x87_02_0a, 0x87_02_0f, 0x87_02_18, 0x87_02_1f, 0x87_02_29, 0x87_03_38,
+        // 149
+        0x89_02_03, 0x89_02_06, 0x89_02_0a, 0x89_02_0f, 0x89_02_18, 0x89_02_1f, 0x89_02_29, 0x89_03_38,
+        0x8a_02_03, 0x8a_02_06, 0x8a_02_0a, 0x8a_02_0f, 0x8a_02_18, 0x8a_02_1f, 0x8a_02_29, 0x8a_03_38,
+        // 150
+        0x8b_02_02, 0x8b_02_09, 0x8b_02_17, 0x8b_03_28, 0x8c_02_02, 0x8c_02_09, 0x8c_02_17, 0x8c_03_28,
+        0x8d_02_02, 0x8d_02_09, 0x8d_02_17, 0x8d_03_28, 0x8f_02_02, 0x8f_02_09, 0x8f_02_17, 0x8f_03_28,
+        // 151
+        0x8b_02_03, 0x8b_02_06, 0x8b_02_0a, 0x8b_02_0f, 0x8b_02_18, 0x8b_02_1f, 0x8b_02_29, 0x8b_03_38,
+        0x8c_02_03, 0x8c_02_06, 0x8c_02_0a, 0x8c_02_0f, 0x8c_02_18, 0x8c_02_1f, 0x8c_02_29, 0x8c_03_38,
+        // 152
+        0x8d_02_03, 0x8d_02_06, 0x8d_02_0a, 0x8d_02_0f, 0x8d_02_18, 0x8d_02_1f, 0x8d_02_29, 0x8d_03_38,
+        0x8f_02_03, 0x8f_02_06, 0x8f_02_0a, 0x8f_02_0f, 0x8f_02_18, 0x8f_02_1f, 0x8f_02_29, 0x8f_03_38,
+        // 153
+        0x00_00_9d, 0x00_00_9e, 0x00_00_a0, 0x00_00_a1, 0x00_00_a4, 0x00_00_a5, 0x00_00_a7, 0x00_00_a8,
+        0x00_00_ac, 0x00_00_ad, 0x00_00_af, 0x00_00_b1, 0x00_00_b6, 0x00_00_b9, 0x00_00_bf, 0x00_00_cf,
+        // 154
+        0x93_03_00, 0x95_03_00, 0x96_03_00, 0x97_03_00, 0x98_03_00, 0x9b_03_00, 0x9d_03_00, 0x9e_03_00,
+        0xa5_03_00, 0xa6_03_00, 0xa8_03_00, 0xae_03_00, 0xaf_03_00, 0xb4_03_00, 0xb6_03_00, 0xb7_03_00,
+        // 155
+        0x93_02_01, 0x93_03_16, 0x95_02_01, 0x95_03_16, 0x96_02_01, 0x96_03_16, 0x97_02_01, 0x97_03_16,
+        0x98_02_01, 0x98_03_16, 0x9b_02_01, 0x9b_03_16, 0x9d_02_01, 0x9d_03_16, 0x9e_02_01, 0x9e_03_16,
+        // 156
+        0x93_02_02, 0x93_02_09, 0x93_02_17, 0x93_03_28, 0x95_02_02, 0x95_02_09, 0x95_02_17, 0x95_03_28,
+        0x96_02_02, 0x96_02_09, 0x96_02_17, 0x96_03_28, 0x97_02_02, 0x97_02_09, 0x97_02_17, 0x97_03_28,
+        // 157
+        0x93_02_03, 0x93_02_06, 0x93_02_0a, 0x93_02_0f, 0x93_02_18, 0x93_02_1f, 0x93_02_29, 0x93_03_38,
+        0x95_02_03, 0x95_02_06, 0x95_02_0a, 0x95_02_0f, 0x95_02_18, 0x95_02_1f, 0x95_02_29, 0x95_03_38,
+        // 158
+        0x96_02_03, 0x96_02_06, 0x96_02_0a, 0x96_02_0f, 0x96_02_18, 0x96_02_1f, 0x96_02_29, 0x96_03_38,
+        0x97_02_03, 0x97_02_06, 0x97_02_0a, 0x97_02_0f, 0x97_02_18, 0x97_02_1f, 0x97_02_29, 0x97_03_38,
+        // 159
+        0x98_02_02, 0x98_02_09, 0x98_02_17, 0x98_03_28, 0x9b_02_02, 0x9b_02_09, 0x9b_02_17, 0x9b_03_28,
+        0x9d_02_02, 0x9d_02_09, 0x9d_02_17, 0x9d_03_28, 0x9e_02_02, 0x9e_02_09, 0x9e_02_17, 0x9e_03_28,
+        // 160
+        0x98_02_03, 0x98_02_06, 0x98_02_0a, 0x98_02_0f, 0x98_02_18, 0x98_02_1f, 0x98_02_29, 0x98_03_38,
+        0x9b_02_03, 0x9b_02_06, 0x9b_02_0a, 0x9b_02_0f, 0x9b_02_18, 0x9b_02_1f, 0x9b_02_29, 0x9b_03_38,
+        // 161
+        0x9d_02_03, 0x9d_02_06, 0x9d_02_0a, 0x9d_02_0f, 0x9d_02_18, 0x9d_02_1f, 0x9d_02_29, 0x9d_03_38,
+        0x9e_02_03, 0x9e_02_06, 0x9e_02_0a, 0x9e_02_0f, 0x9e_02_18, 0x9e_02_1f, 0x9e_02_29, 0x9e_03_38,
+        // 162
+        0xa5_02_01, 0xa5_03_16, 0xa6_02_01, 0xa6_03_16, 0xa8_02_01, 0xa8_03_16, 0xae_02_01, 0xae_03_16,
+        0xaf_02_01, 0xaf_03_16, 0xb4_02_01, 0xb4_03_16, 0xb6_02_01, 0xb6_03_16, 0xb7_02_01, 0xb7_03_16,
+        // 163
+        0xa5_02_02, 0xa5_02_09, 0xa5_02_17, 0xa5_03_28, 0xa6_02_02, 0xa6_02_09, 0xa6_02_17, 0xa6_03_28,
+        0xa8_02_02, 0xa8_02_09, 0xa8_02_17, 0xa8_03_28, 0xae_02_02, 0xae_02_09, 0xae_02_17, 0xae_03_28,
+        // 164
+        0xa5_02_03, 0xa5_02_06, 0xa5_02_0a, 0xa5_02_0f, 0xa5_02_18, 0xa5_02_1f, 0xa5_02_29, 0xa5_03_38,
+        0xa6_02_03, 0xa6_02_06, 0xa6_02_0a, 0xa6_02_0f, 0xa6_02_18, 0xa6_02_1f, 0xa6_02_29, 0xa6_03_38,
+        // 165
+        0xa8_02_03, 0xa8_02_06, 0xa8_02_0a, 0xa8_02_0f, 0xa8_02_18, 0xa8_02_1f, 0xa8_02_29, 0xa8_03_38,
+        0xae_02_03, 0xae_02_06, 0xae_02_0a, 0xae_02_0f, 0xae_02_18, 0xae_02_1f, 0xae_02_29, 0xae_03_38,
+        // 166
+        0xaf_02_02, 0xaf_02_09, 0xaf_02_17, 0xaf_03_28, 0xb4_02_02, 0xb4_02_09, 0xb4_02_17, 0xb4_03_28,
+        0xb6_02_02, 0xb6_02_09, 0xb6_02_17, 0xb6_03_28, 0xb7_02_02, 0xb7_02_09, 0xb7_02_17, 0xb7_03_28,
+        // 167
+        0xaf_02_03, 0xaf_02_06, 0xaf_02_0a, 0xaf_02_0f, 0xaf_02_18, 0xaf_02_1f, 0xaf_02_29, 0xaf_03_38,
+        0xb4_02_03, 0xb4_02_06, 0xb4_02_0a, 0xb4_02_0f, 0xb4_02_18, 0xb4_02_1f, 0xb4_02_29, 0xb4_03_38,
+        // 168
+        0xb6_02_03, 0xb6_02_06, 0xb6_02_0a, 0xb6_02_0f, 0xb6_02_18, 0xb6_02_1f, 0xb6_02_29, 0xb6_03_38,
+        0xb7_02_03, 0xb7_02_06, 0xb7_02_0a, 0xb7_02_0f, 0xb7_02_18, 0xb7_02_1f, 0xb7_02_29, 0xb7_03_38,
+        // 169
+        0xbc_03_00, 0xbf_03_00, 0xc5_03_00, 0xe7_03_00, 0xef_03_00, 0x00_00_b0, 0x00_00_b2, 0x00_00_b3,
+        0x00_00_b7, 0x00_00_b8, 0x00_00_ba, 0x00_00_bb, 0x00_00_c0, 0x00_00_c7, 0x00_00_d0, 0x00_00_df,
+        // 170
+        0xbc_02_01, 0xbc_03_16, 0xbf_02_01, 0xbf_03_16, 0xc5_02_01, 0xc5_03_16, 0xe7_02_01, 0xe7_03_16,
+        0xef_02_01, 0xef_03_16, 0x09_03_00, 0x8e_03_00, 0x90_03_00, 0x91_03_00, 0x94_03_00, 0x9f_03_00,
+        // 171
+        0xbc_02_02, 0xbc_02_09, 0xbc_02_17, 0xbc_03_28, 0xbf_02_02, 0xbf_02_09, 0xbf_02_17, 0xbf_03_28,
+        0xc5_02_02, 0xc5_02_09, 0xc5_02_17, 0xc5_03_28, 0xe7_02_02, 0xe7_02_09, 0xe7_02_17, 0xe7_03_28,
+        // 172
+        0xbc_02_03, 0xbc_02_06, 0xbc_02_0a, 0xbc_02_0f, 0xbc_02_18, 0xbc_02_1f, 0xbc_02_29, 0xbc_03_38,
+        0xbf_02_03, 0xbf_02_06, 0xbf_02_0a, 0xbf_02_0f, 0xbf_02_18, 0xbf_02_1f, 0xbf_02_29, 0xbf_03_38,
+        // 173
+        0xc5_02_03, 0xc5_02_06, 0xc5_02_0a, 0xc5_02_0f, 0xc5_02_18, 0xc5_02_1f, 0xc5_02_29, 0xc5_03_38,
+        0xe7_02_03, 0xe7_02_06, 0xe7_02_0a, 0xe7_02_0f, 0xe7_02_18, 0xe7_02_1f, 0xe7_02_29, 0xe7_03_38,
+        // 174
+        0xef_02_02, 0xef_02_09, 0xef_02_17, 0xef_03_28, 0x09_02_01, 0x09_03_16, 0x8e_02_01, 0x8e_03_16,
+        0x90_02_01, 0x90_03_16, 0x91_02_01, 0x91_03_16, 0x94_02_01, 0x94_03_16, 0x9f_02_01, 0x9f_03_16,
+        // 175
+        0xef_02_03, 0xef_02_06, 0xef_02_0a, 0xef_02_0f, 0xef_02_18, 0xef_02_1f, 0xef_02_29, 0xef_03_38,
+        0x09_02_02, 0x09_02_09, 0x09_02_17, 0x09_03_28, 0x8e_02_02, 0x8e_02_09, 0x8e_02_17, 0x8e_03_28,
+        // 176
+        0x09_02_03, 0x09_02_06, 0x09_02_0a, 0x09_02_0f, 0x09_02_18, 0x09_02_1f, 0x09_02_29, 0x09_03_38,
+        0x8e_02_03, 0x8e_02_06, 0x8e_02_0a, 0x8e_02_0f, 0x8e_02_18, 0x8e_02_1f, 0x8e_02_29, 0x8e_03_38,
+        // 177
+        0x90_02_02, 0x90_02_09, 0x90_02_17, 0x90_03_28, 0x91_02_02, 0x91_02_09, 0x91_02_17, 0x91_03_28,
+        0x94_02_02, 0x94_02_09, 0x94_02_17, 0x94_03_28, 0x9f_02_02, 0x9f_02_09, 0x9f_02_17, 0x9f_03_28,
+        // 178
+        0x90_02_03, 0x90_02_06, 0x90_02_0a, 0x90_02_0f, 0x90_02_18, 0x90_02_1f, 0x90_02_29, 0x90_03_38,
+        0x91_02_03, 0x91_02_06, 0x91_02_0a, 0x91_02_0f, 0x91_02_18, 0x91_02_1f, 0x91_02_29, 0x91_03_38,
+        // 179
+        0x94_02_03, 0x94_02_06, 0x94_02_0a, 0x94_02_0f, 0x94_02_18, 0x94_02_1f, 0x94_02_29, 0x94_03_38,
+        0x9f_02_03, 0x9f_02_06, 0x9f_02_0a, 0x9f_02_0f, 0x9f_02_18, 0x9f_02_1f, 0x9f_02_29, 0x9f_03_38,
+        // 180
+        0xab_03_00, 0xce_03_00, 0xd7_03_00, 0xe1_03_00, 0xec_03_00, 0xed_03_00, 0x00_00_bc, 0x00_00_bd,
+        0x00_00_c1, 0x00_00_c4, 0x00_00_c8, 0x00_00_cb, 0x00_00_d1, 0x00_00_d8, 0x00_00_e0, 0x00_00_ee,
+        // 181
+        0xab_02_01, 0xab_03_16, 0xce_02_01, 0xce_03_16, 0xd7_02_01, 0xd7_03_16, 0xe1_02_01, 0xe1_03_16,
+        0xec_02_01, 0xec_03_16, 0xed_02_01, 0xed_03_16, 0xc7_03_00, 0xcf_03_00, 0xea_03_00, 0xeb_03_00,
+        // 182
+        0xab_02_02, 0xab_02_09, 0xab_02_17, 0xab_03_28, 0xce_02_02, 0xce_02_09, 0xce_02_17, 0xce_03_28,
+        0xd7_02_02, 0xd7_02_09, 0xd7_02_17, 0xd7_03_28, 0xe1_02_02, 0xe1_02_09, 0xe1_02_17, 0xe1_03_28,
+        // 183
+        0xab_02_03, 0xab_02_06, 0xab_02_0a, 0xab_02_0f, 0xab_02_18, 0xab_02_1f, 0xab_02_29, 0xab_03_38,
+        0xce_02_03, 0xce_02_06, 0xce_02_0a, 0xce_02_0f, 0xce_02_18, 0xce_02_1f, 0xce_02_29, 0xce_03_38,
+        // 184
+        0xd7_02_03, 0xd7_02_06, 0xd7_02_0a, 0xd7_02_0f, 0xd7_02_18, 0xd7_02_1f, 0xd7_02_29, 0xd7_03_38,
+        0xe1_02_03, 0xe1_02_06, 0xe1_02_0a, 0xe1_02_0f, 0xe1_02_18, 0xe1_02_1f, 0xe1_02_29, 0xe1_03_38,
+        // 185
+        0xec_02_02, 0xec_02_09, 0xec_02_17, 0xec_03_28, 0xed_02_02, 0xed_02_09, 0xed_02_17, 0xed_03_28,
+        0xc7_02_01, 0xc7_03_16, 0xcf_02_01, 0xcf_03_16, 0xea_02_01, 0xea_03_16, 0xeb_02_01, 0xeb_03_16,
+        // 186
+        0xec_02_03, 0xec_02_06, 0xec_02_0a, 0xec_02_0f, 0xec_02_18, 0xec_02_1f, 0xec_02_29, 0xec_03_38,
+        0xed_02_03, 0xed_02_06, 0xed_02_0a, 0xed_02_0f, 0xed_02_18, 0xed_02_1f, 0xed_02_29, 0xed_03_38,
+        // 187
+        0xc7_02_02, 0xc7_02_09, 0xc7_02_17, 0xc7_03_28, 0xcf_02_02, 0xcf_02_09, 0xcf_02_17, 0xcf_03_28,
+        0xea_02_02, 0xea_02_09, 0xea_02_17, 0xea_03_28, 0xeb_02_02, 0xeb_02_09, 0xeb_02_17, 0xeb_03_28,
+        // 188
+        0xc7_02_03, 0xc7_02_06, 0xc7_02_0a, 0xc7_02_0f, 0xc7_02_18, 0xc7_02_1f, 0xc7_02_29, 0xc7_03_38,
+        0xcf_02_03, 0xcf_02_06, 0xcf_02_0a, 0xcf_02_0f, 0xcf_02_18, 0xcf_02_1f, 0xcf_02_29, 0xcf_03_38,
+        // 189
+        0xea_02_03, 0xea_02_06, 0xea_02_0a, 0xea_02_0f, 0xea_02_18, 0xea_02_1f, 0xea_02_29, 0xea_03_38,
+        0xeb_02_03, 0xeb_02_06, 0xeb_02_0a, 0xeb_02_0f, 0xeb_02_18, 0xeb_02_1f, 0xeb_02_29, 0xeb_03_38,
+        // 190
+        0x00_00_c2, 0x00_00_c3, 0x00_00_c5, 0x00_00_c6, 0x00_00_c9, 0x00_00_ca, 0x00_00_cc, 0x00_00_cd,
+        0x00_00_d2, 0x00_00_d5, 0x00_00_d9, 0x00_00_dc, 0x00_00_e1, 0x00_00_e7, 0x00_00_ef, 0x00_00_f6,
+        // 191
+        0xc0_03_00, 0xc1_03_00, 0xc8_03_00, 0xc9_03_00, 0xca_03_00, 0xcd_03_00, 0xd2_03_00, 0xd5_03_00,
+        0xda_03_00, 0xdb_03_00, 0xee_03_00, 0xf0_03_00, 0xf2_03_00, 0xf3_03_00, 0xff_03_00, 0x00_00_ce,
+        // 192
+        0xc0_02_01, 0xc0_03_16, 0xc1_02_01, 0xc1_03_16, 0xc8_02_01, 0xc8_03_16, 0xc9_02_01, 0xc9_03_16,
+        0xca_02_01, 0xca_03_16, 0xcd_02_01, 0xcd_03_16, 0xd2_02_01, 0xd2_03_16, 0xd5_02_01, 0xd5_03_16,
+        // 193
+        0xc0_02_02, 0xc0_02_09, 0xc0_02_17, 0xc0_03_28, 0xc1_02_02, 0xc1_02_09, 0xc1_02_17, 0xc1_03_28,
+        0xc8_02_02, 0xc8_02_09, 0xc8_02_17, 0xc8_03_28, 0xc9_02_02, 0xc9_02_09, 0xc9_02_17, 0xc9_03_28,
+        // 194
+        0xc0_02_03, 0xc0_02_06, 0xc0_02_0a, 0xc0_02_0f, 0xc0_02_18, 0xc0_02_1f, 0xc0_02_29, 0xc0_03_38,
+        0xc1_02_03, 0xc1_02_06, 0xc1_02_0a, 0xc1_02_0f, 0xc1_02_18, 0xc1_02_1f, 0xc1_02_29, 0xc1_03_38,
+        // 195
+        0xc8_02_03, 0xc8_02_06, 0xc8_02_0a, 0xc8_02_0f, 0xc8_02_18, 0xc8_02_1f, 0xc8_02_29, 0xc8_03_38,
+        0xc9_02_03, 0xc9_02_06, 0xc9_02_0a, 0xc9_02_0f, 0xc9_02_18, 0xc9_02_1f, 0xc9_02_29, 0xc9_03_38,
+        // 196
+        0xca_02_02, 0xca_02_09, 0xca_02_17, 0xca_03_28, 0xcd_02_02, 0xcd_02_09, 0xcd_02_17, 0xcd_03_28,
+        0xd2_02_02, 0xd2_02_09, 0xd2_02_17, 0xd2_03_28, 0xd5_02_02, 0xd5_02_09, 0xd5_02_17, 0xd5_03_28,
+        // 197
+        0xca_02_03, 0xca_02_06, 0xca_02_0a, 0xca_02_0f, 0xca_02_18, 0xca_02_1f, 0xca_02_29, 0xca_03_38,
+        0xcd_02_03, 0xcd_02_06, 0xcd_02_0a, 0xcd_02_0f, 0xcd_02_18, 0xcd_02_1f, 0xcd_02_29, 0xcd_03_38,
+        // 198
+        0xd2_02_03, 0xd2_02_06, 0xd2_02_0a, 0xd2_02_0f, 0xd2_02_18, 0xd2_02_1f, 0xd2_02_29, 0xd2_03_38,
+        0xd5_02_03, 0xd5_02_06, 0xd5_02_0a, 0xd5_02_0f, 0xd5_02_18, 0xd5_02_1f, 0xd5_02_29, 0xd5_03_38,
+        // 199
+        0xda_02_01, 0xda_03_16, 0xdb_02_01, 0xdb_03_16, 0xee_02_01, 0xee_03_16, 0xf0_02_01, 0xf0_03_16,
+        0xf2_02_01, 0xf2_03_16, 0xf3_02_01, 0xf3_03_16, 0xff_02_01, 0xff_03_16, 0xcb_03_00, 0xcc_03_00,
+        // 200
+        0xda_02_02, 0xda_02_09, 0xda_02_17, 0xda_03_28, 0xdb_02_02, 0xdb_02_09, 0xdb_02_17, 0xdb_03_28,
+        0xee_02_02, 0xee_02_09, 0xee_02_17, 0xee_03_28, 0xf0_02_02, 0xf0_02_09, 0xf0_02_17, 0xf0_03_28,
+        // 201
+        0xda_02_03, 0xda_02_06, 0xda_02_0a, 0xda_02_0f, 0xda_02_18, 0xda_02_1f, 0xda_02_29, 0xda_03_38,
+        0xdb_02_03, 0xdb_02_06, 0xdb_02_0a, 0xdb_02_0f, 0xdb_02_18, 0xdb_02_1f, 0xdb_02_29, 0xdb_03_38,
+        // 202
+        0xee_02_03, 0xee_02_06, 0xee_02_0a, 0xee_02_0f, 0xee_02_18, 0xee_02_1f, 0xee_02_29, 0xee_03_38,
+        0xf0_02_03, 0xf0_02_06, 0xf0_02_0a, 0xf0_02_0f, 0xf0_02_18, 0xf0_02_1f, 0xf0_02_29, 0xf0_03_38,
+        // 203
+        0xf2_02_02, 0xf2_02_09, 0xf2_02_17, 0xf2_03_28, 0xf3_02_02, 0xf3_02_09, 0xf3_02_17, 0xf3_03_28,
+        0xff_02_02, 0xff_02_09, 0xff_02_17, 0xff_03_28, 0xcb_02_01, 0xcb_03_16, 0xcc_02_01, 0xcc_03_16,
+        // 204
+        0xf2_02_03, 0xf2_02_06, 0xf2_02_0a, 0xf2_02_0f, 0xf2_02_18, 0xf2_02_1f, 0xf2_02_29, 0xf2_03_38,
+        0xf3_02_03, 0xf3_02_06, 0xf3_02_0a, 0xf3_02_0f, 0xf3_02_18, 0xf3_02_1f, 0xf3_02_29, 0xf3_03_38,
+        // 205
+        0xff_02_03, 0xff_02_06, 0xff_02_0a, 0xff_02_0f, 0xff_02_18, 0xff_02_1f, 0xff_02_29, 0xff_03_38,
+        0xcb_02_02, 0xcb_02_09, 0xcb_02_17, 0xcb_03_28, 0xcc_02_02, 0xcc_02_09, 0xcc_02_17, 0xcc_03_28,
+        // 206
+        0xcb_02_03, 0xcb_02_06, 0xcb_02_0a, 0xcb_02_0f, 0xcb_02_18, 0xcb_02_1f, 0xcb_02_29, 0xcb_03_38,
+        0xcc_02_03, 0xcc_02_06, 0xcc_02_0a, 0xcc_02_0f, 0xcc_02_18, 0xcc_02_1f, 0xcc_02_29, 0xcc_03_38,
+        // 207
+        0x00_00_d3, 0x00_00_d4, 0x00_00_d6, 0x00_00_d7, 0x00_00_da, 0x00_00_db, 0x00_00_dd, 0x00_00_de,
+        0x00_00_e2, 0x00_00_e4, 0x00_00_e8, 0x00_00_eb, 0x00_00_f0, 0x00_00_f3, 0x00_00_f7, 0x00_00_fa,
+        // 208
+        0xd3_03_00, 0xd4_03_00, 0xd6_03_00, 0xdd_03_00, 0xde_03_00, 0xdf_03_00, 0xf1_03_00, 0xf4_03_00,
+        0xf5_03_00, 0xf6_03_00, 0xf7_03_00, 0xf8_03_00, 0xfa_03_00, 0xfb_03_00, 0xfc_03_00, 0xfd_03_00,
+        // 209
+        0xd3_02_01, 0xd3_03_16, 0xd4_02_01, 0xd4_03_16, 0xd6_02_01, 0xd6_03_16, 0xdd_02_01, 0xdd_03_16,
+        0xde_02_01, 0xde_03_16, 0xdf_02_01, 0xdf_03_16, 0xf1_02_01, 0xf1_03_16, 0xf4_02_01, 0xf4_03_16,
+        // 210
+        0xd3_02_02, 0xd3_02_09, 0xd3_02_17, 0xd3_03_28, 0xd4_02_02, 0xd4_02_09, 0xd4_02_17, 0xd4_03_28,
+        0xd6_02_02, 0xd6_02_09, 0xd6_02_17, 0xd6_03_28, 0xdd_02_02, 0xdd_02_09, 0xdd_02_17, 0xdd_03_28,
+        // 211
+        0xd3_02_03, 0xd3_02_06, 0xd3_02_0a, 0xd3_02_0f, 0xd3_02_18, 0xd3_02_1f, 0xd3_02_29, 0xd3_03_38,
+        0xd4_02_03, 0xd4_02_06, 0xd4_02_0a, 0xd4_02_0f, 0xd4_02_18, 0xd4_02_1f, 0xd4_02_29, 0xd4_03_38,
+        // 212
+        0xd6_02_03, 0xd6_02_06, 0xd6_02_0a, 0xd6_02_0f, 0xd6_02_18, 0xd6_02_1f, 0xd6_02_29, 0xd6_03_38,
+        0xdd_02_03, 0xdd_02_06, 0xdd_02_0a, 0xdd_02_0f, 0xdd_02_18, 0xdd_02_1f, 0xdd_02_29, 0xdd_03_38,
+        // 213
+        0xde_02_02, 0xde_02_09, 0xde_02_17, 0xde_03_28, 0xdf_02_02, 0xdf_02_09, 0xdf_02_17, 0xdf_03_28,
+        0xf1_02_02, 0xf1_02_09, 0xf1_02_17, 0xf1_03_28, 0xf4_02_02, 0xf4_02_09, 0xf4_02_17, 0xf4_03_28,
+        // 214
+        0xde_02_03, 0xde_02_06, 0xde_02_0a, 0xde_02_0f, 0xde_02_18, 0xde_02_1f, 0xde_02_29, 0xde_03_38,
+        0xdf_02_03, 0xdf_02_06, 0xdf_02_0a, 0xdf_02_0f, 0xdf_02_18, 0xdf_02_1f, 0xdf_02_29, 0xdf_03_38,
+        // 215
+        0xf1_02_03, 0xf1_02_06, 0xf1_02_0a, 0xf1_02_0f, 0xf1_02_18, 0xf1_02_1f, 0xf1_02_29, 0xf1_03_38,
+        0xf4_02_03, 0xf4_02_06, 0xf4_02_0a, 0xf4_02_0f, 0xf4_02_18, 0xf4_02_1f, 0xf4_02_29, 0xf4_03_38,
+        // 216
+        0xf5_02_01, 0xf5_03_16, 0xf6_02_01, 0xf6_03_16, 0xf7_02_01, 0xf7_03_16, 0xf8_02_01, 0xf8_03_16,
+        0xfa_02_01, 0xfa_03_16, 0xfb_02_01, 0xfb_03_16, 0xfc_02_01, 0xfc_03_16, 0xfd_02_01, 0xfd_03_16,
+        // 217
+        0xf5_02_02, 0xf5_02_09, 0xf5_02_17, 0xf5_03_28, 0xf6_02_02, 0xf6_02_09, 0xf6_02_17, 0xf6_03_28,
+        0xf7_02_02, 0xf7_02_09, 0xf7_02_17, 0xf7_03_28, 0xf8_02_02, 0xf8_02_09, 0xf8_02_17, 0xf8_03_28,
+        // 218
+        0xf5_02_03, 0xf5_02_06, 0xf5_02_0a, 0xf5_02_0f, 0xf5_02_18, 0xf5_02_1f, 0xf5_02_29, 0xf5_03_38,
+        0xf6_02_03, 0xf6_02_06, 0xf6_02_0a, 0xf6_02_0f, 0xf6_02_18, 0xf6_02_1f, 0xf6_02_29, 0xf6_03_38,
+        // 219
+        0xf7_02_03, 0xf7_02_06, 0xf7_02_0a, 0xf7_02_0f, 0xf7_02_18, 0xf7_02_1f, 0xf7_02_29, 0xf7_03_38,
+        0xf8_02_03, 0xf8_02_06, 0xf8_02_0a, 0xf8_02_0f, 0xf8_02_18, 0xf8_02_1f, 0xf8_02_29, 0xf8_03_38,
+        // 220
+        0xfa_02_02, 0xfa_02_09, 0xfa_02_17, 0xfa_03_28, 0xfb_02_02, 0xfb_02_09, 0xfb_02_17, 0xfb_03_28,
+        0xfc_02_02, 0xfc_02_09, 0xfc_02_17, 0xfc_03_28, 0xfd_02_02, 0xfd_02_09, 0xfd_02_17, 0xfd_03_28,
+        // 221
+        0xfa_02_03, 0xfa_02_06, 0xfa_02_0a, 0xfa_02_0f, 0xfa_02_18, 0xfa_02_1f, 0xfa_02_29, 0xfa_03_38,
+        0xfb_02_03, 0xfb_02_06, 0xfb_02_0a, 0xfb_02_0f, 0xfb_02_18, 0xfb_02_1f, 0xfb_02_29, 0xfb_03_38,
+        // 222
+        0xfc_02_03, 0xfc_02_06, 0xfc_02_0a, 0xfc_02_0f, 0xfc_02_18, 0xfc_02_1f, 0xfc_02_29, 0xfc_03_38,
+        0xfd_02_03, 0xfd_02_06, 0xfd_02_0a, 0xfd_02_0f, 0xfd_02_18, 0xfd_02_1f, 0xfd_02_29, 0xfd_03_38,
+        // 223
+        0xfe_03_00, 0x00_00_e3, 0x00_00_e5, 0x00_00_e6, 0x00_00_e9, 0x00_00_ea, 0x00_00_ec, 0x00_00_ed,
+        0x00_00_f1, 0x00_00_f2, 0x00_00_f4, 0x00_00_f5, 0x00_00_f8, 0x00_00_f9, 0x00_00_fb, 0x00_00_fc,
+        // 224
+        0xfe_02_01, 0xfe_03_16, 0x02_03_00, 0x03_03_00, 0x04_03_00, 0x05_03_00, 0x06_03_00, 0x07_03_00,
+        0x08_03_00, 0x0b_03_00, 0x0c_03_00, 0x0e_03_00, 0x0f_03_00, 0x10_03_00, 0x11_03_00, 0x12_03_00,
+        // 225
+        0xfe_02_02, 0xfe_02_09, 0xfe_02_17, 0xfe_03_28, 0x02_02_01, 0x02_03_16, 0x03_02_01, 0x03_03_16,
+        0x04_02_01, 0x04_03_16, 0x05_02_01, 0x05_03_16, 0x06_02_01, 0x06_03_16, 0x07_02_01, 0x07_03_16,
+        // 226
+        0xfe_02_03, 0xfe_02_06, 0xfe_02_0a, 0xfe_02_0f, 0xfe_02_18, 0xfe_02_1f, 0xfe_02_29, 0xfe_03_38,
+        0x02_02_02, 0x02_02_09, 0x02_02_17, 0x02_03_28, 0x03_02_02, 0x03_02_09, 0x03_02_17, 0x03_03_28,
+        // 227
+        0x02_02_03, 0x02_02_06, 0x02_02_0a, 0x02_02_0f, 0x02_02_18, 0x02_02_1f, 0x02_02_29, 0x02_03_38,
+        0x03_02_03, 0x03_02_06, 0x03_02_0a, 0x03_02_0f, 0x03_02_18, 0x03_02_1f, 0x03_02_29, 0x03_03_38,
+        // 228
+        0x04_02_02, 0x04_02_09, 0x04_02_17, 0x04_03_28, 0x05_02_02, 0x05_02_09, 0x05_02_17, 0x05_03_28,
+        0x06_02_02, 0x06_02_09, 0x06_02_17, 0x06_03_28, 0x07_02_02, 0x07_02_09, 0x07_02_17, 0x07_03_28,
+        // 229
+        0x04_02_03, 0x04_02_06, 0x04_02_0a, 0x04_02_0f, 0x04_02_18, 0x04_02_1f, 0x04_02_29, 0x04_03_38,
+        0x05_02_03, 0x05_02_06, 0x05_02_0a, 0x05_02_0f, 0x05_02_18, 0x05_02_1f, 0x05_02_29, 0x05_03_38,
+        // 230
+        0x06_02_03, 0x06_02_06, 0x06_02_0a, 0x06_02_0f, 0x06_02_18, 0x06_02_1f, 0x06_02_29, 0x06_03_38,
+        0x07_02_03, 0x07_02_06, 0x07_02_0a, 0x07_02_0f, 0x07_02_18, 0x07_02_1f, 0x07_02_29, 0x07_03_38,
+        // 231
+        0x08_02_01, 0x08_03_16, 0x0b_02_01, 0x0b_03_16, 0x0c_02_01, 0x0c_03_16, 0x0e_02_01, 0x0e_03_16,
+        0x0f_02_01, 0x0f_03_16, 0x10_02_01, 0x10_03_16, 0x11_02_01, 0x11_03_16, 0x12_02_01, 0x12_03_16,
+        // 232
+        0x08_02_02, 0x08_02_09, 0x08_02_17, 0x08_03_28, 0x0b_02_02, 0x0b_02_09, 0x0b_02_17, 0x0b_03_28,
+        0x0c_02_02, 0x0c_02_09, 0x0c_02_17, 0x0c_03_28, 0x0e_02_02, 0x0e_02_09, 0x0e_02_17, 0x0e_03_28,
+        // 233
+        0x08_02_03, 0x08_02_06, 0x08_02_0a, 0x08_02_0f, 0x08_02_18, 0x08_02_1f, 0x08_02_29, 0x08_03_38,
+        0x0b_02_03, 0x0b_02_06, 0x0b_02_0a, 0x0b_02_0f, 0x0b_02_18, 0x0b_02_1f, 0x0b_02_29, 0x0b_03_38,
+        // 234
+        0x0c_02_03, 0x0c_02_06, 0x0c_02_0a, 0x0c_02_0f, 0x0c_02_18, 0x0c_02_1f, 0x0c_02_29, 0x0c_03_38,
+        0x0e_02_03, 0x0e_02_06, 0x0e_02_0a, 0x0e_02_0f, 0x0e_02_18, 0x0e_02_1f, 0x0e_02_29, 0x0e_03_38,
+        // 235
+        0x0f_02_02, 0x0f_02_09, 0x0f_02_17, 0x0f_03_28, 0x10_02_02, 0x10_02_09, 0x10_02_17, 0x10_03_28,
+        0x11_02_02, 0x11_02_09, 0x11_02_17, 0x11_03_28, 0x12_02_02, 0x12_02_09, 0x12_02_17, 0x12_03_28,
+        // 236
+        0x0f_02_03, 0x0f_02_06, 0x0f_02_0a, 0x0f_02_0f, 0x0f_02_18, 0x0f_02_1f, 0x0f_02_29, 0x0f_03_38,
+        0x10_02_03, 0x10_02_06, 0x10_02_0a, 0x10_02_0f, 0x10_02_18, 0x10_02_1f, 0x10_02_29, 0x10_03_38,
+        // 237
+        0x11_02_03, 0x11_02_06, 0x11_02_0a, 0x11_02_0f, 0x11_02_18, 0x11_02_1f, 0x11_02_29, 0x11_03_38,
+        0x12_02_03, 0x12_02_06, 0x12_02_0a, 0x12_02_0f, 0x12_02_18, 0x12_02_1f, 0x12_02_29, 0x12_03_38,
+        // 238
+        0x13_03_00, 0x14_03_00, 0x15_03_00, 0x17_03_00, 0x18_03_00, 0x19_03_00, 0x1a_03_00, 0x1b_03_00,
+        0x1c_03_00, 0x1d_03_00, 0x1e_03_00, 0x1f_03_00, 0x7f_03_00, 0xdc_03_00, 0xf9_03_00, 0x00_00_fd,
+        // 239
+        0x13_02_01, 0x13_03_16, 0x14_02_01, 0x14_03_16, 0x15_02_01, 0x15_03_16, 0x17_02_01, 0x17_03_16,
+        0x18_02_01, 0x18_03_16, 0x19_02_01, 0x19_03_16, 0x1a_02_01, 0x1a_03_16, 0x1b_02_01, 0x1b_03_16,
+        // 240
+        0x13_02_02, 0x13_02_09, 0x13_02_17, 0x13_03_28, 0x14_02_02, 0x14_02_09, 0x14_02_17, 0x14_03_28,
+        0x15_02_02, 0x15_02_09, 0x15_02_17, 0x15_03_28, 0x17_02_02, 0x17_02_09, 0x17_02_17, 0x17_03_28,
+        // 241
+        0x13_02_03, 0x13_02_06, 0x13_02_0a, 0x13_02_0f, 0x13_02_18, 0x13_02_1f, 0x13_02_29, 0x13_03_38,
+        0x14_02_03, 0x14_02_06, 0x14_02_0a, 0x14_02_0f, 0x14_02_18, 0x14_02_1f, 0x14_02_29, 0x14_03_38,
+        // 242
+        0x15_02_03, 0x15_02_06, 0x15_02_0a, 0x15_02_0f, 0x15_02_18, 0x15_02_1f, 0x15_02_29, 0x15_03_38,
+        0x17_02_03, 0x17_02_06, 0x17_02_0a, 0x17_02_0f, 0x17_02_18, 0x17_02_1f, 0x17_02_29, 0x17_03_38,
+        // 243
+        0x18_02_02, 0x18_02_09, 0x18_02_17, 0x18_03_28, 0x19_02_02, 0x19_02_09, 0x19_02_17, 0x19_03_28,
+        0x1a_02_02, 0x1a_02_09, 0x1a_02_17, 0x1a_03_28, 0x1b_02_02, 0x1b_02_09, 0x1b_02_17, 0x1b_03_28,
+        // 244
+        0x18_02_03, 0x18_02_06, 0x18_02_0a, 0x18_02_0f, 0x18_02_18, 0x18_02_1f, 0x18_02_29, 0x18_03_38,
+        0x19_02_03, 0x19_02_06, 0x19_02_0a, 0x19_02_0f, 0x19_02_18, 0x19_02_1f, 0x19_02_29, 0x19_03_38,
+        // 245
+        0x1a_02_03, 0x1a_02_06, 0x1a_02_0a, 0x1a_02_0f, 0x1a_02_18, 0x1a_02_1f, 0x1a_02_29, 0x1a_03_38,
+        0x1b_02_03, 0x1b_02_06, 0x1b_02_0a, 0x1b_02_0f, 0x1b_02_18, 0x1b_02_1f, 0x1b_02_29, 0x1b_03_38,
+        // 246
+        0x1c_02_01, 0x1c_03_16, 0x1d_02_01, 0x1d_03_16, 0x1e_02_01, 0x1e_03_16, 0x1f_02_01, 0x1f_03_16,
+        0x7f_02_01, 0x7f_03_16, 0xdc_02_01, 0xdc_03_16, 0xf9_02_01, 0xf9_03_16, 0x00_00_fe, 0x00_00_ff,
+        // 247
+        0x1c_02_02, 0x1c_02_09, 0x1c_02_17, 0x1c_03_28, 0x1d_02_02, 0x1d_02_09, 0x1d_02_17, 0x1d_03_28,
+        0x1e_02_02, 0x1e_02_09, 0x1e_02_17, 0x1e_03_28, 0x1f_02_02, 0x1f_02_09, 0x1f_02_17, 0x1f_03_28,
+        // 248
+        0x1c_02_03, 0x1c_02_06, 0x1c_02_0a, 0x1c_02_0f, 0x1c_02_18, 0x1c_02_1f, 0x1c_02_29, 0x1c_03_38,
+        0x1d_02_03, 0x1d_02_06, 0x1d_02_0a, 0x1d_02_0f, 0x1d_02_18, 0x1d_02_1f, 0x1d_02_29, 0x1d_03_38,
+        // 249
+        0x1e_02_03, 0x1e_02_06, 0x1e_02_0a, 0x1e_02_0f, 0x1e_02_18, 0x1e_02_1f, 0x1e_02_29, 0x1e_03_38,
+        0x1f_02_03, 0x1f_02_06, 0x1f_02_0a, 0x1f_02_0f, 0x1f_02_18, 0x1f_02_1f, 0x1f_02_29, 0x1f_03_38,
+        // 250
+        0x7f_02_02, 0x7f_02_09, 0x7f_02_17, 0x7f_03_28, 0xdc_02_02, 0xdc_02_09, 0xdc_02_17, 0xdc_03_28,
+        0xf9_02_02, 0xf9_02_09, 0xf9_02_17, 0xf9_03_28, 0x0a_03_00, 0x0d_03_00, 0x16_03_00, 0x00_04_00,
+        // 251
+        0x7f_02_03, 0x7f_02_06, 0x7f_02_0a, 0x7f_02_0f, 0x7f_02_18, 0x7f_02_1f, 0x7f_02_29, 0x7f_03_38,
+        0xdc_02_03, 0xdc_02_06, 0xdc_02_0a, 0xdc_02_0f, 0xdc_02_18, 0xdc_02_1f, 0xdc_02_29, 0xdc_03_38,
+        // 252
+        0xf9_02_03, 0xf9_02_06, 0xf9_02_0a, 0xf9_02_0f, 0xf9_02_18, 0xf9_02_1f, 0xf9_02_29, 0xf9_03_38,
+        0x0a_02_01, 0x0a_03_16, 0x0d_02_01, 0x0d_03_16, 0x16_02_01, 0x16_03_16, 0x00_04_00, 0x00_04_00,
+        // 253
+        0x0a_02_02, 0x0a_02_09, 0x0a_02_17, 0x0a_03_28, 0x0d_02_02, 0x0d_02_09, 0x0d_02_17, 0x0d_03_28,
+        0x16_02_02, 0x16_02_09, 0x16_02_17, 0x16_03_28, 0x00_04_00, 0x00_04_00, 0x00_04_00, 0x00_04_00,
+        // 254
+        0x0a_02_03, 0x0a_02_06, 0x0a_02_0a, 0x0a_02_0f, 0x0a_02_18, 0x0a_02_1f, 0x0a_02_29, 0x0a_03_38,
+        0x0d_02_03, 0x0d_02_06, 0x0d_02_0a, 0x0d_02_0f, 0x0d_02_18, 0x0d_02_1f, 0x0d_02_29, 0x0d_03_38,
+        // 255
+        0x16_02_03, 0x16_02_06, 0x16_02_0a, 0x16_02_0f, 0x16_02_18, 0x16_02_1f, 0x16_02_29, 0x16_03_38,
+        0x00_04_00, 0x00_04_00, 0x00_04_00, 0x00_04_00, 0x00_04_00, 0x00_04_00, 0x00_04_00, 0x00_04_00,
+    ]
 }
