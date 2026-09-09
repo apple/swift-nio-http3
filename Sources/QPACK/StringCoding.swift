@@ -116,7 +116,7 @@ extension ByteBuffer {
                 prefix: prefix - 1,
                 prefixBits: huffmanMask | prefixBits
             )
-            self.writeHuffmanEncoded(bytes: utf8)
+            self.writeHuffmanEncoded(bytes: utf8, encodedByteLength: encodedByteLength)
         case .raw:
             // One bit is used for the Huffman flag (0)
             // So the prefix is reduced by one

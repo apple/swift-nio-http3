@@ -39,8 +39,32 @@ extension ByteBuffer {
     /// - Returns: The number of bytes used while encoding the string.
     @discardableResult
     mutating func setHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
-        let clen = ByteBuffer.huffmanEncodedBitLength(of: stringBytes)
-        self.ensureBitsAvailable(clen)
+        self.setHuffmanEncoded(
+            bytes: stringBytes,
+            encodedByteLength: ByteBuffer.huffmanEncodedByteLength(of: stringBytes)
+        )
+    }
+
+    /// Encodes the given string to the buffer, using QPACK Huffman encoding.
+    ///
+    /// Determining the encoded length costs a full table lookup per input byte,
+    /// so callers that already know it — because they had to write it out as a
+    /// length prefix, or to decide whether Huffman encoding was worth using at
+    /// all — should pass it here rather than have it recomputed.
+    ///
+    /// - Parameters:
+    ///   - stringBytes: The string data to encode.
+    ///   - encodedByteLength: The encoded length of `stringBytes`, as returned
+    ///     by ``huffmanEncodedByteLength(of:)``. Passing anything else is a
+    ///     programmer error; too small a value would overrun the buffer.
+    /// - Returns: The number of bytes used while encoding the string.
+    @discardableResult
+    mutating func setHuffmanEncoded(
+        bytes stringBytes: some Collection<UInt8>,
+        encodedByteLength: Int
+    ) -> Int {
+        assert(encodedByteLength == ByteBuffer.huffmanEncodedByteLength(of: stringBytes))
+        self.ensureBytesAvailable(encodedByteLength)
 
         return self.withUnsafeMutableWritableBytes { bytes in
             var state = _EncoderState()
@@ -63,6 +87,18 @@ extension ByteBuffer {
     @discardableResult
     mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
         let written = self.setHuffmanEncoded(bytes: stringBytes)
+        self.moveWriterIndex(forwardBy: written)
+        return written
+    }
+
+    /// As ``writeHuffmanEncoded(bytes:)``, but avoids recomputing an encoded
+    /// length the caller already has. See ``setHuffmanEncoded(bytes:encodedByteLength:)``.
+    @discardableResult
+    mutating func writeHuffmanEncoded(
+        bytes stringBytes: some Collection<UInt8>,
+        encodedByteLength: Int
+    ) -> Int {
+        let written = self.setHuffmanEncoded(bytes: stringBytes, encodedByteLength: encodedByteLength)
         self.moveWriterIndex(forwardBy: written)
         return written
     }
@@ -131,8 +167,7 @@ extension ByteBuffer {
         }
     }
 
-    private mutating func ensureBitsAvailable(_ bits: Int) {
-        let bytesNeeded = bits / 8
+    private mutating func ensureBytesAvailable(_ bytesNeeded: Int) {
         if bytesNeeded <= self.writableBytes {
             // just zero the requested number of bytes before we start OR-ing in our values
             self.withUnsafeMutableWritableBytes { ptr in
