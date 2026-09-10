@@ -12,9 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOCore
 import Benchmark
 import HTTPTypes
 @_spi(Benchmarks) import NIOHTTP3
+@_spi(PackageInternal) import QPACK
 import NIOQUICHelpers
 
 /// A realistic request header set for a browser GET, exercising a mix of exact
@@ -46,6 +48,31 @@ let benchmarks: @Sendable () -> Void = {
     ) { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(QPACKBenchmarks.staticEncode(headers: requestHeaders))
+        }
+    }
+
+    // Exercises the static-table lookup plus serialization: string coding and
+    // Huffman encoding, which the two benchmarks above never reach.
+    Benchmark(
+        "QPACKEncode",
+        configuration: .init(
+            metrics: [.mallocCountTotal, .instructions, .wallClock],
+            scalingFactor: .kilo
+        )
+    ) { benchmark in
+        let fieldLines = requestHeaders.map {
+            FieldLine.literal(requireLiteralRepresentation: true, name: $0.name.canonicalName, value: $0.value)
+        }
+        var result = ByteBuffer()
+        result.reserveCapacity(1024)
+
+        benchmark.startMeasurement()
+        for _ in benchmark.scaledIterations {
+            result.clear()
+            for line in fieldLines {
+                result.writeFieldLine(line, preferHuffmanEncoding: true)
+            }
+            blackHole(result)
         }
     }
 
