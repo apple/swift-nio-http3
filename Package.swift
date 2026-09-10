@@ -75,6 +75,14 @@ let package = Package(
             ],
             swiftSettings: swiftSettings
         ),
+        .executableTarget(
+            // Generates the QPACK static table and its name lookup. Not a product: this is a
+            // development tool, run by hand when the static table changes.
+            //
+            //     swift run GenerateStaticHeaderTable Sources/QPACK/Headers
+            name: "GenerateStaticHeaderTable",
+            swiftSettings: swiftSettings
+        ),
         .testTarget(
             name: "HTTP3Tests",
             dependencies: [
