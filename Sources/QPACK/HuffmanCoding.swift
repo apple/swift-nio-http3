@@ -35,18 +35,6 @@ extension ByteBuffer {
 
     /// Encodes the given string to the buffer, using QPACK Huffman encoding.
     ///
-    /// - Parameter stringBytes: The string data to encode.
-    /// - Returns: The number of bytes used while encoding the string.
-    @discardableResult
-    mutating func setHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
-        self.setHuffmanEncoded(
-            bytes: stringBytes,
-            encodedByteLength: ByteBuffer.huffmanEncodedByteLength(of: stringBytes)
-        )
-    }
-
-    /// Encodes the given string to the buffer, using QPACK Huffman encoding.
-    ///
     /// Determining the encoded length costs a full table lookup per input byte,
     /// so callers that already know it — because they had to write it out as a
     /// length prefix, or to decide whether Huffman encoding was worth using at
@@ -82,13 +70,6 @@ extension ByteBuffer {
 
             return state.offset
         }
-    }
-
-    @discardableResult
-    mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
-        let written = self.setHuffmanEncoded(bytes: stringBytes)
-        self.moveWriterIndex(forwardBy: written)
-        return written
     }
 
     /// As ``writeHuffmanEncoded(bytes:)``, but avoids recomputing an encoded
