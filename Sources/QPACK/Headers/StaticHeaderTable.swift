@@ -107,19 +107,16 @@ struct StaticEntryGroup {
     }
 
     /// Whether the static table carries the name at all.
-    @inline(__always)
     var isEmpty: Bool {
         self.firstStart == self.firstEnd
     }
 
     /// The first run of indices, which holds the lowest index carrying the name.
-    @inline(__always)
     var first: Range<Int> {
         Int(self.firstStart)..<Int(self.firstEnd)
     }
 
     /// The second run of indices, empty for every name but two.
-    @inline(__always)
     var second: Range<Int> {
         Int(self.secondStart)..<Int(self.secondEnd)
     }
@@ -128,7 +125,6 @@ struct StaticEntryGroup {
 extension UnsafeBufferPointer<UInt8> {
     /// Unchecked element access. Every index the lookup reads has been proven in range by the
     /// enclosing `switch` on `count`.
-    @inline(__always)
     subscript(position position: Int) -> UInt8 {
         self.baseAddress.unsafelyUnwrapped[position]
     }
