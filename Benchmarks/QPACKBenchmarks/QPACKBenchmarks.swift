@@ -12,12 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIOCore
 import Benchmark
 import HTTPTypes
+import NIOCore
 @_spi(Benchmarks) import NIOHTTP3
-@_spi(PackageInternal) import QPACK
 import NIOQUICHelpers
+@_spi(PackageInternal) import QPACK
 
 /// A realistic request header set for a browser GET, exercising a mix of exact
 /// static-table matches (`:method GET`), name-only matches (`:authority`) and

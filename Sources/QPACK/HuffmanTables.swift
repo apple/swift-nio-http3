@@ -37,7 +37,7 @@ struct HuffmanEncoderTable {
     }
 
     // This table is from RFC 7541, Appendix B.
-    private static let rawTable: InlineArray<256, HuffmanEncodeEntry.Raw> = [
+    private static let rawTable: InlineArray<257, HuffmanEncodeEntry.Raw> = [
         (0x1ff8, 13), (0x7fffd8, 23), (0xfffffe2, 28), (0xfffffe3, 28), (0xfffffe4, 28), (0xfffffe5, 28),
         (0xfffffe6, 28), (0xfffffe7, 28), (0xfffffe8, 28), (0xffffea, 24), (0x3fff_fffc, 30), (0xfffffe9, 28),
         (0xfffffea, 28), (0x3fff_fffd, 30), (0xfffffeb, 28), (0xfffffec, 28), (0xfffffed, 28), (0xfffffee, 28),
@@ -80,7 +80,7 @@ struct HuffmanEncoderTable {
         (0x1ffffee, 25), (0x1ffffef, 25), (0xfffff4, 24), (0xfffff5, 24), (0x3ffffea, 26), (0x7ffff4, 23),
         (0x3ffffeb, 26), (0x7ffffe6, 27), (0x3ffffec, 26), (0x3ffffed, 26), (0x7ffffe7, 27), (0x7ffffe8, 27),
         (0x7ffffe9, 27), (0x7ffffea, 27), (0x7ffffeb, 27), (0xffffffe, 28), (0x7ffffec, 27), (0x7ffffed, 27),
-        (0x7ffffee, 27), (0x7ffffef, 27), (0x7fffff0, 27), (0x3ffffee, 26), // (0x3fff_ffff, 30),
+        (0x7ffffee, 27), (0x7ffffef, 27), (0x7fffff0, 27), (0x3ffffee, 26), (0x3fff_ffff, 30),
     ]
 }
 
