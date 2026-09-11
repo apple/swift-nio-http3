@@ -21,14 +21,14 @@ import Testing
 struct StaticHeaderTableTests {
     @Test func index() {
         // RFC 9204 Appendix A. Static Table
-        #expect(StaticHeaderTable.get(at: 0)?.0.rawName == ":authority")
-        #expect(StaticHeaderTable.get(at: 0)?.1 == "")
+        #expect(StaticHeaderTable.get(at: 0)?.name.rawName == ":authority")
+        #expect(StaticHeaderTable.get(at: 0)?.value == "")
 
-        #expect(StaticHeaderTable.get(at: 0)?.0.rawName == ":authority")
-        #expect(StaticHeaderTable.get(at: 0)?.1 == "")
+        #expect(StaticHeaderTable.get(at: 0)?.name.rawName == ":authority")
+        #expect(StaticHeaderTable.get(at: 0)?.value == "")
 
-        #expect(StaticHeaderTable.get(at: 98)?.0.rawName == "x-frame-options")
-        #expect(StaticHeaderTable.get(at: 98)?.1 == "sameorigin")
+        #expect(StaticHeaderTable.get(at: 98)?.name.rawName == "x-frame-options")
+        #expect(StaticHeaderTable.get(at: 98)?.value == "sameorigin")
 
         #expect(StaticHeaderTable.get(at: 10000) == nil)
     }
@@ -41,7 +41,7 @@ struct StaticHeaderTableTests {
         // order. This is what the lookup's groups have to reproduce.
         var indicesByName: [HTTPField.Name: [Int]] = [:]
         for (index, entry) in StaticHeaderTable.raw.enumerated() {
-            indicesByName[entry.0, default: []].append(index)
+            indicesByName[entry.name, default: []].append(index)
         }
 
         #expect(StaticHeaderTable.raw.count == 99)
@@ -56,7 +56,7 @@ struct StaticHeaderTableTests {
 
             for index in Array(group.first) + Array(group.second) {
                 let entry = try #require(StaticHeaderTable.get(at: index))
-                #expect(entry.0 == name, "\(name.canonicalName)")
+                #expect(entry.name == name, "\(name.canonicalName)")
             }
             covered += group.first.count + group.second.count
         }
@@ -70,8 +70,8 @@ struct StaticHeaderTableTests {
         func linearScan(name: HTTPField.Name, value: String?) -> (index: Int, containsValue: Bool)? {
             var nameOnlyMatch: Int? = nil
             for index in 0..<99 {
-                guard let entry = StaticHeaderTable.get(at: index), entry.0 == name else { continue }
-                if let value, entry.1 == value {
+                guard let entry = StaticHeaderTable.get(at: index), entry.name == name else { continue }
+                if let value, entry.value == value {
                     return (index: index, containsValue: true)
                 }
                 if nameOnlyMatch == nil {
@@ -84,9 +84,9 @@ struct StaticHeaderTableTests {
         var probes: [(HTTPField.Name, String?)] = []
         for index in 0..<99 {
             let entry = try #require(StaticHeaderTable.get(at: index))
-            probes.append((entry.0, entry.1))
-            probes.append((entry.0, nil))
-            probes.append((entry.0, "definitely-not-a-value"))
+            probes.append((entry.name, entry.value))
+            probes.append((entry.name, nil))
+            probes.append((entry.name, "definitely-not-a-value"))
         }
         // Names that aren't in the static table, including prefixes and suffixes of ones that are.
         for rawName in [

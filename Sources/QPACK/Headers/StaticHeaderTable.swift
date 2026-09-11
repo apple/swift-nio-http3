@@ -26,7 +26,7 @@ enum StaticHeaderTable {
     ///
     /// The absolute index is the position, which is the array index. Note that the QPACK
     /// static table is indexed from 0, whereas the HPACK static table is indexed from 1.
-    static let raw: [(HTTPField.Name, String)] = [
+    static let raw: [(name: HTTPField.Name, value: String)] = [
         (.init(parsed: ":authority")!, ""),  // 0
         (.init(parsed: ":path")!, "/"),  // 1
         (.init(parsed: "age")!, "0"),  // 2
@@ -129,7 +129,7 @@ enum StaticHeaderTable {
     ]
 
     /// Get the element of the static table at the specific index if it exists
-    static func get(at index: Int) -> (HTTPField.Name, String)? {
+    static func get(at index: Int) -> (name: HTTPField.Name, value: String)? {
         if Self.raw.indices.contains(index) {
             return Self.raw[index]
         } else {
@@ -156,10 +156,10 @@ enum StaticHeaderTable {
         }
 
         if let value {
-            for index in group.first where Self.raw[index].1 == value {
+            for index in group.first where Self.raw[index].value == value {
                 return (index: index, containsValue: true)
             }
-            for index in group.second where Self.raw[index].1 == value {
+            for index in group.second where Self.raw[index].value == value {
                 return (index: index, containsValue: true)
             }
         }
