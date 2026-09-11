@@ -14,12 +14,19 @@
 
 import HTTPTypes
 
+/// The QPACK static table as defined in RFC 9204 § 3.1.
+///
+/// The table itself, the entries regrouped by name and the name lookup live in
+/// `StaticHeaderTable+Generated.swift`, which the `GenerateStaticHeaderTable` target produces from
+/// the table in its `StaticTable.swift`. If the table changes, change it there and regenerate:
+///
+///     swift run GenerateStaticHeaderTable Sources/QPACK/Headers
 enum StaticHeaderTable {
     /// This array represents all the static header table entries as defined in RFC 9204 § 3.1.
     ///
-    /// The absolute index is the position, which is the array index.
-    /// Note that the QPACK static table is indexed from 0, whereas the HPACK static table is indexed from 1.
-    private static let shared: [(HTTPField.Name, String)] = [
+    /// The absolute index is the position, which is the array index. Note that the QPACK
+    /// static table is indexed from 0, whereas the HPACK static table is indexed from 1.
+    static let raw: [(name: HTTPField.Name, value: String)] = [
         (.init(parsed: ":authority")!, ""),  // 0
         (.init(parsed: ":path")!, "/"),  // 1
         (.init(parsed: "age")!, "0"),  // 2
@@ -121,20 +128,10 @@ enum StaticHeaderTable {
         (.init(parsed: "x-frame-options")!, "sameorigin"),  // 98
     ]
 
-    /// A mapping of header name to the array of static table indices carrying that name.
-    /// Arrays are guaranteed to be non-empty, and their values are in ascending index order.
-    static let indicesByName: [HTTPField.Name: [Int]] = {
-        var result = [HTTPField.Name: [Int]](minimumCapacity: Self.shared.count)
-        for index in Self.shared.indices {
-            result[Self.shared[index].0, default: []].append(index)
-        }
-        return result
-    }()
-
     /// Get the element of the static table at the specific index if it exists
-    static func get(at index: Int) -> (HTTPField.Name, String)? {
-        if self.shared.indices.contains(index) {
-            return self.shared[index]
+    static func get(at index: Int) -> (name: HTTPField.Name, value: String)? {
+        if Self.raw.indices.contains(index) {
+            return Self.raw[index]
         } else {
             return nil
         }
@@ -153,19 +150,88 @@ enum StaticHeaderTable {
     ///            parameter, an indication whether that value was also found. Returns `nil`
     ///            if no matching header name could be located.
     static func find(name: HTTPField.Name, value: String?) -> (index: Int, containsValue: Bool)? {
-        guard let indices = Self.indicesByName[name] else {
+        let group = Self.entryGroup(for: name)
+        guard !group.isEmpty else {
             return nil
         }
 
-        if let value = value {
-            for index in indices {
-                if Self.shared[index].1 == value {
-                    return (index: index, containsValue: true)
-                }
+        if let value {
+            for index in group.first where Self.raw[index].value == value {
+                return (index: index, containsValue: true)
+            }
+            for index in group.second where Self.raw[index].value == value {
+                return (index: index, containsValue: true)
             }
         }
 
-        // No value (or no matching value), return the first index.
-        return (index: indices[0], containsValue: false)
+        // No value (or no matching value), return the first index carrying the name.
+        return (index: group.first.lowerBound, containsValue: false)
+    }
+
+    /// Resolves `name` to the static table indices carrying that name, or an empty group if the
+    /// static table doesn't carry it.
+    ///
+    /// See `entryGroup(canonicalName:utf8:)`, which is generated.
+    ///
+    /// The name is handed to the lookup as well as its bytes because the lookup confirms a
+    /// candidate with a whole-string comparison, which is one `memcmp` rather than a
+    /// byte-at-a-time loop.
+    static func entryGroup(for name: HTTPField.Name) -> StaticEntryGroup {
+        let canonicalName = name.canonicalName
+        let result = canonicalName.utf8.withContiguousStorageIfAvailable {
+            Self.entryGroup(canonicalName: canonicalName, utf8: $0)
+        }
+        if let result {
+            return result
+        }
+        // Non-contiguous UTF-8 (a lazily bridged `NSString`). Copy into contiguous storage.
+        var copy = canonicalName
+        return copy.withUTF8 { Self.entryGroup(canonicalName: canonicalName, utf8: $0) }
+    }
+}
+
+/// The static table indices carrying one field name.
+///
+/// The entries sharing a name are contiguous in the static table, except for `:status` and
+/// `access-control-allow-headers`, which RFC 9204 continues past index 62 — so a name needs at
+/// most two runs. Holding them as `UInt8` bounds (the table has 99 entries) keeps the whole group
+/// in a register.
+struct StaticEntryGroup {
+    private let firstStart: UInt8
+    private let firstEnd: UInt8
+    private let secondStart: UInt8
+    private let secondEnd: UInt8
+
+    /// The group of a name the static table doesn't carry.
+    static let none = StaticEntryGroup(0, 0)
+
+    init(_ firstStart: UInt8, _ firstEnd: UInt8, _ secondStart: UInt8 = 0, _ secondEnd: UInt8 = 0) {
+        self.firstStart = firstStart
+        self.firstEnd = firstEnd
+        self.secondStart = secondStart
+        self.secondEnd = secondEnd
+    }
+
+    /// Whether the static table carries the name at all.
+    var isEmpty: Bool {
+        self.firstStart == self.firstEnd
+    }
+
+    /// The first run of indices, which holds the lowest index carrying the name.
+    var first: Range<Int> {
+        Int(self.firstStart)..<Int(self.firstEnd)
+    }
+
+    /// The second run of indices, empty for every name but two.
+    var second: Range<Int> {
+        Int(self.secondStart)..<Int(self.secondEnd)
+    }
+}
+
+extension UnsafeBufferPointer<UInt8> {
+    /// Unchecked element access. Every index the lookup reads has been proven in range by the
+    /// enclosing `switch` on `count`.
+    subscript(position position: Int) -> UInt8 {
+        self.baseAddress.unsafelyUnwrapped[position]
     }
 }
