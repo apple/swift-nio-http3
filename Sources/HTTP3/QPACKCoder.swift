@@ -41,7 +41,7 @@ public protocol QPACKOutboundDecoderStream: ~Copyable {
 
 /// An object representing an HTTP3Connection to forward connection level errors to.
 @_spi(PackageInternal)
-public protocol ConnectionDelegate {
+public protocol QPACKConnectionDelegate {
     /// Tear the connection down. The error's ``HTTP3Error/h3ErrorCode`` is the code to close it with.
     func connectionError(_ error: HTTP3Error)
 
@@ -99,7 +99,7 @@ public protocol QPACKDecodeReceiver {
 public final class QPACKCoder<
     OutboundEncoderStream: QPACKOutboundEncoderStream & ~Copyable,
     OutboundDecoderStream: QPACKOutboundDecoderStream & ~Copyable,
-    ConnectionDelegate: HTTP3.ConnectionDelegate,
+    ConnectionDelegate: HTTP3.QPACKConnectionDelegate,
     DecodeReceiver: QPACKDecodeReceiver
 > {
 

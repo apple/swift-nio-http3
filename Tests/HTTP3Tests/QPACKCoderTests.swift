@@ -546,7 +546,7 @@ private final class TestOutboundDecoderStream: QPACKOutboundDecoderStream {
 }
 
 /// Records the connection level side effects: errors and requests to open an encoder stream.
-private final class TestConnection: HTTP3.ConnectionDelegate {
+private final class TestConnection: HTTP3.QPACKConnectionDelegate {
     var errors: [HTTP3Error] = []
     var madeOutboundEncoderStreamCount = 0
 
