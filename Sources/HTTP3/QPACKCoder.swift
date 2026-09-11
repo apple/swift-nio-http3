@@ -151,7 +151,8 @@ public final class QPACKCoder<
     /// If the peer advertised a zero sized dynamic table no encoder stream is requested, since it would never be
     /// used. See RFC 9204 § 4.2.
     ///
-    /// - Precondition: The peer may only send SETTINGS once, so this must not be called more than once.
+    /// - Important: The peer may only send SETTINGS once. Calling this a second time leaves the coder's state
+    ///   untouched and reports an `H3_FRAME_UNEXPECTED` connection error to the ``ConnectionDelegate``.
     ///
     /// - Parameters:
     ///   - maxQueueSize: The peer's `SETTINGS_QPACK_BLOCKED_STREAMS`.
@@ -169,6 +170,8 @@ public final class QPACKCoder<
         switch action {
         case .makeEncoderInstructionStream:
             self.connection.makeOutboundEncoderStream()
+        case .emitConnectionError(let error):
+            self.connection.connectionError(error)
         case .none:
             break
         }
