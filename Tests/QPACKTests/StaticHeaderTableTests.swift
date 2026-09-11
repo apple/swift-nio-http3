@@ -19,8 +19,7 @@ import Testing
 @testable import QPACK
 
 struct StaticHeaderTableTests {
-    @Test
-    func testIndex() throws {
+    @Test func index() {
         // RFC 9204 Appendix A. Static Table
         #expect(StaticHeaderTable.get(at: 0)?.0.rawName == ":authority")
         #expect(StaticHeaderTable.get(at: 0)?.1 == "")
@@ -35,18 +34,17 @@ struct StaticHeaderTableTests {
     }
 
     /// The static table and the name lookup are both generated from one table in the
-    /// `GenerateStaticHeaderTable` target. Check that they agree with each other, which is what a
+    /// `GenerateStaticHeaderTable` target. Check that static tab agree with each other, which is what a
     /// stale regeneration would break.
-    @Test
-    func testGeneratedTablesAgree() throws {
+    @Test func generatedTablesAgree() throws {
         // A mapping of header name to the static table indices carrying that name, in ascending
         // order. This is what the lookup's groups have to reproduce.
         var indicesByName: [HTTPField.Name: [Int]] = [:]
-        for (index, entry) in staticHeaderTable.enumerated() {
+        for (index, entry) in StaticHeaderTable.raw.enumerated() {
             indicesByName[entry.0, default: []].append(index)
         }
 
-        #expect(staticHeaderTable.count == 99)
+        #expect(StaticHeaderTable.raw.count == 99)
 
         var covered = 0
         for (name, expected) in indicesByName {
@@ -63,13 +61,12 @@ struct StaticHeaderTableTests {
             covered += group.first.count + group.second.count
         }
         // Every entry belongs to exactly one group, so the groups tile the static table.
-        #expect(covered == staticHeaderTable.count)
+        #expect(covered == StaticHeaderTable.raw.count)
     }
 
     /// `find` must agree with a linear scan of the static table for every entry, and must not
     /// match names that aren't in the table.
-    @Test
-    func testFindMatchesLinearScan() throws {
+    @Test func findMatchesLinearScan() throws {
         func linearScan(name: HTTPField.Name, value: String?) -> (index: Int, containsValue: Bool)? {
             var nameOnlyMatch: Int? = nil
             for index in 0..<99 {
@@ -113,8 +110,7 @@ struct StaticHeaderTableTests {
     }
 
     /// The lookup keys off the canonical (lowercase) name, so casing in the raw name mustn't matter.
-    @Test
-    func testFindIsCaseInsensitive() throws {
+    @Test func findIsCaseInsensitive() throws {
         let name = try #require(HTTPField.Name("Content-Type"))
         #expect(StaticHeaderTable.find(name: name, value: "text/css")?.index == 51)
         #expect(StaticHeaderTable.find(name: name, value: nil)?.index == 44)
