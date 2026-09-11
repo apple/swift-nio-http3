@@ -22,13 +22,15 @@ extension ByteBuffer {
     }
 
     /// Returns the number of *bits* required to encode a given string.
+    @available(anyAppleOS 26.0, *)
     fileprivate static func huffmanEncodedBitLength(of bytes: some Collection<UInt8>) -> Int {
-        let numberOfBits = bytes.reduce(0) { $0 + staticHuffmanTable[Int($1)].nbits }
+        let numberOfBits = bytes.reduce(0) { $0 + HuffmanEncoderTable[$1].nbits }
         // round up to nearest multiple of 8 for EOS prefix
         return (numberOfBits + 7) & ~7
     }
 
     /// Returns the number of bytes required to encode a given string.
+    @available(anyAppleOS 26.0, *)
     static func huffmanEncodedByteLength(of bytes: some Collection<UInt8>) -> Int {
         self.huffmanEncodedBitLength(of: bytes) / 8
     }
@@ -41,6 +43,7 @@ extension ByteBuffer {
     ///     by ``huffmanEncodedByteLength(of:)``. Passing anything else is a
     ///     programmer error; too small a value would overrun the buffer.
     /// - Returns: The number of bytes used while encoding the string.
+    @available(anyAppleOS 26.0, *)
     @discardableResult
     mutating func setHuffmanEncoded(
         bytes stringBytes: some Collection<UInt8>,
@@ -53,7 +56,7 @@ extension ByteBuffer {
             var state = _EncoderState()
 
             for byte in stringBytes {
-                ByteBuffer.writeHuffmanEntry(entry: staticHuffmanTable[Int(byte)], state: &state, bytes: bytes)
+                ByteBuffer.writeHuffmanEntry(entry: HuffmanEncoderTable[byte], state: &state, bytes: bytes)
             }
 
             if state.remainingBits > 0 && state.remainingBits < 8 {
@@ -67,6 +70,7 @@ extension ByteBuffer {
         }
     }
 
+    @available(anyAppleOS 26.0, *)
     @discardableResult
     mutating func writeHuffmanEncoded(
         bytes stringBytes: some Collection<UInt8>,
@@ -78,7 +82,7 @@ extension ByteBuffer {
     }
 
     fileprivate static func writeHuffmanEntry(
-        entry: HuffmanTableEntry,
+        entry: HuffmanEncodeEntry,
         state: inout _EncoderState,
         bytes: UnsafeMutableRawBufferPointer
     ) {
@@ -92,7 +96,8 @@ extension ByteBuffer {
             bytes[state.offset] |= UInt8(entry.bits << diff)
             state.remainingBits -= entry.nbits
         } else {
-            var (code, nbits) = entry
+            var code = entry.bits
+            var nbits = entry.nbits
 
             nbits -= state.remainingBits
             bytes[state.offset] |= UInt8(code >> nbits)
@@ -192,7 +197,7 @@ extension ByteBuffer {
 
             // We force-unwrap here to crash if we attempt to decode out of bounds.
             for ch in self.viewBytes(at: index, length: length)! {
-                var t = HuffmanDecoderTable.shared[state: state, nybble: ch >> 4]
+                var t = HuffmanDecoderTable[state: state, nybble: ch >> 4]
                 if t.flags.contains(.failure) {
                     throw HuffmanDecodeError.invalidState
                 }
@@ -201,7 +206,7 @@ extension ByteBuffer {
                     offset &+= 1
                 }
 
-                t = HuffmanDecoderTable.shared[state: t.state, nybble: ch & 0xf]
+                t = HuffmanDecoderTable[state: t.state, nybble: ch & 0xf]
                 if t.flags.contains(.failure) {
                     throw HuffmanDecodeError.invalidState
                 }

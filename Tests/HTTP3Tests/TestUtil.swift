@@ -18,6 +18,7 @@ import NIOCore
 @testable import QPACK
 
 extension String {
+    @available(anyAppleOS 26.0, *)
     var huffmanEncodedBytes: [UInt8] {
         var buffer = ByteBuffer()
         buffer.writeHuffmanEncoded(bytes: self.utf8)
@@ -38,6 +39,7 @@ extension HTTP3GoawayID: ExpressibleByIntegerLiteral {
 }
 
 extension ByteBuffer {
+    @available(anyAppleOS 26.0, *)
     @discardableResult
     mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
         self.writeHuffmanEncoded(

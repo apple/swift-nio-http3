@@ -75,6 +75,7 @@ extension ByteBuffer {
     /// - Parameters:
     ///   - instruction: The instruction to encode.
     ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and more efficient to do so).
+    @available(anyAppleOS 26.0, *)
     mutating func writeQPACKEncoderInstruction(
         _ instruction: QPACKEncoderInstruction,
         preferHuffmanEncoding: Bool
@@ -160,6 +161,7 @@ extension ByteBuffer {
 
 /// Encode qpack encoder instructions.
 @_spi(PackageInternal)
+@available(anyAppleOS 26.0, *)
 public struct QPACKEncoderInstructionEncoder {
     @_spi(PackageInternal)
     public typealias OutboundIn = QPACKEncoderInstruction
