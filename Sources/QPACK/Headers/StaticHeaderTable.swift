@@ -22,8 +22,7 @@ import HTTPTypes
 ///
 ///     swift run GenerateStaticHeaderTable Sources/QPACK/Headers
 enum StaticHeaderTable {
-
-    /// All the static header table entries as defined in RFC 9204 § 3.1.
+    /// This array represents all the static header table entries as defined in RFC 9204 § 3.1.
     ///
     /// The absolute index is the position, which is the array index. Note that the QPACK
     /// static table is indexed from 0, whereas the HPACK static table is indexed from 1.
