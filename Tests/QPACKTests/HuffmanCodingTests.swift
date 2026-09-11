@@ -147,6 +147,7 @@ struct HuffmanCodingTests {
 }
 
 extension ByteBuffer {
+    @available(anyAppleOS 26.0, *)
     @discardableResult
     mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
         self.writeHuffmanEncoded(

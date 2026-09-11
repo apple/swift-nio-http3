@@ -99,6 +99,7 @@ struct NIOHTTP3StreamHandlerTests {
         .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
     }
 
+    @available(anyAppleOS 26.0, *)
     private var testRequestPartialHeaderBytes: ByteBuffer {
         var buffer = ByteBuffer()
         buffer.writeHTTP3PartialFrame(.headers(self.testRequestPartialHeader), preferHuffmanEncoding: false)

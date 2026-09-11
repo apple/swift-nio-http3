@@ -29,6 +29,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         return .init(fieldSection: .init(prefix: fieldSectionPrefix, lines: [line]))
     }
 
+    @available(anyAppleOS 26.0, *)
     private var testHeaderFrameBytes: [UInt8] {
         let header = self.testHeader
         var buffer = ByteBuffer()
