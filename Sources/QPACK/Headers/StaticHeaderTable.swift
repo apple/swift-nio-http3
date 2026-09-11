@@ -128,8 +128,6 @@ enum StaticHeaderTable {
         (.init(parsed: "x-frame-options")!, "sameorigin"),  // 98
     ]
 
-
-
     /// Get the element of the static table at the specific index if it exists
     static func get(at index: Int) -> (HTTPField.Name, String)? {
         if Self.raw.indices.contains(index) {
