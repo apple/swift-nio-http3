@@ -37,3 +37,13 @@ extension HTTP3GoawayID: ExpressibleByIntegerLiteral {
         self.init(rawValue: value)
     }
 }
+
+extension ByteBuffer {
+    @discardableResult
+    mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
+        self.writeHuffmanEncoded(
+            bytes: stringBytes,
+            encodedByteLength: ByteBuffer.huffmanEncodedByteLength(of: stringBytes)
+        )
+    }
+}
