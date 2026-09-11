@@ -91,16 +91,28 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
                     )
                     return .makeEncoderInstructionStream
                 }
-            case .awaitingStream:
-                // This can't happen because the frame validator enforces only one settings frame
-                fatalError("Double remote settings")
-            case .withDynamic:
-                // This can't happen because the frame validator enforces only one settings frame
-                fatalError("Double remote settings")
-            case .withoutDynamic:
-                // This can't happen because the frame validator enforces only one settings frame
-                fatalError("Double remote settings")
+            case .awaitingStream(let awaitingStream):
+                self = .init(state: .awaitingStream(awaitingStream))
+                return .emitConnectionError(Self.duplicateSettingsError(location: .here()))
+            case .withDynamic(let withDynamic):
+                self = .init(state: .withDynamic(withDynamic))
+                return .emitConnectionError(Self.duplicateSettingsError(location: .here()))
+            case .withoutDynamic(let withoutDynamic):
+                self = .init(state: .withoutDynamic(withoutDynamic))
+                return .emitConnectionError(Self.duplicateSettingsError(location: .here()))
             }
+        }
+
+        /// RFC 9114 § 7.2.4: the peer may only send SETTINGS once, and a second one is a connection error.
+        @inline(never)
+        private static func duplicateSettingsError(location: HTTP3Error.SourceLocation) -> HTTP3Error {
+            HTTP3Error(
+                code: .unexpectedFrame,
+                message: "Received a second settings frame",
+                cause: nil,
+                errorCode: .frameUnexpected,
+                location: location
+            )
         }
 
         enum OutboundEncoderStreamReadyAction {
@@ -292,9 +304,13 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
 
     enum GotRemoteSettingsAction {
         case makeEncoderInstructionStream
+        case emitConnectionError(HTTP3Error)
     }
 
-    /// Call this when the settings have been received from the remote. This must never be called more than once.
+    /// Call this when the settings have been received from the remote.
+    ///
+    /// The peer may only send SETTINGS once: a second call returns ``GotRemoteSettingsAction/emitConnectionError(_:)``
+    /// and leaves the encoder state untouched.
     mutating func receivedRemoteSettings(
         maxQueueSize: Int,
         effectiveDynamicTableSize: Int
