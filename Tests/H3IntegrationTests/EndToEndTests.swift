@@ -311,7 +311,7 @@ struct EndToEndTests {
         #expect(clientReceivedControlFrames == [.settings(serverSettings)])
 
         // Tear down
-        try await serverChannel.pipeline.handler(type: QUICHandler.self).flatMap {
+        try await serverChannel.pipeline.handler(type: QUICHandler<QUICStreamChannels>.self).flatMap {
             $0.shutdownGracefully(deadline: .now())
         }.get()
         try await clientConnectionChannel.closeFuture.get()
@@ -536,7 +536,7 @@ struct EndToEndTests {
         )
 
         // Tear down
-        try await serverChannel.pipeline.handler(type: QUICHandler.self).flatMap {
+        try await serverChannel.pipeline.handler(type: QUICHandler<QUICStreamChannels>.self).flatMap {
             $0.shutdownGracefully(deadline: .now())
         }.get()
         try await clientConnectionChannel.closeFuture.get()
@@ -642,7 +642,7 @@ struct EndToEndTests {
         #expect(clientReceivedFrames == [.headers([HTTPField(name: .status, value: "200")])])
 
         // Tear down
-        try await serverChannel.pipeline.handler(type: QUICHandler.self).flatMap {
+        try await serverChannel.pipeline.handler(type: QUICHandler<QUICStreamChannels>.self).flatMap {
             $0.shutdownGracefully(deadline: .now())
         }.get()
         try await clientConnectionChannel.closeFuture.get()
