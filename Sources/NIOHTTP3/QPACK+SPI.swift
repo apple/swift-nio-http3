@@ -52,31 +52,4 @@ public enum QPACKBenchmarks {
         )
         return encoder.encode(headers: headers, forStream: streamID).fieldSection.lines.count
     }
-
-    /// Look every header up in the QPACK static table, matching on name and value.
-    ///
-    /// The return value doesn't matter, but needs to be there so the calling benchmark
-    /// can stop the function call from being optimised away.
-    @_spi(Benchmarks)
-    public static func staticTableFind(headers: [HTTPField]) -> Int {
-        var result = 0
-        for header in headers {
-            result &+= StaticHeaderTableBenchmarks.find(header: header)
-        }
-        return result
-    }
-
-    /// Look the name of every header up in the QPACK static table, ignoring values. This isolates
-    /// the name lookup from the value comparisons.
-    ///
-    /// The return value doesn't matter, but needs to be there so the calling benchmark
-    /// can stop the function call from being optimised away.
-    @_spi(Benchmarks)
-    public static func staticTableFindNameOnly(headers: [HTTPField]) -> Int {
-        var result = 0
-        for header in headers {
-            result &+= StaticHeaderTableBenchmarks.findNameOnly(header: header)
-        }
-        return result
-    }
 }
