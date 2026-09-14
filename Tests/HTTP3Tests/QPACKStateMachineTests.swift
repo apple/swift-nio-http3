@@ -19,6 +19,14 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 
 struct QPACKStateMachineTests {
+    /// ``QPACKStateMachine/GotRemoteSettingsAction`` carries an error, so it isn't `Equatable`.
+    private func isMakeEncoderInstructionStream<Context>(
+        _ action: QPACKStateMachine<Context>.GotRemoteSettingsAction?
+    ) -> Bool {
+        guard case .makeEncoderInstructionStream = action else { return false }
+        return true
+    }
+
     @Test func testBeginUsingDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
@@ -31,9 +39,47 @@ struct QPACKStateMachineTests {
         case .makeEncoderInstructionStream:
             Issue.record("Expected no outbound encoder stream")
             return
+        case .emitConnectionError(let error):
+            Issue.record("Unexpected connection error \(error)")
+            return
         case .none:
             break  // Good
         }
+    }
+
+    @Test func secondSettingsIsAConnectionError() {
+        var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
+        let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
+        #expect(isMakeEncoderInstructionStream(action1))
+
+        // RFC 9114 § 7.2.4: the peer may only send SETTINGS once.
+        let action2 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 4096)
+        guard case .emitConnectionError(let error) = action2 else {
+            Issue.record("Expected a connection error, got \(String(describing: action2))")
+            return
+        }
+        #expect(error.code == .unexpectedFrame)
+        #expect(error.h3ErrorCode == .frameUnexpected)
+
+        // The first settings still stand: the encoder uses the table size they asked for.
+        let action3 = stateMachine.outboundEncoderStreamReady()
+        #expect(action3 == .sendEncoderInstruction(.setDynamicTableCapacity(300)))
+    }
+
+    @Test func secondSettingsWithoutDynamicTableIsAConnectionError() {
+        var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
+        #expect(stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0) == nil)
+
+        // The peer can't change its mind about the dynamic table by sending SETTINGS again.
+        let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
+        guard case .emitConnectionError(let error) = action else {
+            Issue.record("Expected a connection error, got \(String(describing: action))")
+            return
+        }
+        #expect(error.code == .unexpectedFrame)
+        #expect(error.h3ErrorCode == .frameUnexpected)
+
+        stateMachine.assertEncodesWithoutUsingDynamicTable()
     }
 
     // MARK: Encoding headers
@@ -57,7 +103,7 @@ struct QPACKStateMachineTests {
     @Test func testEncodeHeadersInWaitingForStreamState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 100)
-        #expect(action == .makeEncoderInstructionStream)
+        #expect(isMakeEncoderInstructionStream(action))
         // We have received remote settings, and been asked to create outbound encoder stream
         // However, the outbound stream isn't ready yet, so the dynamic table should not be used
         stateMachine.assertEncodesWithoutUsingDynamicTable()
@@ -74,7 +120,7 @@ struct QPACKStateMachineTests {
     @Test func testEncodeHeadersInWithDynamicState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
-        #expect(action1 == .makeEncoderInstructionStream)
+        #expect(isMakeEncoderInstructionStream(action1))
         let action2 = stateMachine.outboundEncoderStreamReady()
         // The stream is ready so we should immediately start using the table at max capacity
         #expect(action2 == .sendEncoderInstruction(.setDynamicTableCapacity(300)))
@@ -658,6 +704,8 @@ extension QPACKStateMachine {
             #expect(actions2 == .sendEncoderInstruction(expectedInstruction))
         case .none:
             Issue.record("Unexpected action")
+        case .emitConnectionError(let error):
+            Issue.record("Unexpected connection error \(error)")
         }
     }
 

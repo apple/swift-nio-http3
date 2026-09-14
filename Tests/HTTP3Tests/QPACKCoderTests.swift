@@ -49,6 +49,48 @@ struct QPACKCoderTests {
         #expect(connection.errors.isEmpty)
     }
 
+    @Test func secondRemoteSettingsIsAConnectionError() {
+        let connection = TestConnection()
+        let coder = TestCoder(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100, errorDelegate: connection)
+
+        coder.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
+        #expect(connection.madeOutboundEncoderStreamCount == 1)
+
+        // RFC 9114 § 7.2.4: the peer may only send SETTINGS once.
+        coder.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 4096)
+
+        #expect(connection.errors.count == 1)
+        expectH3ErrorEqual(
+            error: connection.errors.first,
+            expectedCode: .unexpectedFrame,
+            expectedH3ErrorCode: .frameUnexpected
+        )
+        // The first settings still stand: no second encoder stream, and the table keeps its original size.
+        #expect(connection.madeOutboundEncoderStreamCount == 1)
+        let encoderStream = TestOutboundEncoderStream()
+        coder.outboundEncoderStreamReady(encoderStream)
+        #expect(encoderStream.instructions == [.setDynamicTableCapacity(300)])
+    }
+
+    @Test func secondRemoteSettingsWithoutDynamicTableIsAConnectionError() {
+        let connection = TestConnection()
+        let coder = TestCoder(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100, errorDelegate: connection)
+
+        coder.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0)
+        #expect(connection.madeOutboundEncoderStreamCount == 0)
+
+        // The peer can't change its mind about the dynamic table by sending SETTINGS again.
+        coder.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
+
+        #expect(connection.errors.count == 1)
+        expectH3ErrorEqual(
+            error: connection.errors.first,
+            expectedCode: .unexpectedFrame,
+            expectedH3ErrorCode: .frameUnexpected
+        )
+        #expect(connection.madeOutboundEncoderStreamCount == 0)
+    }
+
     // MARK: Encoder stream
 
     @Test func outboundEncoderStreamReadySendsTableCapacity() {

@@ -734,6 +734,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 switch action {
                 case .makeEncoderInstructionStream:
                     makeEncoderStream = true
+                case .emitConnectionError(let error):
+                    // The peer sent SETTINGS twice. The frame validator normally catches this first. Leave the
+                    // settings we got the first time in place: the connection is going away anyway.
+                    return .emitConnectionError(error)
                 case .none:
                     makeEncoderStream = false
                 }
