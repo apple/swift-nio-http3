@@ -6,7 +6,8 @@ HTTP/3 clients and servers.
 
 > [!IMPORTANT]
 > This package is still in active development and does not offer a stable API
-> yet.
+> yet. There are no support guarantees until we release a stable version at
+> a later date.
 
 ## Quick Start
 
