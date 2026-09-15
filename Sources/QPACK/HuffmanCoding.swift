@@ -175,9 +175,11 @@ extension ByteBuffer {
     @discardableResult
     @available(anyAppleOS 26.0, *)
     func getHuffmanEncodedString(at index: Int, length: Int) -> String? {
-        if index + length > self.capacity {
+        let start = index - self.readerIndex
+        guard start >= 0, start <= self.readableBytes, length >= 0, length <= self.readableBytes - start
+        else {
             assertionFailure(
-                "Requested range out of bounds: \(index..<index + length) vs. \(self.capacity)"
+                "Requested range out of bounds: \(index) + \(length) vs. \(self.readerIndex)..<\(self.writerIndex)"
             )
             return nil
         }
@@ -187,6 +189,8 @@ extension ByteBuffer {
 
         let capacity = length * QPACKConstants.huffmanMaxCompressionRatio
 
+        let span = self.readableBytesUInt8Span.extracting(start..<(start &+ length))
+
         return try? String(unsafeUninitializedCapacity: capacity) { backingStorage in
             var state: UInt8 = 0
 
@@ -195,8 +199,9 @@ extension ByteBuffer {
             var offset = 0
             var acceptable = false
 
-            // We force-unwrap here to crash if we attempt to decode out of bounds.
-            for ch in self.viewBytes(at: index, length: length)! {
+            // TODO: Move to `for ch in span` once we can require an anyAppleOS( 27.0, *)
+            for i in span.indices {
+                let ch = span[i]
                 var t = HuffmanDecoderTable[state: state, nybble: ch >> 4]
                 if t.flags.contains(.failure) {
                     throw HuffmanDecodeError.invalidState
