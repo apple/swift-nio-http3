@@ -183,7 +183,7 @@ extension ByteBuffer {
     /// Decoded strings up to this many bytes long are decoded via a stack buffer, so that the
     /// resulting `String` can pick its own (possibly inline, allocation-free) storage. Chosen to
     /// cover every header name and all but the longest header values.
-    fileprivate static let huffmanStackDecodeThreshold = 128
+    fileprivate static var huffmanStackDecodeThreshold: Int { 128 }
 
     /// Decodes a huffman-encoded string from the `ByteBuffer`.
     /// - Parameters:
@@ -212,7 +212,7 @@ extension ByteBuffer {
             // results can live inline in the `String` rather than forcing a heap allocation.
             return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: maxDecodedLength) { scratch in
                 var output = OutputSpan(buffer: scratch, initializedCount: 0)
-                guard self.getHuffmanEncodedString(at: index, length: length, into: &output) else {
+                guard self._getHuffmanEncodedString(at: index, length: length, into: &output) else {
                     return nil
                 }
                 let count = output.finalize(for: scratch)
@@ -225,7 +225,7 @@ extension ByteBuffer {
         // beyond the inline-storage limit anyway, so the allocation was unavoidable.
         return try? String(unsafeUninitializedCapacity: maxDecodedLength) { backingStorage in
             var output = OutputSpan(buffer: backingStorage, initializedCount: 0)
-            guard self.getHuffmanEncodedString(at: index, length: length, into: &output) else {
+            guard self._getHuffmanEncodedString(at: index, length: length, into: &output) else {
                 throw HuffmanDecodeError.invalidState
             }
             return output.finalize(for: backingStorage)
@@ -242,7 +242,7 @@ extension ByteBuffer {
     /// - Returns: `true` if the input was a valid Huffman encoding, in which case `destination`
     ///   holds the decoded bytes. On `false` the contents of `destination` are unspecified.
     @available(anyAppleOS 26.0, *)
-    private func getHuffmanEncodedString(
+    private func _getHuffmanEncodedString(
         at index: Int,
         length: Int,
         into destination: inout OutputSpan<UInt8>
