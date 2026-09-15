@@ -193,9 +193,11 @@ extension ByteBuffer {
     @discardableResult
     @available(anyAppleOS 26.0, *)
     func getHuffmanEncodedString(at index: Int, length: Int) -> String? {
-        if index + length > self.capacity {
+        let start = index - self.readerIndex
+        guard start >= 0, start <= self.readableBytes, length >= 0, length <= self.readableBytes - start
+        else {
             assertionFailure(
-                "Requested range out of bounds: \(index..<index + length) vs. \(self.capacity)"
+                "Requested range out of bounds: \(index) + \(length) vs. \(self.readerIndex)..<\(self.writerIndex)"
             )
             return nil
         }
@@ -229,6 +231,8 @@ extension ByteBuffer {
 
     /// Decode `length` Huffman-encoded octets starting at `index` into `destination`.
     ///
+    /// - Precondition: `index..<index + length` must lie within the readable bytes; the caller is
+    ///   expected to have validated that.
     /// - Precondition: `destination` must have room for
     ///   ``maxHuffmanDecodedLength(ofEncodedLength:)`` bytes; the writes below are unchecked.
     /// - Returns: The number of bytes decoded, or `nil` if the input is not a valid Huffman
@@ -241,6 +245,9 @@ extension ByteBuffer {
     ) -> Int? {
         assert(destination.count >= Self.maxHuffmanDecodedLength(ofEncodedLength: length))
 
+        let start = index - self.readerIndex
+        let span = self.readableBytesUInt8Span.extracting(start..<(start &+ length))
+
         var state: UInt8 = 0
 
         // We do unchecked math on offset. Every symbol emitted consumes at least 5 bits of the
@@ -249,8 +256,9 @@ extension ByteBuffer {
         var offset = 0
         var acceptable = false
 
-        // We force-unwrap here to crash if we attempt to decode out of bounds.
-        for ch in self.viewBytes(at: index, length: length)! {
+        // TODO: Move to `for ch in span` once we can require an anyAppleOS( 27.0, *)
+        for i in span.indices {
+            let ch = span[i]
             var t = HuffmanDecoderTable[state: state, nybble: ch >> 4]
             if t.flags.contains(.failure) {
                 return nil
