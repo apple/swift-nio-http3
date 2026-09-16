@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import DequeModule
 public import HTTPTypes
 
 public import struct NIOCore.ByteBuffer
@@ -24,12 +23,13 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     /// This state machine handles the reading side of the stream only.
     ///
     /// Frames are pushed into it, one at a time, via `decodedNext(_:)`. The bytes those frames were decoded from are
-    /// owned by the caller (in practice a `NIOSingleStepByteToMessageProcessor`), not by this state machine.
+    /// owned by the caller (in practice a `NIOSingleStepByteToMessageHandle`), not by this state machine.
     ///
     /// Sometimes, `decodedNext(_:)` will return the `decodeHeader` action, in which case you need to decode those
     /// headers and call `gotHeaderDecodeResult`. Whilst that decode is outstanding, no further frames may be pushed
-    /// in: everything that arrives in the meantime (raw bytes, read completions, EOF) is queued as a
-    /// ``PendingReadAction`` and handed back once the decode result arrives, so that ordering is maintained.
+    /// in. Bytes which arrive in the meantime stay in the caller's frame decoder; read completions and the EOF are
+    /// remembered here as ``PendingReadActions`` and handed back once the decode result arrives, so that ordering is
+    /// maintained.
     struct ReadState: ~Copyable {
         private enum State: ~Copyable {
             /// Nothing special is happening on the read side.
@@ -41,12 +41,12 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             /// Input is closed, we can receive no more.
             case inputClosed
 
-            struct WaitingForDecode: ~Copyable {
-                /// Everything that arrived whilst we were waiting for the QPACK decode result, in arrival order.
-                var waiting: UniqueDeque<PendingReadAction>
+            struct WaitingForDecode {
+                /// What arrived whilst we were waiting for the QPACK decode result.
+                var pending: PendingReadActions
 
                 init() {
-                    self.waiting = .init()
+                    self.pending = .init()
                 }
             }
         }
@@ -79,29 +79,26 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             }
         }
 
-        /// Ask whether `buffer` may be handed to the frame decoder right now.
-        ///
-        /// - Returns: `true` if the caller should decode the buffer now. `false` if it must not: either the bytes were
-        ///   queued behind an outstanding QPACK decode, or they should be dropped.
-        mutating func readyToDecode(_ buffer: ByteBuffer) -> Bool {
+        /// Ask what to do with the bytes that just arrived.
+        mutating func readyToDecode() -> ReadAction {
             switch consume self.state {
             case .idle:
                 self = .init(state: .idle)
-                return true
-            case .waitingForDecode(var waitingForDecode):
-                waitingForDecode.waiting.append(.decodeFrames(buffer))
+                return .decode
+            case .waitingForDecode(let waitingForDecode):
+                // The bytes stay in the caller's frame decoder until we're unblocked.
                 self = .init(state: .waitingForDecode(waitingForDecode))
-                return false
+                return .bufferOnly
             case .inputClosed:
                 // The peer shouldn't send anything after the FIN, but we can't stop it from trying. Drop the bytes.
                 self = .init(state: .inputClosed)
-                return false
+                return .drop
             }
         }
 
         /// Ask whether a read completion may be forwarded right now.
         ///
-        /// - Returns: `true` if the caller should forward it now, `false` if it was queued behind an outstanding
+        /// - Returns: `true` if the caller should forward it now, `false` if it was deferred behind an outstanding
         ///   QPACK decode.
         mutating func readCompleted() -> Bool {
             switch consume self.state {
@@ -109,7 +106,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                 self = .init(state: .idle)
                 return true
             case .waitingForDecode(var waitingForDecode):
-                waitingForDecode.waiting.append(.fireReadComplete)
+                waitingForDecode.pending.fireReadComplete = true
                 self = .init(state: .waitingForDecode(waitingForDecode))
                 return false
             case .inputClosed:
@@ -118,23 +115,17 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             }
         }
 
-        /// Queue actions which couldn't be replayed because we became blocked on another QPACK decode.
-        ///
-        /// The queue is always empty when we newly block, and nothing can arrive during the (synchronous) replay, so
-        /// appending preserves ordering.
-        mutating func enqueue(_ actions: consuming UniqueDeque<PendingReadAction>) {
+        /// Defer actions again which couldn't be acted on because we became blocked on another QPACK decode.
+        mutating func enqueue(_ actions: PendingReadActions) {
             switch consume self.state {
             case .waitingForDecode(var waitingForDecode):
-                var actions = actions
-                while let action = actions.popFirst() {
-                    waitingForDecode.waiting.append(action)
-                }
+                waitingForDecode.pending.formUnion(actions)
                 self = .init(state: .waitingForDecode(waitingForDecode))
             case .idle:
-                assertionFailure("Actions can only be requeued whilst waiting for a decode")
+                assertionFailure("Actions can only be deferred again whilst waiting for a decode")
                 self = .init(state: .idle)
             case .inputClosed:
-                assertionFailure("Actions can only be requeued whilst waiting for a decode")
+                assertionFailure("Actions can only be deferred again whilst waiting for a decode")
                 self = .init(state: .inputClosed)
             }
         }
@@ -196,12 +187,12 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
         /// Inform the state machine of a qpack decode result that has been previously asked for.
         /// It is an error to call this function with a result for a partial header which wasn't asked for.
-        /// - Returns: The actions which were queued behind the decode, in arrival order.
-        mutating func gotHeaderDecodeResult() -> UniqueDeque<PendingReadAction> {
+        /// - Returns: The actions which were deferred behind the decode.
+        mutating func gotHeaderDecodeResult() -> PendingReadActions {
             switch consume self.state {
             case .waitingForDecode(let waitingState):
                 self = .init(state: .idle)
-                return waitingState.waiting
+                return waitingState.pending
 
             case .idle:
                 assertionFailure("Unexpected header decode")
@@ -234,12 +225,12 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         }
 
         /// Call this when there is nothing left to read.
-        /// - Returns: `true` if the caller should act on the closure now, `false` if it was queued behind an
+        /// - Returns: `true` if the caller should act on the closure now, `false` if it was deferred behind an
         ///   outstanding QPACK decode.
         mutating func inputClosed() -> Bool {
             switch consume self.state {
             case .waitingForDecode(var buffered):
-                buffered.waiting.append(.eof)
+                buffered.pending.eof = true
                 self = .init(state: .waitingForDecode(buffered))
                 return false
             case .idle:
@@ -532,15 +523,44 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    /// Something which arrived whilst we were blocked on a QPACK decode and must be replayed afterwards.
+    /// What arrived whilst we were blocked on a QPACK decode and still has to be acted on, in this order.
     @_spi(PackageInternal)
-    public enum PendingReadAction: Equatable {
-        /// Bytes which arrived but couldn't be handed to the frame decoder yet.
-        case decodeFrames(ByteBuffer)
-        /// A read completion which couldn't be forwarded yet.
-        case fireReadComplete
-        /// The input was closed.
-        case eof
+    public struct PendingReadActions: Hashable {
+        /// A read completion arrived and still needs to be forwarded downstream.
+        @_spi(PackageInternal)
+        public var fireReadComplete: Bool
+
+        /// The input was closed and the closure still needs to be surfaced.
+        @_spi(PackageInternal)
+        public var eof: Bool
+
+        /// Whether there is nothing left to act on.
+        @_spi(PackageInternal)
+        public var isEmpty: Bool {
+            !self.fireReadComplete && !self.eof
+        }
+
+        init(fireReadComplete: Bool = false, eof: Bool = false) {
+            self.fireReadComplete = fireReadComplete
+            self.eof = eof
+        }
+
+        mutating func formUnion(_ other: PendingReadActions) {
+            self.fireReadComplete = self.fireReadComplete || other.fireReadComplete
+            self.eof = self.eof || other.eof
+        }
+    }
+
+    /// What to do with a chunk of bytes which just arrived from the peer.
+    @_spi(PackageInternal)
+    public enum ReadAction: Hashable {
+        /// Hand the bytes to the frame decoder and pull out as many frames as you can.
+        case decode
+        /// Hand the bytes to the frame decoder, but don't decode yet: a QPACK decode is outstanding and frames must
+        /// not overtake it. They'll be decoded once ``gotHeaderDecodeResult(_:)`` unblocks us.
+        case bufferOnly
+        /// Drop the bytes: the input is closed, or we already errored.
+        case drop
     }
 
     /// Whether we're currently blocked on a QPACK decode result.
@@ -553,32 +573,28 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    /// Ask whether `buffer` may be given to the frame decoder right now.
-    ///
-    /// - Returns: `true` if you should decode the buffer now. `false` if you must not: the bytes were either queued
-    ///   inside the state machine, to be replayed via ``gotHeaderDecodeResult(_:)``, or dropped.
+    /// Ask what to do with the bytes that just arrived.
     @_spi(PackageInternal)
-    public mutating func readyToDecode(_ buffer: ByteBuffer) -> Bool {
+    public mutating func readyToDecode() -> ReadAction {
         switch self.state {
         case .idle(var idleState):
-            let action = idleState.readState.readyToDecode(buffer)
+            let action = idleState.readState.readyToDecode()
             self = .init(state: .idle(idleState))
             return action
 
         case .finished:
             self = .init(state: .finished)
-            // dropping the buffer is fine
-            return false
+            return .drop
 
         case .previousError(let context):
             self = .init(state: .previousError(context))
-            return false
+            return .drop
         }
     }
 
     /// Ask whether a read completion may be forwarded downstream right now.
     ///
-    /// - Returns: `true` if you should forward it now, `false` if it was queued behind an outstanding QPACK decode.
+    /// - Returns: `true` if you should forward it now, `false` if it was deferred behind an outstanding QPACK decode.
     @_spi(PackageInternal)
     public mutating func readCompleted() -> Bool {
         switch self.state {
@@ -597,9 +613,9 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         }
     }
 
-    /// Queue actions which couldn't be replayed because we became blocked on another QPACK decode.
+    /// Defer actions again which couldn't be acted on because we became blocked on another QPACK decode.
     @_spi(PackageInternal)
-    public mutating func enqueue(_ actions: consuming UniqueDeque<PendingReadAction>) {
+    public mutating func enqueue(_ actions: PendingReadActions) {
         guard !actions.isEmpty else { return }
         switch self.state {
         case .idle(var idleState):
@@ -713,23 +729,15 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     @_spi(PackageInternal)
-    public struct HeaderDecodeSuccessAction: ~Copyable {
+    public struct HeaderDecodeSuccessAction {
         /// What to do with the now fully decoded HEADERS frame.
         @_spi(PackageInternal)
         public var frameAction: DecodeNextAction
 
-        /// Everything which arrived whilst the decode was outstanding, in arrival order. Empty if ``frameAction``
-        /// is an error, because in that case nothing further should be processed.
-        var nextActions: UniqueDeque<PendingReadAction>
-
-        /// Take ownership of the queued replay actions.
-        ///
-        /// This exists because ``nextActions`` is noncopyable, and a noncopyable field can only be moved out of a
-        /// struct within the module that declares it.
+        /// What arrived whilst the decode was outstanding. Empty if ``frameAction`` is an error, because in that case
+        /// nothing further should be processed.
         @_spi(PackageInternal)
-        public consuming func takeNextActions() -> UniqueDeque<PendingReadAction> {
-            self.nextActions
-        }
+        public var nextActions: PendingReadActions
     }
 
     /// Inform the state machine of a qpack decode result that has been previously been asked for.

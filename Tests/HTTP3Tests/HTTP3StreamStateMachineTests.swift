@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import DequeModule
 import HTTPTypes
 import NIOCore
 import NIOQUICHelpers
@@ -24,7 +23,7 @@ import Testing
 /// Tests for ``HTTP3StreamStateMachine``.
 ///
 /// The state machine no longer owns a frame decoder: frames are pushed into it one at a time, the way
-/// `HTTP3StreamHandler` does after `NIOSingleStepByteToMessageProcessor` has produced them. So these tests drive it
+/// `HTTP3StreamHandler` does after `NIOSingleStepByteToMessageHandle` has produced them. So these tests drive it
 /// with already-decoded ``HTTP3PartialFrame``s. Byte-level decoding is covered by `HTTP3FrameDecoderTests`.
 struct HTTP3StreamStateMachineTests {
     private let testDataFrame = HTTP3Frame.data(.init(bytes: [1, 2, 3, 4]))
@@ -99,8 +98,8 @@ struct HTTP3StreamStateMachineTests {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
         let waiting = machine.isWaitingForHeaderDecode
         #expect(!waiting)
-        let readyToDecode = machine.readyToDecode(ByteBuffer())
-        #expect(readyToDecode)
+        let readyToDecode = machine.readyToDecode()
+        #expect(readyToDecode == .decode)
         let readCompleted = machine.readCompleted()
         #expect(readCompleted)
     }
@@ -151,7 +150,7 @@ struct HTTP3StreamStateMachineTests {
             return
         }
         #expect(frame == .headers(decodeResult))
-        #expect(drain(action2.takeNextActions()).isEmpty)
+        #expect(action2.nextActions.isEmpty)
         let stillWaiting = machine.isWaitingForHeaderDecode
         #expect(!stillWaiting)
     }
@@ -177,14 +176,14 @@ struct HTTP3StreamStateMachineTests {
         }
         #expect(partialHeader == self.testRequestHeader)
 
-        // Everything which arrives from here on has to wait.
-        let dataBytes = ByteBuffer(bytes: self.testDataFrameBytes)
-        let decodeQueued1 = machine.readyToDecode(dataBytes)
-        #expect(!decodeQueued1)
+        // Everything which arrives from here on has to wait. The bytes stay in the caller's frame decoder; only the
+        // read completion has to be remembered.
+        let decodeQueued1 = machine.readyToDecode()
+        #expect(decodeQueued1 == .bufferOnly)
         let readCompleteQueued = machine.readCompleted()
         #expect(!readCompleteQueued)
-        let decodeQueued2 = machine.readyToDecode(dataBytes)
-        #expect(!decodeQueued2)
+        let decodeQueued2 = machine.readyToDecode()
+        #expect(decodeQueued2 == .bufferOnly)
 
         // Put in the decode result
         let decodeResult = self.testRequestHeaderFields
@@ -198,20 +197,14 @@ struct HTTP3StreamStateMachineTests {
         }
         #expect(frame == .headers(decodeResult))
 
-        // We get everything back, in the order it arrived.
-        #expect(
-            drain(action2.takeNextActions()) == [
-                .decodeFrames(dataBytes),
-                .fireReadComplete,
-                .decodeFrames(dataBytes),
-            ]
-        )
+        // We get the deferred read completion back.
+        #expect(action2.nextActions == .init(fireReadComplete: true))
 
         // And we're unblocked again.
         let stillWaiting = machine.isWaitingForHeaderDecode
         #expect(!stillWaiting)
-        let readyAgain = machine.readyToDecode(dataBytes)
-        #expect(readyAgain)
+        let readyAgain = machine.readyToDecode()
+        #expect(readyAgain == .decode)
         machine.assertReturnFrame(self.testPartialDataFrame, expected: self.testDataFrame)
     }
 
@@ -231,7 +224,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Expected an action")
             return
         }
-        let pending = action1.takeNextActions()
+        let pending = action1.nextActions
 
         // Whilst replaying, we hit the trailers and block again. The rest of the replay is handed back to us.
         guard case .decodeHeader = machine.decodedFrame(.headers(self.testTrailer)) else {
@@ -244,7 +237,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Expected an action")
             return
         }
-        #expect(drain(action2.takeNextActions()) == [.fireReadComplete])
+        #expect(action2.nextActions == .init(fireReadComplete: true))
     }
 
     @available(anyAppleOS 26.0, *)
@@ -278,8 +271,8 @@ struct HTTP3StreamStateMachineTests {
         )
 
         // Further bytes are dropped because they come after an error
-        let readyToDecode = machine.readyToDecode(.init(bytes: self.testDataFrameBytes))
-        #expect(!readyToDecode)
+        let readyToDecode = machine.readyToDecode()
+        #expect(readyToDecode == .drop)
 
         // Writes also ignored due to that error
         let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
@@ -310,8 +303,8 @@ struct HTTP3StreamStateMachineTests {
         expectH3ErrorEqual(error: error, expectedCode: .forbiddenFrameType, expectedH3ErrorCode: .frameUnexpected)
 
         // All further reads and writes should fail
-        let readyToDecode = machine.readyToDecode(.init(bytes: self.testDataFrameBytes))
-        #expect(!readyToDecode)
+        let readyToDecode = machine.readyToDecode()
+        #expect(readyToDecode == .drop)
         let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
         #expect(writeAction.isPreviousError)
 
@@ -336,8 +329,8 @@ struct HTTP3StreamStateMachineTests {
         expectH3ErrorEqual(error: error, expectedCode: .unexpectedFrame, expectedH3ErrorCode: .frameUnexpected)
 
         // All further reads and writes should fail
-        let readyToDecode = machine.readyToDecode(.init(bytes: self.testDataFrameBytes))
-        #expect(!readyToDecode)
+        let readyToDecode = machine.readyToDecode()
+        #expect(readyToDecode == .drop)
         let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
         #expect(writeAction.isPreviousError)
     }
@@ -580,7 +573,7 @@ struct HTTP3StreamStateMachineTests {
         #expect(frame == .headers(self.testRequestHeaderFields))
 
         // The EOF comes back to us behind the header, and only now produces an action.
-        #expect(drain(action2.takeNextActions()) == [.eof])
+        #expect(action2.nextActions == .init(eof: true))
         guard case .emitEvent = machine.inputClosed() else {
             Issue.record("Unexpected action")
             return
@@ -708,8 +701,8 @@ struct HTTP3StreamStateMachineTests {
             return
         }
         // Any bytes which arrive after the close are dropped.
-        let readyToDecode = machine.readyToDecode(.init(bytes: [0x04, 0x00]))
-        #expect(!readyToDecode)
+        let readyToDecode = machine.readyToDecode()
+        #expect(readyToDecode == .drop)
         // And so is any frame which somehow still reaches us.
         guard case .alreadyClosed = machine.decodedFrame(.settings(self.testSettings)) else {
             Issue.record("Unexpected action")
@@ -762,7 +755,7 @@ extension HTTP3StreamStateMachine {
                 return
             }
             #expect(frame == .headers(fields), sourceLocation: sourceLocation)
-            #expect(drain(action.takeNextActions()).isEmpty, sourceLocation: sourceLocation)
+            #expect(action.nextActions.isEmpty, sourceLocation: sourceLocation)
         case .error(let qpackError):
             let error = HTTP3Error(
                 code: .qpackDecoderError,
@@ -910,20 +903,4 @@ extension ByteBuffer {
         self.init()
         self.writeHTTP3PartialFrame(frame, preferHuffmanEncoding: false)
     }
-}
-
-/// Drain a noncopyable deque into an array.
-///
-/// ``UniqueDeque`` is neither a `Sequence` nor `Equatable`, and `#expect` needs a `Copyable` argument, so pending
-/// actions have to be materialised before they can be asserted on.
-@available(anyAppleOS 26.0, *)
-private func drain(
-    _ actions: consuming UniqueDeque<HTTP3StreamStateMachine.PendingReadAction>
-) -> [HTTP3StreamStateMachine.PendingReadAction] {
-    var actions = actions
-    var result: [HTTP3StreamStateMachine.PendingReadAction] = []
-    while let action = actions.popFirst() {
-        result.append(action)
-    }
-    return result
 }

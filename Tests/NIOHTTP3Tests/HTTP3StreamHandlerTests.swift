@@ -288,6 +288,65 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(instructions == [.insertCountIncrement(increment: 1), .sectionAcknowledgement(streamID: 5)])
     }
 
+    /// Bytes which arrive whilst a header section is blocked wait inside the frame decoder, and the frames they
+    /// carry must not overtake the header once it decodes.
+    @available(anyAppleOS 26.0, *)
+    @Test func readsWhilstBlockedDoNotOvertakeTheHeader() throws {
+        let eventLoop = EmbeddedEventLoop()
+        let decoderStreamChannel = EmbeddedChannel()
+        let qpackCoder = makeTestQPACKCoder(decoderStreamChannel: decoderStreamChannel)
+        qpackCoder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
+            streamID: 5,
+            streamType: .request,
+            qpackCoder: qpackCoder,
+            delegate: TestDelegate(),
+            logger: self.logger
+        )
+
+        let seenEvents = NIOLockedValueBox<Deque<DebugInboundEventsHandler.Event>>([])
+        let eventRecorder = DebugInboundEventsHandler { event, _ in
+            seenEvents.withLockedValue { $0.append(event) }
+        }
+        let channel = EmbeddedChannel(handlers: [handler, eventRecorder], loop: eventLoop)
+        #expect(seenEvents.popFirst()?.isChannelRegistered == true)
+
+        // A header we can't decode yet. Everything after it has to wait.
+        try channel.writeInbound(self.testBlockedRequestPartialHeaderBytes)
+        #expect(seenEvents.isEmpty())
+
+        // A DATA frame, a read completion, then another DATA frame — all whilst still blocked.
+        let dataFrameBytes = ByteBuffer(bytes: [0, 4, 1, 2, 3, 4])
+        channel.pipeline.fireChannelRead(NIOAny(dataFrameBytes))
+        channel.pipeline.fireChannelReadComplete()
+        channel.pipeline.fireChannelRead(NIOAny(dataFrameBytes))
+        #expect(seenEvents.isEmpty())
+
+        // Unblocking the header releases the header first, then the frames which were waiting behind it.
+        qpackCoder.receivedIncomingEncoderInstruction(self.testUnblockingEncoderInstruction)
+
+        guard let headerAny = seenEvents.popFirst()?.readValue else {
+            Issue.record("Expected to read the header frame")
+            return
+        }
+        #expect(handler.unwrapOutboundIn(headerAny) == .headers(self.testBlockedRequestHeaderFields))
+
+        let expectedData = HTTP3Frame.data(.init(bytes: [1, 2, 3, 4]))
+        for _ in 0..<2 {
+            guard let dataAny = seenEvents.popFirst()?.readValue else {
+                Issue.record("Expected to read a data frame")
+                return
+            }
+            #expect(handler.unwrapOutboundIn(dataAny) == expectedData)
+        }
+
+        // The deferred read completion comes last, after everything it was holding back.
+        #expect(seenEvents.popFirst()?.isChannelReadComplete == true)
+        #expect(seenEvents.isEmpty())
+    }
+
     @available(anyAppleOS 26.0, *)
     @Test func receiveUnknownFrameFollowedByHeaders() throws {
         let handler = HTTP3StreamHandler(

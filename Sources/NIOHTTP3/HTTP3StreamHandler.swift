@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import DequeModule
 @_spi(PackageInternal) import HTTP3
 import HTTPTypes
 import Logging
@@ -146,11 +145,16 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         let bytes = self.unwrapInboundIn(data)
         self.logger.trace("HTTP3StreamHandler.channelRead", metadata: [LoggingKeys.bytes: "\(bytes.readableBytes)"])
 
-        // The state machine either takes ownership of the bytes (queueing them behind an outstanding QPACK decode) or
-        // drops them (we already closed or errored). Either way there's nothing for us to do.
-        guard self.stateMachine.readyToDecode(bytes) else { return }
-
-        self.decodeInboundBytes(bytes, context: context)
+        switch self.stateMachine.readyToDecode() {
+        case .decode:
+            self.decoder.append(bytes)
+            self.runDecodeLoop(decodeMode: .normal, context: context)
+        case .bufferOnly:
+            // A QPACK decode is outstanding. The bytes wait their turn inside the handle.
+            self.decoder.append(bytes)
+        case .drop:
+            break
+        }
     }
 
     func channelReadComplete(context: ChannelHandlerContext) {
@@ -159,16 +163,6 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         // reads it belongs to.
         guard self.stateMachine.readCompleted() else { return }
         self.fireChannelReadCompleteIfNeeded(context: context)
-    }
-
-    /// Feed `buffer` to the frame decoder and push every frame it produces into the state machine.
-    ///
-    /// - Returns: `true` if all available bytes were processed, `false` if we suspended because we now need a QPACK
-    ///   decode result.
-    @discardableResult
-    private func decodeInboundBytes(_ buffer: ByteBuffer, context: ChannelHandlerContext) -> Bool {
-        self.decoder.append(buffer)
-        return self.runDecodeLoop(decodeMode: .normal, context: context)
     }
 
     /// Tell the frame decoder that no more bytes are coming and push out whatever it still holds.
@@ -294,37 +288,24 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         }
     }
 
-    /// Replay everything which arrived whilst we were blocked on a QPACK decode, in arrival order.
+    /// Act on everything which arrived whilst we were blocked on a QPACK decode, in arrival order.
     private func replayPendingReadActions(
-        _ actions: consuming UniqueDeque<HTTP3StreamStateMachine.PendingReadAction>,
+        _ pending: HTTP3StreamStateMachine.PendingReadActions,
         context: ChannelHandlerContext
     ) {
-        var pending = actions
-
-        // The handle may still be holding bytes it wasn't allowed to decode when we stopped. Those come before
-        // anything that was queued, so drain them first.
+        // Bytes which arrived whilst we were blocked are sitting in the handle, and come before anything else.
         guard self.runDecodeLoop(decodeMode: .normal, context: context) else {
+            // We blocked again on another header section, so everything else has to keep waiting.
             self.stateMachine.enqueue(pending)
             return
         }
 
-        while let action = pending.popFirst() {
-            switch action {
-            case .decodeFrames(let buffer):
-                guard self.decodeInboundBytes(buffer, context: context) else {
-                    self.stateMachine.enqueue(pending)
-                    return
-                }
-            case .fireReadComplete:
-                self.fireChannelReadCompleteIfNeeded(context: context)
-            case .eof:
-                self.handleInputClosed(context: context)
-                guard !self.stateMachine.isWaitingForHeaderDecode else {
-                    // The EOF was requeued by `handleInputClosed`, so everything after it goes behind that.
-                    self.stateMachine.enqueue(pending)
-                    return
-                }
-            }
+        if pending.fireReadComplete {
+            self.fireChannelReadCompleteIfNeeded(context: context)
+        }
+
+        if pending.eof {
+            self.handleInputClosed(context: context)
         }
     }
 
@@ -465,7 +446,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         }
         guard let action = self.stateMachine.gotHeaderDecodeResult(fields) else { return }
         self.handleDecodeAction(action.frameAction, context: context)
-        self.replayPendingReadActions(action.takeNextActions(), context: context)
+        self.replayPendingReadActions(action.nextActions, context: context)
     }
 
     /// Call this if an error is encountered whilst trying to decode `header`.
