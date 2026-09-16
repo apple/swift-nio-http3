@@ -671,7 +671,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.logger.trace("Stream has closed", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
         // It's safe to remove this now. When we tell the state machine about the closure, it'll remove any queued QPACK decodes.
         self.streamHandlers[streamID] = nil
-        self.qpackCoder!.requestStreamClosed(streamID: streamID, seenEOF: seenEOF)
+        self.qpackCoder?.requestStreamClosed(streamID: streamID, seenEOF: seenEOF)
         // Anything buffered will never be delivered, drop them.
         self.datagramBuffer.discardDatagrams(forStream: streamID)
         let action = self.connectionStateMachine.streamClosed(
