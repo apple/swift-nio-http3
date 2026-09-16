@@ -37,7 +37,9 @@ protocol HTTP3StreamDelegate {
 /// It handles encoding and decoding of these frames.
 /// It will only pass through valid frames, and handles things such as QPACK header decoding.
 @available(anyAppleOS 26.0, *)
-final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate: HTTP3.QPACKConnectionDelegate>: ChannelDuplexHandler {
+final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate: HTTP3.QPACKConnectionDelegate>:
+    ChannelDuplexHandler
+{
     typealias InboundIn = ByteBuffer
     typealias InboundOut = HTTP3Frame
 

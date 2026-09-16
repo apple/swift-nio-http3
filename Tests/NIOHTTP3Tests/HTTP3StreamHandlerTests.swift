@@ -168,11 +168,6 @@ struct NIOHTTP3StreamHandlerTests {
         return buffer
     }
 
-    private let testEncoderClosure: ([HTTPField], QUICStreamID) -> HTTP3PartialFrame.Headers = { fields, _ in
-        let fieldSection = StaticQPACKEncoder().encode(headers: fields)
-        return HTTP3PartialFrame.Headers(fieldSection: fieldSection)
-    }
-
     /// The single field carried by ``testBlockedRequestPartialHeaderBytes``.
     ///
     /// It is the entry inserted by ``testUnblockingEncoderInstruction``.

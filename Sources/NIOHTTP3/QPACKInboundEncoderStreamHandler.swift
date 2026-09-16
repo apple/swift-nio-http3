@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+@_spi(PackageInternal) import HTTP3
 import NIOCore
 @_spi(PackageInternal) import QPACK
-@_spi(PackageInternal) import HTTP3
 
 protocol QPACKInboundEncoderStreamDelegate: ~Copyable {
     func onReceivedInstruction(_ instruction: QPACKEncoderInstruction)
@@ -70,7 +70,8 @@ final class QPACKInboundEncoderStreamHandler<Delegate: QPACKInboundEncoderStream
 }
 
 @available(anyAppleOS 26.0, *)
-extension HTTP3.QPACKCoder: QPACKInboundEncoderStreamDelegate where OutboundEncoderStream: ~Copyable, OutboundDecoderStream: ~Copyable {
+extension HTTP3.QPACKCoder: QPACKInboundEncoderStreamDelegate
+where OutboundEncoderStream: ~Copyable, OutboundDecoderStream: ~Copyable {
     func onReceivedInstruction(_ instruction: QPACKEncoderInstruction) {
         self.receivedIncomingEncoderInstruction(instruction)
     }

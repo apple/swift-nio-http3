@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import NIOCore
-@_spi(PackageInternal) public import QPACK
 @_spi(PackageInternal) import HTTP3
+public import NIOCore
 import NIOQUICHelpers
+@_spi(PackageInternal) public import QPACK
 
 extension QPACKDecoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 @available(anyAppleOS 26.0, *)
