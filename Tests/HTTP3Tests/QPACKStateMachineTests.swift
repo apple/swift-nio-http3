@@ -47,7 +47,7 @@ struct QPACKStateMachineTests {
         }
     }
 
-    @Test func testSecondSettingsIsAConnectionError() {
+    @Test func secondSettingsIsAConnectionError() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
         #expect(isMakeEncoderInstructionStream(action1))
@@ -66,7 +66,7 @@ struct QPACKStateMachineTests {
         #expect(action3 == .sendEncoderInstruction(.setDynamicTableCapacity(300)))
     }
 
-    @Test func testSecondSettingsWithoutDynamicTableIsAConnectionError() {
+    @Test func secondSettingsWithoutDynamicTableIsAConnectionError() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         #expect(stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0) == nil)
 

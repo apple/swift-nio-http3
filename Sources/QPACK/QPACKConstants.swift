@@ -28,8 +28,4 @@ public enum QPACKConstants {
     /// Default capacity for field lines array when reading field sections.
     /// Used for performance optimization to reduce array reallocations.
     static var defaultFieldLinesCapacity: Int { 16 }
-
-    /// Maximum compression efficiency heuristic for Huffman decoding.
-    /// Used to estimate buffer capacity needed for decoded strings.
-    static var huffmanMaxCompressionRatio: Int { 2 }
 }

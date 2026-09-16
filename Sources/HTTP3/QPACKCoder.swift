@@ -139,7 +139,7 @@ public final class QPACKCoder<
     /// - Important:
     ///   The two decoder limits describe what this endpoint's decoder accepts from the peer's encoder, so they must
     ///   match the `SETTINGS_QPACK_MAX_TABLE_CAPACITY` and `SETTINGS_QPACK_BLOCKED_STREAMS` this endpoint
-    ///   advertises when sending its .
+    ///   advertises when sending its own SETTINGS frame.
     @_spi(PackageInternal)
     public init(
         encoderMaxTableSize: Int,
@@ -164,8 +164,8 @@ public final class QPACKCoder<
     /// table, or because this endpoint refuses to use one — no encoder stream is requested, since it would never
     /// be used. See RFC 9204 § 4.2.
     ///
-    /// The peer may only send SETTINGS once. Calling this a second time leaves the coder's state untouched and
-    /// reports an `H3_FRAME_UNEXPECTED` connection error to the ``ConnectionDelegate``.
+    /// - Important: The peer may only send SETTINGS once. Calling this a second time leaves the coder's state
+    ///   untouched and reports an `H3_FRAME_UNEXPECTED` connection error to the ``ConnectionDelegate``.
     ///
     /// - Parameters:
     ///   - maxQueueSize: The peer's `SETTINGS_QPACK_BLOCKED_STREAMS`.

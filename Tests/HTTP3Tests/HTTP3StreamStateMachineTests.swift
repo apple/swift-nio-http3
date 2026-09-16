@@ -71,18 +71,21 @@ struct HTTP3StreamStateMachineTests {
     }
 
     /// These bytes encode `testRequestHeader`.
+    @available(anyAppleOS 26.0, *)
     private var testRequestHeaderFrameBytes: [UInt8] {
         let buffer = ByteBuffer(frame: .headers(self.testRequestHeader))
         return .init(buffer: buffer)
     }
 
     /// These bytes encode `testResponseHeader`.
+    @available(anyAppleOS 26.0, *)
     private var testResponseHeaderFrameBytes: [UInt8] {
         let buffer = ByteBuffer(frame: .headers(self.testResponseHeader))
         return .init(buffer: buffer)
     }
 
     /// These bytes encode `testTrailerFrameBytes`.
+    @available(anyAppleOS 26.0, *)
     private var testTrailerFrameBytes: [UInt8] {
         let buffer = ByteBuffer(frame: .headers(self.testTrailer))
         return .init(buffer: buffer)
@@ -975,6 +978,7 @@ extension HTTP3StreamStateMachine {
 
 extension ByteBuffer {
     /// Create a buffer and write a single frame into it.
+    @available(anyAppleOS 26.0, *)
     fileprivate init(frame: HTTP3PartialFrame) {
         self.init()
         self.writeHTTP3PartialFrame(frame, preferHuffmanEncoding: false)

@@ -144,9 +144,40 @@ struct HuffmanCodingTests {
 
         self.verifyHuffmanCoding(text2, Array(encoded2Data))
     }
+
+    /// The decode buffer is sized from the assumption that no Huffman code is shorter than
+    /// 5 bits, and the decode loop then writes into that buffer without bounds checks. These
+    /// inputs are made entirely of 5-bit symbols, so they hit that bound exactly: `n`
+    /// characters encode to exactly `5n/8` bytes, which decode back to exactly `n` bytes.
+    @available(anyAppleOS 26.0, *)
+    @Test
+    mutating func maximallyCompressedInputHitsTheDecodeBoundExactly() {
+        // The only symbols with a 5-bit code in the QPACK Huffman table.
+        let fiveBitCharacters = Array("012aceiost")
+
+        // Character counts are multiples of 8 so that the encoding is byte-aligned with no
+        // padding. The counts cover the stack-decode fast path, its exact boundary, and the
+        // heap slow path beyond it.
+        for characterCount in [8, 16, 128, 136, 512] {
+            let string = String(
+                (0..<characterCount).map { fiveBitCharacters[$0 % fiveBitCharacters.count] }
+            )
+
+            self.scratchBuffer.clear()
+            let encodedLength = self.scratchBuffer.writeHuffmanEncoded(bytes: string.utf8)
+            #expect(encodedLength == characterCount * 5 / 8, "Input was not maximally compressed")
+
+            let decoded = self.scratchBuffer.getHuffmanEncodedString(
+                at: self.scratchBuffer.readerIndex,
+                length: self.scratchBuffer.readableBytes
+            )
+            #expect(decoded == string)
+        }
+    }
 }
 
 extension ByteBuffer {
+    @available(anyAppleOS 26.0, *)
     @discardableResult
     mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
         self.writeHuffmanEncoded(

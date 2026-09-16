@@ -281,6 +281,7 @@ extension ByteBuffer {
     ///   - fieldLine: The line to write.
     ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and where it would be more efficient to do so).
     /// - Returns: The number of bytes written.
+    @available(anyAppleOS 26.0, *)
     @discardableResult
     @_spi(PackageInternal)
     public mutating func writeFieldLine(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) -> Int {

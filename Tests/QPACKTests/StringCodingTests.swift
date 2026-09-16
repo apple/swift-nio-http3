@@ -20,6 +20,7 @@ import Testing
 struct StringCodingTests {
     private var scratchBuffer = ByteBufferAllocator().buffer(capacity: 11)
 
+    @available(anyAppleOS 26.0, *)
     private mutating func encodeStringToArray(_ value: String, preferHuffmanEncoding: Bool, prefix: Int) -> [UInt8] {
         self.scratchBuffer.clear()
         let len = self.scratchBuffer.writeQPACKEncodedString(
@@ -129,8 +130,8 @@ struct StringCodingTests {
 
     // MARK: Encoding without Huffman
 
-    @Test
-    mutating func testStringEncodingNoPrefix() {
+    @available(anyAppleOS 26.0, *)
+    @Test mutating func stringEncodingNoPrefix() {
         #expect(
             self.encodeStringToArray("test", preferHuffmanEncoding: false, prefix: 8)
                 // The first byte is used from the start because prefix is 8
@@ -141,8 +142,8 @@ struct StringCodingTests {
         )
     }
 
-    @Test
-    mutating func testStringEncodingWithPrefix() {
+    @available(anyAppleOS 26.0, *)
+    @Test mutating func stringEncodingWithPrefix() {
         #expect(
             self.encodeStringToArray("test", preferHuffmanEncoding: false, prefix: 5)
                 // prefix is 5 so we only use the last 5 bits of the first byte
@@ -153,8 +154,8 @@ struct StringCodingTests {
         )
     }
 
-    @Test
-    mutating func testStringEncodingWhenLengthFillsThePrefix() {
+    @available(anyAppleOS 26.0, *)
+    @Test mutating func stringEncodingWhenLengthFillsThePrefix() {
         #expect(
             self.encodeStringToArray("testing", preferHuffmanEncoding: false, prefix: 4)
                 // prefix is 4 so we only use the last 4 bits of the first byte
@@ -167,8 +168,8 @@ struct StringCodingTests {
         )
     }
 
-    @Test
-    mutating func testStringEncodingWhenLengthLong() {
+    @available(anyAppleOS 26.0, *)
+    @Test mutating func stringEncodingWhenLengthLong() {
         #expect(
             self.encodeStringToArray("testingtesting", preferHuffmanEncoding: false, prefix: 4)
                 // prefix is 4 so we only use the last 4 bits of the first byte

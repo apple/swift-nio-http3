@@ -26,6 +26,7 @@ extension ByteBuffer {
     /// - Parameters:
     /// - frame: The frame to be written to the `ByteBuffer`.
     /// - preferHuffmanEncoding: If true, huffman coding will be preferred where applicable, e.g. header field sections. It will not be used if doing so would use more space than not.
+    @available(anyAppleOS 26.0, *)
     mutating func writeHTTP3PartialFrame(_ frame: HTTP3PartialFrame, preferHuffmanEncoding: Bool) {
         switch frame {
         case .data(let payload):
@@ -81,6 +82,7 @@ extension ByteBuffer {
 
     /// Write a field section
     /// - Returns: The number of bytes written
+    @available(anyAppleOS 26.0, *)
     fileprivate mutating func writeFieldSection(_ fieldSection: FieldSection, preferHuffmanEncoding: Bool) -> Int {
         var bytesWritten = 0
         bytesWritten += self.writeFieldSectionPrefix(fieldSection.prefix)

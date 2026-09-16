@@ -18,7 +18,7 @@ import PackageDescription
 let package = Package(
     name: "swift-nio-http3-benchmarks",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v26)
     ],
     dependencies: [
         .package(name: "swift-nio-http3", path: "../"),

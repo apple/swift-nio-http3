@@ -148,12 +148,14 @@ struct NIOHTTP3StreamHandlerTests {
         .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
     }
 
+    @available(anyAppleOS 26.0, *)
     private var testRequestPartialHeaderBytes: ByteBuffer {
         var buffer = ByteBuffer()
         buffer.writeHTTP3PartialFrame(.headers(self.testRequestPartialHeader), preferHuffmanEncoding: false)
         return buffer
     }
 
+    @available(anyAppleOS 26.0, *)
     private var testUndecodableRequestPartialHeaderBytes: ByteBuffer {
         var fieldSection = StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields)
         // A relative index of 0 against a base of 0 is absolute index -1, which is never in the table.
@@ -182,6 +184,7 @@ struct NIOHTTP3StreamHandlerTests {
     ///
     /// It declares a required insert count of one and refers to that entry with a post-base index, but the entry
     /// only arrives with ``testUnblockingEncoderInstruction``. Until then the stream is blocked: RFC 9204 § 2.1.2.
+    @available(anyAppleOS 26.0, *)
     private var testBlockedRequestPartialHeaderBytes: ByteBuffer {
         let fieldSection = FieldSection(
             prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 4096),
