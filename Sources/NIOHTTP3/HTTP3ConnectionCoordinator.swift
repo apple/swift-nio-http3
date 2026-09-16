@@ -910,10 +910,10 @@ extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
 @available(anyAppleOS 26, *)
 extension HTTP3ConnectionCoordinator: QPACKConnectionDelegate {
     func makeOutboundEncoderStream() {
-
+        self.createQPACKEncoderInstructionStream()
     }
     
     func connectionError(_ error: HTTP3Error) {
-
+        self.emitConnectionErrorFromStream(error)
     }
 }

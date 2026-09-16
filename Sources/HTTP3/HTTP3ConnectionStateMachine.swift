@@ -729,18 +729,17 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                         Int(clamping: settings.qpackMaximumTableCapacity)
                     )
                 )
+                initializedState.remoteAllowsDatagrams = settings.h3Datagram
+                let datagramsNegotiated = initializedState.datagramsNegotiated
+                self = .init(state: .initialized(initializedState))
                 switch action {
                 case .makeEncoderInstructionStream, .none:
                     break
                 case .emitConnectionError(let error):
                     // The peer sent SETTINGS twice. The frame validator normally catches this first. Leave the
                     // settings we got the first time in place: the connection is going away anyway.
-                    self = .init(state: .initialized(initializedState))
                     return .emitConnectionError(error)
                 }
-                initializedState.remoteAllowsDatagrams = settings.h3Datagram
-                let datagramsNegotiated = initializedState.datagramsNegotiated
-                self = .init(state: .initialized(initializedState))
                 return .onSettings(
                     ControlFrameReceivedAction.OnSettings(
                         datagramsNegotiated: datagramsNegotiated,
