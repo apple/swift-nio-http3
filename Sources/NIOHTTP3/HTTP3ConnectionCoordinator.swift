@@ -42,7 +42,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     private let preferHuffmanEncoding: Bool
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.
-    private var streamHandlers: QUICStreamIDDictionary<StreamHandler>
+    private var streamHandlers = [QUICStreamID: StreamHandler]()
     private var datagramBuffer: HTTP3DatagramBuffer
 
     init(
@@ -62,7 +62,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.logger = logger
         self.preferHuffmanEncoding = preferHuffmanEncoding
         self.datagramBuffer = HTTP3DatagramBuffer(maxAllowedSize: maxBufferedDatagramBytes)
-        self.streamHandlers = QUICStreamIDDictionary<StreamHandler>()
 
         self.qpackCoder = QPACKCoder(
             encoderMaxTableSize: Int(clamping: localSettings.qpackMaximumTableCapacity),
