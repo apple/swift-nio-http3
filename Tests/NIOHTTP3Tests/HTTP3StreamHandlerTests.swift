@@ -389,11 +389,7 @@ struct NIOHTTP3StreamHandlerTests {
             streamID: 5,
             streamType: .request,
             qpackCoder: makeTestQPACKCoder(),
-            delegate: TestDelegate(
-//                decodeHeaders: { field, _ in
-//                    Issue.record("Unexpected header decode \(field)")
-//                }
-            ),
+            delegate: TestDelegate(),
             logger: self.logger
         )
         let eventLoop = EmbeddedEventLoop()
@@ -423,9 +419,6 @@ struct NIOHTTP3StreamHandlerTests {
             streamType: .request,
             qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
-//                decodeHeaders: { field, _ in
-//                    Issue.record("Unexpected header decode \(field)")
-//                },
                 onStreamClosed: { eof, _, _ in sawEOF.succeed(eof) }
             ),
             logger: self.logger
@@ -653,7 +646,6 @@ struct NIOHTTP3StreamHandlerTests {
 
         // Headers frame
         try channel.writeInbound(self.testRequestPartialHeaderBytes)
-//        handler.onQPACKDecodeResult(fields: self.testRequestHeaderFields)
 
         // Input close
         channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
