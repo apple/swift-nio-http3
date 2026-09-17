@@ -364,6 +364,8 @@ struct HTTP3ConnectionStateMachineTests {
             return
         }
         #expect(!settings.datagramsNegotiated)
+        #expect(settings.qpackMaximumTableCapacity == 0)
+        #expect(settings.qpackBlockedStreams == 0)
     }
 
     @available(anyAppleOS 26, *)

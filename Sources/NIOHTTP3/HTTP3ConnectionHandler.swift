@@ -329,7 +329,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         // shut the child channels before shutting the connection.
         // If this is triggered, most likely theres a mistake in the way the connection state machine remembers which streams are open,
         // or in the way the channels notify the state machine when they open/close.
-        self.coordinator.assertNoOpenStreams()
+        self.coordinator.assertNoOpenStreamsAndDropQPACKCoder()
         context.fireChannelInactive()
     }
 

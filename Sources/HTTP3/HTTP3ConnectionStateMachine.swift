@@ -708,9 +708,9 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         public struct OnSettings: Hashable, Sendable {
             /// Whether both peers have agreed to use HTTP datagrams. The outcome must be reported downstream.
             public var datagramsNegotiated: Bool
-
+            /// The peer's maximum QPACK decoder table capacity
             public var qpackMaximumTableCapacity: UInt64
-
+            /// The peer's maximum number of QPACK blocked streams
             public var qpackBlockedStreams: UInt64
         }
     }
