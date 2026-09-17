@@ -12,11 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import DequeModule
-public import HTTPTypes
 public import Logging
 public import NIOQUICHelpers
-@_spi(PackageInternal) public import QPACK
 
 @_spi(PackageInternal)
 public enum HTTP3ConnectionType: Sendable {
@@ -77,7 +74,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case finished
 
         struct NotStarted: ~Copyable {
-            var qpackState: QPACKStateMachine<Void>
             /// Our own settings that we will send to the remote.
             let localSettings: HTTP3Settings
             /// The type of the connection (client or server).
@@ -88,10 +84,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             var inboundControlStream: InboundStreamCreationState
             var inboundQPACKDecoderStream: InboundStreamCreationState
             var inboundQPACKEncoderStream: InboundStreamCreationState
-            var qpackState: QPACKStateMachine<Void>
             /// The type of the connection (client or server).
             let type: HTTP3ConnectionType
-            let encoderMaxTableSize: Int
             var streamIDTracker = StreamIDTracker()
             var quiescingState: HTTP3ConnectionQuiescingStateMachine
             var remoteAllowsDatagrams = false
@@ -105,9 +99,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 self.inboundControlStream = .init()
                 self.inboundQPACKDecoderStream = .init()
                 self.inboundQPACKEncoderStream = .init()
-                self.qpackState = notStarted.qpackState
                 self.type = notStarted.type
-                self.encoderMaxTableSize = Int(clamping: notStarted.localSettings.qpackMaximumTableCapacity)
                 self.localAllowsDatagrams = notStarted.localSettings.h3Datagram
                 self.quiescingState = .init(type: notStarted.type)
             }
@@ -118,11 +110,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     @_spi(PackageInternal)
     public init(settings: HTTP3Settings, type: HTTP3ConnectionType) {
-        let qpackState = QPACKStateMachine<Void>(
-            decoderMaxTableSize: Int(clamping: settings.qpackMaximumTableCapacity),
-            decoderMaxBlockedStreams: Int(clamping: settings.qpackBlockedStreams)
-        )
-        self.init(state: .notStarted(.init(qpackState: qpackState, localSettings: settings, type: type)))
+        self.init(state: .notStarted(.init(localSettings: settings, type: type)))
     }
 
     private init(state: consuming State) {
@@ -555,56 +543,30 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
     // MARK: Outbound Streams
 
     @_spi(PackageInternal)
-    public enum OutboundEncoderStreamReadyAction: Hashable {
-        case sendEncoderInstruction(QPACKEncoderInstruction)
-    }
-
-    @_spi(PackageInternal)
-    public mutating func outboundEncoderStreamReady(streamID: QUICStreamID) -> OutboundEncoderStreamReadyAction? {
+    public mutating func outboundEncoderStreamReady(streamID: QUICStreamID) {
         precondition(streamID.isUnidirectional)
         switch consume self.state {
         case .initialized(var initializedState):
             initializedState.streamIDTracker.streamOpened(id: streamID)
-            let instruction = initializedState.qpackState.outboundEncoderStreamReady()
             self = .init(state: .initialized(initializedState))
-            switch instruction {
-            case .sendEncoderInstruction(let instruction?):
-                return .sendEncoderInstruction(instruction)
-            case .sendEncoderInstruction(.none):
-                return .none
-            }
         case .notStarted:
             fatalError("Outbound encoder stream created before state machine started")
         case .finished:
             self = .init(state: .finished)
-            return .none
         }
     }
 
     @_spi(PackageInternal)
-    public enum OutboundDecoderStreamReadyAction: Hashable, Sendable {
-        case sendDecoderInstructions(Deque<QPACKDecoderInstruction>)
-    }
-
-    @_spi(PackageInternal)
-    public mutating func outboundDecoderStreamReady(streamID: QUICStreamID) -> OutboundDecoderStreamReadyAction? {
+    public mutating func outboundDecoderStreamReady(streamID: QUICStreamID) {
         precondition(streamID.isUnidirectional)
         switch consume self.state {
         case .initialized(var initializedState):
             initializedState.streamIDTracker.streamOpened(id: streamID)
-            let result = initializedState.qpackState.outboundDecoderStreamReady()
             self = .init(state: .initialized(initializedState))
-            switch result {
-            case .sendDecoderInstructions(let instructions):
-                return .sendDecoderInstructions(instructions)
-            case .none:
-                return .none
-            }
         case .notStarted:
             fatalError("Outbound decoder stream created before state machine started")
         case .finished:
             self = .init(state: .finished)
-            return nil
         }
     }
 
@@ -722,24 +684,9 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let settings = payload.settings
             switch consume self.state {
             case .initialized(var initializedState):
-                let action = initializedState.qpackState.receivedRemoteSettings(
-                    maxQueueSize: Int(clamping: settings.qpackBlockedStreams),
-                    effectiveDynamicTableSize: min(
-                        initializedState.encoderMaxTableSize,
-                        Int(clamping: settings.qpackMaximumTableCapacity)
-                    )
-                )
                 initializedState.remoteAllowsDatagrams = settings.h3Datagram
                 let datagramsNegotiated = initializedState.datagramsNegotiated
                 self = .init(state: .initialized(initializedState))
-                switch action {
-                case .makeEncoderInstructionStream, .none:
-                    break
-                case .emitConnectionError(let error):
-                    // The peer sent SETTINGS twice. The frame validator normally catches this first. Leave the
-                    // settings we got the first time in place: the connection is going away anyway.
-                    return .emitConnectionError(error)
-                }
                 return .onSettings(
                     ControlFrameReceivedAction.OnSettings(
                         datagramsNegotiated: datagramsNegotiated,
@@ -830,187 +777,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             // TODO: https://github.com/apple/swift-nio-http3/issues/1
             // Drop push-related stuff for now.
             return nil
-        }
-    }
-
-    // MARK: QPACK
-
-    @_spi(PackageInternal)
-    public enum IncomingEncoderInstructionAction {
-        /// The new incoming instruction resulted in previously-blocked headers now being decodable.
-        case sendDecoderInstruction(QPACKDecoderInstruction)
-        case emitConnectionError(HTTP3Error)
-    }
-
-    /// Inform the state machine of a new incoming QPACK encoder instruction. After this, you should call ``checkPendingDecodes()`` because the new instruction
-    /// may have unblocked a pending decode.
-    @_spi(PackageInternal)
-    public mutating func receivedIncomingEncoderInstruction(
-        _ instruction: QPACKEncoderInstruction
-    ) -> IncomingEncoderInstructionAction? {
-        switch consume self.state {
-        case .notStarted:
-            fatalError("Inbound encoder instruction received before state machine started")
-        case .finished:
-            // Drop incoming now since we already closed
-            self = .init(state: .finished)
-            return nil
-        case .initialized(var initializedState):
-            let result = initializedState.qpackState.receivedIncomingEncoderInstruction(instruction)
-            switch result {
-            case .emitConnectionError(let error):
-                self = .init(state: .finished)
-                return .emitConnectionError(error)
-            case .sendDecoderInstruction(let instruction):
-                self = .init(state: .initialized(initializedState))
-                return .sendDecoderInstruction(instruction)
-            case .none:
-                self = .init(state: .initialized(initializedState))
-                return .none
-            }
-        }
-    }
-
-    @_spi(PackageInternal)
-    public enum IncomingDecoderInstructionAction {
-        case emitConnectionError(HTTP3Error)
-    }
-
-    @_spi(PackageInternal)
-    public mutating func receivedIncomingDecoderInstruction(
-        _ instruction: QPACKDecoderInstruction
-    ) -> IncomingDecoderInstructionAction? {
-        switch consume self.state {
-        case .notStarted:
-            fatalError("Inbound decoder instruction received before state machine started")
-        case .finished:
-            // Drop incoming now since we already closed
-            self = .init(state: .finished)
-            return nil
-        case .initialized(var initializedState):
-            let result = initializedState.qpackState.receivedIncomingDecoderInstruction(instruction)
-            switch result {
-            case .emitConnectionError(let error):
-                self = .init(state: .finished)
-                return .emitConnectionError(error)
-            case .none:
-                self = .init(state: .initialized(initializedState))
-                return .none
-            }
-        }
-    }
-
-    @_spi(PackageInternal)
-    public mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
-        switch consume self.state {
-        case .notStarted:
-            fatalError("Tried to encode headers before state machine started")
-        case .finished:
-            fatalError("Tried to encode headers after state machine finished")
-        case .initialized(var initializedState):
-            let result = initializedState.qpackState.encodeHeaders(headers, forStream: streamID)
-            self = .init(state: .initialized(initializedState))
-            return result
-        }
-    }
-
-    @_spi(PackageInternal)
-    public enum DecodeHeaderAction {
-        /// Send this qpack decode result to the relevant stream.
-        case informDecodeResult(InformDecodeResult)
-
-        /// Send this qpack decoder error to the relevant stream. This is a stream-level error.
-        case informDecodeError(InformDecodeError)
-
-        /// Send a connection-level error.
-        case emitConnectionError(HTTP3Error)
-
-        @_spi(PackageInternal)
-        public struct InformDecodeResult: Hashable, Sendable {
-            @_spi(PackageInternal)
-            public var fields: [HTTPField]
-            @_spi(PackageInternal)
-            public var streamID: QUICStreamID
-            @_spi(PackageInternal)
-            public var instructionToWrite: QPACKDecoderInstruction?
-
-            @_spi(PackageInternal)
-            public init(
-                fields: [HTTPField],
-                streamID: QUICStreamID,
-                instructionToWrite: QPACKDecoderInstruction?
-            ) {
-                self.fields = fields
-                self.streamID = streamID
-                self.instructionToWrite = instructionToWrite
-            }
-        }
-
-        @_spi(PackageInternal)
-        public struct InformDecodeError {
-            @_spi(PackageInternal)
-            public var error: HTTP3Error
-            @_spi(PackageInternal)
-            public var streamID: QUICStreamID
-
-            @_spi(PackageInternal)
-            public init(error: HTTP3Error, streamID: QUICStreamID) {
-                self.error = error
-                self.streamID = streamID
-            }
-        }
-
-        init(_ informDecodeResult: QPACKStateMachine<Void>.DecodeHeaderAction) {
-            switch informDecodeResult {
-            case .emitConnectionError(let error, _):
-                self = .emitConnectionError(error)
-            case .informDecodeError(let error, _):
-                self = .informDecodeError(.init(error: error.error, streamID: error.streamID))
-            case .informDecodeResult(let result, _):
-                self = .informDecodeResult(
-                    .init(
-                        fields: result.fields,
-                        streamID: result.streamID,
-                        instructionToWrite: result.instructionToWrite
-                    )
-                )
-            }
-        }
-    }
-
-    @_spi(PackageInternal)
-    public mutating func decodeHeaders(
-        _ header: HTTP3PartialFrame.Headers,
-        forStream streamID: QUICStreamID
-    ) -> DecodeHeaderAction? {
-        switch consume self.state {
-        case .notStarted:
-            fatalError("Tried to decode headers before state machine started")
-        case .finished:
-            // Ignore this
-            self = .init(state: .finished)
-            return nil
-        case .initialized(var initializedState):
-            let action = initializedState.qpackState.decodeHeaders(header, forStream: streamID, context: ())
-            self = .init(state: .initialized(initializedState))
-            return action.map { .init($0) }
-        }
-    }
-
-    /// Check if any previously-queued decode is now decodable.
-    /// This function should be called repeatedly after new input (eg. new incoming instructions) until it returns nil
-    @_spi(PackageInternal)
-    public mutating func checkPendingQPACKDecodes() -> DecodeHeaderAction? {
-        switch consume self.state {
-        case .notStarted:
-            fatalError("Tried to decode headers before state machine started")
-        case .finished:
-            self = .init(state: .finished)
-            return nil
-        case .initialized(var initializedState):
-            let action = initializedState.qpackState.checkPendingDecodes()
-            self = .init(state: .initialized(initializedState))
-            return action.map { .init($0) }
         }
     }
 
@@ -1107,21 +873,18 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     @_spi(PackageInternal)
     public enum StreamClosedAction {
-        case sendDecoderInstruction(QPACKDecoderInstruction, shouldCloseConnection: Bool)
         case closeConnection
         case emitConnectionError(HTTP3Error)
     }
 
-    /// Call this to tell the machine that a stream has been closed. Will drop pending QPACK decodes and perform other cleanup.
+    /// Call this to tell the machine that a stream has been closed.
     /// - Parameters:
     ///   - streamID: The ID of the stream which was closed.
-    ///   - seenEOF: Whether or not we saw an input close before the stream closed. That means we didn't drop any incoming data.
     ///   - streamType: The type of the stream which was closed.
     /// - Returns: The next action to take.
     @_spi(PackageInternal)
     public mutating func streamClosed(
         streamID: QUICStreamID,
-        seenEOF: Bool,
         streamType: HTTP3StreamType
     ) -> StreamClosedAction? {
         switch consume self.state {
@@ -1130,7 +893,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case .initialized(var initializedState):
             switch streamType {
             case .request:
-                let qpackAction = initializedState.qpackState.requestStreamClosed(streamID: streamID, seenEOF: seenEOF)
                 if !initializedState.streamIDTracker.streamClosed(id: streamID) {
                     assertionFailure(
                         "[\(initializedState.type)] Trying to remove a non existent stream \(streamID) from tracker"
@@ -1140,39 +902,24 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 switch initializedState.quiescingState.shouldCloseConnection() {
                 case .closeIfNoOpenStreams:
                     self = .init(state: .initialized(initializedState))
-                    switch qpackAction {
-                    case .sendDecoderInstruction(let instructions):
-                        return .sendDecoderInstruction(instructions, shouldCloseConnection: !hasOpenStreams)
-                    case .none:
-                        if hasOpenStreams {
-                            return .none
-                        } else {
-                            return .closeConnection
-                        }
+                    if hasOpenStreams {
+                        return .none
+                    } else {
+                        return .closeConnection
                     }
                 case .closeIfExhaustedStreamsAndNonOpen(let maxID):
                     let hasExhaustedStreams = initializedState.streamIDTracker.hasExhaustedSameTypeStreams(
                         withIDsLessThan: maxID
                     )
                     self = .init(state: .initialized(initializedState))
-                    switch qpackAction {
-                    case .sendDecoderInstruction(let instructions):
-                        return .sendDecoderInstruction(instructions, shouldCloseConnection: !hasOpenStreams)
-                    case .none:
-                        if !hasOpenStreams && hasExhaustedStreams {
-                            return .closeConnection
-                        } else {
-                            return .none
-                        }
+                    if !hasOpenStreams && hasExhaustedStreams {
+                        return .closeConnection
+                    } else {
+                        return .none
                     }
                 case .doNotClose:
                     self = .init(state: .initialized(initializedState))
-                    switch qpackAction {
-                    case .sendDecoderInstruction(let instructions):
-                        return .sendDecoderInstruction(instructions, shouldCloseConnection: !hasOpenStreams)
-                    case .none:
-                        return .none
-                    }
+                    return .none
                 }
             case .unidirectional(let unidirectionalStreamType):
                 if !initializedState.streamIDTracker.streamClosed(id: streamID) {
