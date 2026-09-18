@@ -19,23 +19,6 @@ import Testing
 
 @testable @_spi(PackageInternal) import HTTP3
 
-/// Adapts the single-step ``HTTP3FrameDecoder`` to `ByteToMessageDecoder` so that NIO's
-/// `ByteToMessageDecoderVerifier` can drive it.
-@available(anyAppleOS 26.0, *)
-private struct HTTP3FrameByteToMessageDecoder: NIOSingleStepByteToMessageDecoder {
-    typealias InboundOut = HTTP3PartialFrameOrUnknown
-
-    private var decoder = HTTP3FrameDecoder()
-
-    mutating func decode(buffer: inout ByteBuffer) throws -> HTTP3PartialFrameOrUnknown? {
-        try self.decoder.decode(buffer: &buffer)
-    }
-
-    mutating func decodeLast(buffer: inout ByteBuffer, seenEOF: Bool) throws -> HTTP3PartialFrameOrUnknown? {
-        try self.decoder.decodeLast(buffer: &buffer, seenEOF: seenEOF)
-    }
-}
-
 struct HTTP3FrameDecoderTests {
     private var testHeader: HTTP3PartialFrame.Headers {
         let fieldSectionPrefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
@@ -75,7 +58,7 @@ struct HTTP3FrameDecoderTests {
         inputOutputPairs.append((ByteBuffer(bytes: [0x40, 0xdb, 0x03, 1, 2, 3]), [.unknown]))
 
         try ByteToMessageDecoderVerifier.verifyDecoder(inputOutputPairs: inputOutputPairs) {
-            HTTP3FrameByteToMessageDecoder()
+            HTTP3FrameDecoder()
         }
     }
 

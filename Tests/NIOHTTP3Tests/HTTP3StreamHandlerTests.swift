@@ -288,6 +288,65 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(instructions == [.insertCountIncrement(increment: 1), .sectionAcknowledgement(streamID: 5)])
     }
 
+    /// Bytes which arrive whilst a header section is blocked wait inside the frame decoder, and the frames they
+    /// carry must not overtake the header once it decodes.
+    @available(anyAppleOS 26.0, *)
+    @Test func readsWhilstBlockedDoNotOvertakeTheHeader() throws {
+        let eventLoop = EmbeddedEventLoop()
+        let decoderStreamChannel = EmbeddedChannel()
+        let qpackCoder = makeTestQPACKCoder(decoderStreamChannel: decoderStreamChannel)
+        qpackCoder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
+            streamID: 5,
+            streamType: .request,
+            qpackCoder: qpackCoder,
+            delegate: TestDelegate(),
+            logger: self.logger
+        )
+
+        let seenEvents = NIOLockedValueBox<Deque<DebugInboundEventsHandler.Event>>([])
+        let eventRecorder = DebugInboundEventsHandler { event, _ in
+            seenEvents.withLockedValue { $0.append(event) }
+        }
+        let channel = EmbeddedChannel(handlers: [handler, eventRecorder], loop: eventLoop)
+        #expect(seenEvents.popFirst()?.isChannelRegistered == true)
+
+        // A header we can't decode yet. Everything after it has to wait.
+        try channel.writeInbound(self.testBlockedRequestPartialHeaderBytes)
+        #expect(seenEvents.isEmpty())
+
+        // A DATA frame, a read completion, then another DATA frame — all whilst still blocked.
+        let dataFrameBytes = ByteBuffer(bytes: [0, 4, 1, 2, 3, 4])
+        channel.pipeline.fireChannelRead(NIOAny(dataFrameBytes))
+        channel.pipeline.fireChannelReadComplete()
+        channel.pipeline.fireChannelRead(NIOAny(dataFrameBytes))
+        #expect(seenEvents.isEmpty())
+
+        // Unblocking the header releases the header first, then the frames which were waiting behind it.
+        qpackCoder.receivedIncomingEncoderInstruction(self.testUnblockingEncoderInstruction)
+
+        guard let headerAny = seenEvents.popFirst()?.readValue else {
+            Issue.record("Expected to read the header frame")
+            return
+        }
+        #expect(handler.unwrapOutboundIn(headerAny) == .headers(self.testBlockedRequestHeaderFields))
+
+        let expectedData = HTTP3Frame.data(.init(bytes: [1, 2, 3, 4]))
+        for _ in 0..<2 {
+            guard let dataAny = seenEvents.popFirst()?.readValue else {
+                Issue.record("Expected to read a data frame")
+                return
+            }
+            #expect(handler.unwrapOutboundIn(dataAny) == expectedData)
+        }
+
+        // The deferred read completion comes last, after everything it was holding back.
+        #expect(seenEvents.popFirst()?.isChannelReadComplete == true)
+        #expect(seenEvents.isEmpty())
+    }
+
     @available(anyAppleOS 26.0, *)
     @Test func receiveUnknownFrameFollowedByHeaders() throws {
         let handler = HTTP3StreamHandler(
@@ -558,9 +617,10 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(sawEOF == false)
     }
 
-    // Make sure that if we have buffered data which we didn't fire read for, then we do so before forwarding channel inactive.
+    // Make sure that if we fired a read which wasn't followed by a read complete, we fire the read complete before
+    // forwarding channel inactive.
     @available(anyAppleOS 26.0, *)
-    @Test func flushBuffersWhenChannelInactive() throws {
+    @Test func flushReadCompleteWhenChannelInactive() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
         let streamClosedPromise = eventLoop.makePromise(of: Bool.self)
@@ -581,10 +641,8 @@ struct NIOHTTP3StreamHandlerTests {
         }
         let channel = EmbeddedChannel(handlers: [handler, eventRecorder], loop: eventLoop)
 
-        // We can't insert an inactive after a header because the qpack decode immediately triggers a channel read.
-        // So we have to do it after a data instead.
-        // But we can't send a data until we've sent a header, because HTTP/3 rules.
-        // Read in a test header
+        // We can't send a data frame until we've sent a header, because HTTP/3 rules.
+        // Read in a test header. Nothing comes out until QPACK has decoded it.
         try channel.writeInbound(self.testRequestPartialHeaderBytes)
 
         #expect(seenEvents.popFirst()?.isChannelRegistered == true)
@@ -593,14 +651,21 @@ struct NIOHTTP3StreamHandlerTests {
             Issue.record("Expected a read event")
             return
         }
-        // We see the channel read and read complete
+        // We see the channel read and the read complete which was queued behind the QPACK decode.
         #expect(handler.unwrapOutboundIn(headerReadEvent) == self.testRequestHeaderFrame)
         #expect(seenEvents.popFirst()?.isChannelReadComplete == true)
 
         var dataBytes = ByteBuffer()
         dataBytes.writeHTTP3PartialFrame(.data(.init(string: "hello world")), preferHuffmanEncoding: false)
         channel.pipeline.fireChannelRead(dataBytes)
-        // We do not fire a read complete. So the bytes get buffered, but nothing comes out.
+
+        // The frame is fired as soon as it's decoded...
+        guard let dataReadEvent = seenEvents.popFirst()?.readValue else {
+            Issue.record("Expected a read event")
+            return
+        }
+        #expect(handler.unwrapOutboundIn(dataReadEvent) == .data(.init(string: "hello world")))
+        // ...but we didn't fire a read complete, so neither does the handler.
         #expect(seenEvents.isEmpty())
 
         // Close
@@ -608,13 +673,7 @@ struct NIOHTTP3StreamHandlerTests {
         let sawEOF = try streamClosedPromise.futureResult.wait()
         #expect(sawEOF == false)  // We did not see an EOF before close
 
-        // Now we see the data read
-        guard let dataReadEvent = seenEvents.popFirst()?.readValue else {
-            Issue.record("Expected a read event")
-            return
-        }
-        // We see the channel read and read complete and THEN the inactive
-        #expect(handler.unwrapOutboundIn(dataReadEvent) == .data(.init(string: "hello world")))
+        // We see the outstanding read complete, and THEN the inactive
         #expect(seenEvents.popFirst()?.isChannelReadComplete == true)
         #expect(seenEvents.popFirst()?.isChannelInactive == true)
         #expect(seenEvents.popFirst()?.isChannelUnregistered == true)

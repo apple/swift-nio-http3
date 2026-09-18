@@ -27,7 +27,9 @@ let package = Package(
         .library(name: "NIOHTTP3", targets: ["NIOHTTP3"])
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.82.0"),
+        // TODO: Revert to `.package(url: "https://github.com/apple/swift-nio.git", from: "2.82.0")` once
+        //       `NIOSingleStepByteToMessageHandle` has landed upstream.
+        .package(url: "https://github.com/fabianfett/swift-nio.git", branch: "ff-noncopyable-b2md"),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.8.0"),
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
