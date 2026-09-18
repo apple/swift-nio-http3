@@ -21,13 +21,6 @@ import NIOQUICHelpers
 /// This is an internal protocol that shall only be implemented by HTTP3ConnectionCoordinator
 /// It exists to enable testing of `HTTP3StreamHandler` in isolation.
 protocol HTTP3StreamDelegate {
-    /// Ask the connection coordinator to encode some fields into a partial header.
-    /// It will handle sending any necessary instructions to the remote, on the dedicated QPACK stream.
-    func encodeHeaders(_: [HTTPField], forStream streamID: QUICStreamID) -> HTTP3PartialFrame.Headers
-
-    /// Tell the connection coordinator that we want to decode a header. It will handle queueing and call back into us when it has a result.
-    func decodeHeaders(_: HTTP3PartialFrame.Headers, forStream streamID: QUICStreamID)
-
     /// Tell the connection state when this stream becomes inactive.
     ///
     /// - Parameters:
@@ -44,7 +37,9 @@ protocol HTTP3StreamDelegate {
 /// It handles encoding and decoding of these frames.
 /// It will only pass through valid frames, and handles things such as QPACK header decoding.
 @available(anyAppleOS 26.0, *)
-final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>: ChannelDuplexHandler {
+final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate: HTTP3.QPACKConnectionDelegate>:
+    ChannelDuplexHandler
+{
     typealias InboundIn = ByteBuffer
     typealias InboundOut = HTTP3Frame
 
@@ -55,6 +50,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>: ChannelDuplexHand
     private let streamType: HTTP3StreamType.Framed
 
     private let delegate: Delegate
+    private let qpackCoder: NIOQPACKCoder<ConnectionDelegate, Delegate>
 
     /// The channel context. This handler can only be in one channel at a time.
     private var context: ChannelHandlerContext?
@@ -74,12 +70,14 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>: ChannelDuplexHand
         stateMachine: consuming HTTP3StreamStateMachine,
         streamID: QUICStreamID,
         streamType: HTTP3StreamType.Framed,
+        qpackCoder: NIOQPACKCoder<ConnectionDelegate, Delegate>,
         delegate: Delegate,
         logger: Logger
     ) {
         self.streamID = streamID
         self.streamType = streamType
         self.stateMachine = stateMachine
+        self.qpackCoder = qpackCoder
         self.delegate = delegate
         self.logger = logger
     }
@@ -218,7 +216,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>: ChannelDuplexHand
                 didFireChannelRead = true
             case .decodeHeader(let partialHeader):
                 self.logger.trace("HTTP3StreamHandler waiting for QPACK decode")
-                self.delegate.decodeHeaders(partialHeader, forStream: self.streamID)
+                self.qpackCoder.decodeHeaders(partialHeader, streamID: self.streamID, decodeReceiver: self)
             case .emitStreamError(let error):
                 context.triggerUserOutboundEvent(
                     QUICStopSendingEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
@@ -269,7 +267,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>: ChannelDuplexHand
             context.fireErrorCaught(error)
             promise?.fail(error)
         case .encodeHeaders(let fields):
-            let encoded = self.delegate.encodeHeaders(fields, forStream: self.streamID)
+            let encoded = self.qpackCoder.encodeHeaders(fields, streamID: self.streamID)
             let action = self.stateMachine.gotHeaderEncodeResult(encoded, into: &self.pendingBytes!)
 
             switch action {
@@ -470,6 +468,18 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>: ChannelDuplexHand
         let loopBoundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
         context.eventLoop.execute {
             loopBoundContext.value.close(mode: .all, promise: nil)
+        }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension HTTP3StreamHandler: QPACKDecodeReceiver {
+    func decodeResult(_ result: Result<[HTTPField], HTTP3Error>) {
+        switch result {
+        case .success(let fields):
+            self.onQPACKDecodeResult(fields: fields)
+        case .failure(let error):
+            self.onQPACKDecodeError(error)
         }
     }
 }

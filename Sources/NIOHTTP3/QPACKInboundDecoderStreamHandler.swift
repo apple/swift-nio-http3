@@ -12,33 +12,39 @@
 //
 //===----------------------------------------------------------------------===//
 
+@_spi(PackageInternal) import HTTP3
 import NIOCore
 @_spi(PackageInternal) import QPACK
+
+protocol QPACKInboundDecoderStreamDelegate: ~Copyable {
+    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction)
+
+    func onError(_ error: HTTP3Error)
+}
 
 /// Read decoder instructions from a channel and give them to a callback.
 /// This belongs on the incoming decoder stream.
 /// The decoder instructions come from the remote decoder and should be fed into the local encoder.
-final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
+final class QPACKInboundDecoderStreamHandler<Delegate: QPACKInboundDecoderStreamDelegate>: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
 
     let decoder: NIOSingleStepByteToMessageProcessor<QPACKDecoderInstructionDecoder>
+    let delegate: Delegate
 
-    /// Called when an incoming instruction is successfully read.
-    private var onReceivedInstruction: (QPACKDecoderInstruction) -> Void
-    /// Called when an error is caught on this channel.
-    private var onError: (any Error) -> Void
-
-    init(
-        onReceivedInstruction: @escaping (QPACKDecoderInstruction) -> Void,
-        onError: @escaping (any Error) -> Void
-    ) {
+    init(delegate: consuming Delegate) {
         self.decoder = NIOSingleStepByteToMessageProcessor(QPACKDecoderInstructionDecoder())
-        self.onReceivedInstruction = onReceivedInstruction
-        self.onError = onError
+        self.delegate = delegate
     }
 
     func errorCaught(context: ChannelHandlerContext, error: any Error) {
-        self.onError(error)
+        let streamError = HTTP3Error(
+            code: .qpackDecoderStreamError,
+            message: "Inbound QPACK decoder instruction stream error",
+            cause: error,
+            errorCode: .qpackDecoderStreamError,
+            location: .here()
+        )
+        self.delegate.onError(streamError)
         context.fireErrorCaught(error)
     }
 
@@ -46,11 +52,30 @@ final class QPACKInboundDecoderStreamHandler: ChannelInboundHandler {
         let byteBuffer = Self.unwrapInboundIn(data)
         do {
             try self.decoder.process(buffer: byteBuffer) { instruction in
-                self.onReceivedInstruction(instruction)
+                self.delegate.onReceivedInstruction(instruction)
             }
         } catch {
-            self.onError(error)
+            let streamError = HTTP3Error(
+                code: .qpackDecoderStreamError,
+                message: "Invalid QPACK decoder instruction",
+                cause: error,
+                errorCode: .qpackDecoderStreamError,
+                location: .here()
+            )
+            self.delegate.onError(streamError)
             context.fireErrorCaught(error)
         }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension HTTP3.QPACKCoder: QPACKInboundDecoderStreamDelegate
+where OutboundEncoderStream: ~Copyable, OutboundDecoderStream: ~Copyable {
+    func onError(_ error: HTTP3Error) {
+        self.connectionError(error)
+    }
+
+    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction) {
+        self.receivedIncomingDecoderInstruction(instruction)
     }
 }

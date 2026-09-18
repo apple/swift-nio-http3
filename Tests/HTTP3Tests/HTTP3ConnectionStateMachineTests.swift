@@ -363,8 +363,9 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(String(describing: action2))")
             return
         }
-        #expect(!settings.makeEncoderInstructionStream)
         #expect(!settings.datagramsNegotiated)
+        #expect(settings.qpackMaximumTableCapacity == 0)
+        #expect(settings.qpackBlockedStreams == 0)
     }
 
     @available(anyAppleOS 26, *)
@@ -377,7 +378,7 @@ struct HTTP3ConnectionStateMachineTests {
         #expect(action1 == .createControlAndDecoderStreams)
 
         let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
-        guard case .onSettings(let settings) = action2, settings.makeEncoderInstructionStream else {
+        guard case .onSettings = action2 else {
             Issue.record("Unexpected action \(String(describing: action2))")
             return
         }
@@ -736,9 +737,6 @@ struct HTTP3ConnectionStateMachineTests {
                 forStream: 0
             )
             #expect(action5.fieldSection.lines.count == 1)
-
-            let action6 = stateMachine.receivedIncomingDecoderInstruction(.insertCountIncrement(increment: 1))
-            #expect(action6 == nil)
         }
     }
 
@@ -752,7 +750,7 @@ struct HTTP3ConnectionStateMachineTests {
         #expect(action1 == .createControlAndDecoderStreams)
 
         let action2 = stateMachine.receivedControlFrame(.settings(remoteSettings))
-        guard case .onSettings(let settings) = action2, settings.makeEncoderInstructionStream else {
+        guard case .onSettings = action2 else {
             Issue.record("Unexpected action \(String(describing: action2))")
             return
         }
@@ -1324,18 +1322,9 @@ extension HTTP3ConnectionStateMachine {
         // receive remotes settings
         let action3 = stateMachine.receivedControlFrame(.settings(remoteSettings))
         switch action3 {
-        case .onSettings(let settings):
-            // We should be asked to make an encoder stream if and only if remote qpack is enabled.
-            #expect(settings.makeEncoderInstructionStream == expectRemoteQPACK)
-            if settings.makeEncoderInstructionStream {
-                let action3 = stateMachine.outboundEncoderStreamReady(streamID: idGenerator.outboundUni())
-                switch action3 {
-                case .sendEncoderInstruction(let ins):
-                    #expect(ins == .setDynamicTableCapacity(Int(localSettings.qpackMaximumTableCapacity)))
-                case .none:
-                    Issue.record()
-                }
-            }
+        case .onSettings:
+            break
+
         default:
             Issue.record("Unexpected action \(String(describing: action3))")
         }

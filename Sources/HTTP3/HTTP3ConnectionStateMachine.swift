@@ -706,10 +706,12 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
         @_spi(PackageInternal)
         public struct OnSettings: Hashable, Sendable {
-            /// An outbound QPACK encoder instruction stream needs to be created.
-            public var makeEncoderInstructionStream: Bool
             /// Whether both peers have agreed to use HTTP datagrams. The outcome must be reported downstream.
             public var datagramsNegotiated: Bool
+            /// The peer's maximum QPACK decoder table capacity
+            public var qpackMaximumTableCapacity: UInt64
+            /// The peer's maximum number of QPACK blocked streams
+            public var qpackBlockedStreams: UInt64
         }
     }
 
@@ -729,22 +731,20 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 )
                 initializedState.remoteAllowsDatagrams = settings.h3Datagram
                 let datagramsNegotiated = initializedState.datagramsNegotiated
-                let makeEncoderStream: Bool
                 self = .init(state: .initialized(initializedState))
                 switch action {
-                case .makeEncoderInstructionStream:
-                    makeEncoderStream = true
+                case .makeEncoderInstructionStream, .none:
+                    break
                 case .emitConnectionError(let error):
                     // The peer sent SETTINGS twice. The frame validator normally catches this first. Leave the
                     // settings we got the first time in place: the connection is going away anyway.
                     return .emitConnectionError(error)
-                case .none:
-                    makeEncoderStream = false
                 }
                 return .onSettings(
                     ControlFrameReceivedAction.OnSettings(
-                        makeEncoderInstructionStream: makeEncoderStream,
-                        datagramsNegotiated: datagramsNegotiated
+                        datagramsNegotiated: datagramsNegotiated,
+                        qpackMaximumTableCapacity: payload.settings.qpackMaximumTableCapacity,
+                        qpackBlockedStreams: payload.settings.qpackBlockedStreams
                     )
                 )
             case .notStarted:

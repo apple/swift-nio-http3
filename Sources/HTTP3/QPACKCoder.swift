@@ -190,6 +190,10 @@ public final class QPACKCoder<
         }
     }
 
+    public func connectionError(_ httpError: HTTP3Error) {
+        self.connection.connectionError(httpError)
+    }
+
     // MARK: Encode
 
     /// QPACK encode your HTTP fields. If new instructions need to be send to the peer as a side-effect of the encode the
