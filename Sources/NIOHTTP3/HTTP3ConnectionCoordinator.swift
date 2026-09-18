@@ -17,7 +17,6 @@ import HTTPTypes
 import Logging
 import NIOCore
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
@@ -143,7 +142,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
     // MARK: Outbound streams
 
-    /// Create an outbound stream, write the stream type, add the handlers and tell the state machine that it's ready.
+    /// Create an outbound stream, write the stream type, add the handlers and hand the stream to the QPACK coder.
     private func createQPACKEncoderInstructionStream() {
         self.eventLoop.assertInEventLoop()
         self.createOutboundUnidirectionalStream(ofType: .qpackEncoder) {
@@ -152,8 +151,8 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
             self.addStreamClosedCallback(
                 streamChannel: streamChannel,
-                streamID: $0.streamID,
-                streamType: .unidirectional(.qpackDecoder)
+                streamID: streamID,
+                streamType: .unidirectional(.qpackEncoder)
             )
 
             let outboundQPACKEncoderStream = QPACKOutboundEncoderStream(
@@ -172,14 +171,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     "Opened outbound QPACK encoder stream",
                     metadata: [LoggingKeys.quicStreamID: "\(streamID)"]
                 )
-                let action = self.connectionStateMachine.outboundEncoderStreamReady(streamID: streamID)
-                switch action {
-                case .sendEncoderInstruction:
-                    // handled by the QPACKCoder
-                    break
-                case .none:
-                    break
-                }
+                self.connectionStateMachine.outboundEncoderStreamReady(streamID: streamID)
             case .failure(let error):
                 self.logger.error(
                     "Failed to create QPACK encoder stream",
@@ -189,7 +181,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         }
     }
 
-    /// Create an outbound stream, write the stream type and add the handlers.
+    /// Create an outbound stream, write the stream type, add the handlers and hand the stream to the QPACK coder.
     private func createQPACKDecoderInstructionStream() {
         self.eventLoop.assertInEventLoop()
         self.createOutboundUnidirectionalStream(ofType: .qpackDecoder) {
@@ -214,14 +206,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     "Opened outbound QPACK decoder stream",
                     metadata: [LoggingKeys.quicStreamID: "\(streamID)"]
                 )
-                let action = self.connectionStateMachine.outboundDecoderStreamReady(streamID: streamID)
-                switch action {
-                case .sendDecoderInstructions:
-                    // handled by QPACK Coder directly
-                    break
-                case .none:
-                    break
-                }
+                self.connectionStateMachine.outboundDecoderStreamReady(streamID: streamID)
             case .failure(let error):
                 self.logger.error(
                     "Failed to create QPACK decoder stream",
@@ -674,25 +659,19 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     private func onStreamClosed(streamID: QUICStreamID, seenEOF: Bool, streamType: HTTP3StreamType) {
         self.eventLoop.assertInEventLoop()
         self.logger.trace("Stream has closed", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
-        // It's safe to remove this now. When we tell the state machine about the closure, it'll remove any queued QPACK decodes.
+        // It's safe to remove this now: the coder drops any decode still queued for this stream below.
         self.streamHandlers[streamID] = nil
-        self.qpackCoder?.requestStreamClosed(streamID: streamID, seenEOF: seenEOF)
+        if case .request = streamType {
+            // Only request streams carry field sections, so only they can have QPACK state to clean up.
+            self.qpackCoder?.requestStreamClosed(streamID: streamID, seenEOF: seenEOF)
+        }
         // Anything buffered will never be delivered, drop them.
         self.datagramBuffer.discardDatagrams(forStream: streamID)
         let action = self.connectionStateMachine.streamClosed(
             streamID: streamID,
-            seenEOF: seenEOF,
             streamType: streamType
         )
         switch action {
-        case .sendDecoderInstruction(_, let shouldCloseConnection):
-            // instruction sending handled by QPACKCoder
-            if shouldCloseConnection {
-                self.logger.trace(
-                    "Shutting connection because we previously got a GOAWAY, and there are now no more streams open"
-                )
-                self.shutdownConnectionImmediately()
-            }
         case .closeConnection:
             self.logger.trace(
                 "Shutting connection because we previously got a GOAWAY, and there are now no more streams open"

@@ -176,7 +176,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
     ///   QPACK decode. Any bytes we didn't consume stay in the handle, so the loop resumes where it left off.
     @discardableResult
     private func runDecodeLoop(
-        decodeMode: NIODecodeMode,
+        decodeMode: NIOSingleStepDecodeMode,
         seenEOF: Bool = false,
         context: ChannelHandlerContext
     ) -> Bool {
