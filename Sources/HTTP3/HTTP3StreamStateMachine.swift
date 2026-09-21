@@ -309,20 +309,26 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         /// This function is consuming, the state machine can't be used after closing.
         /// - Note: You should ``decodeNext()`` as much as possible before calling this.
         consuming func closed() -> FinishType {
-            switch consume self.state {
-            case .buffered:
-                return .noEOF
-            case .waitingForDecode:
-                return .noEOF
-            case .headerDecodeError:
-                return .noEOF
-            case .idle:
-                // This is unclean even if we have seen EOF. That is because we haven't unbuffered the EOF.
-                // That is why it's important to decode as much as possible before calling finished()
-                return .noEOF
+            self.hasSeenEOF ? .sawEOF : .noEOF
+        }
+
+        /// Whether we have seen the EOF and surfaced it.
+        ///
+        /// Note that a queued EOF which hasn't been unbuffered yet does not count: that is why it's important to
+        /// decode as much as possible before asking.
+        fileprivate var hasSeenEOF: Bool {
+            switch self.state {
             case .inputClosed:
                 // Input was already closed, so it's clean
-                return .sawEOF
+                return true
+            case .buffered:
+                return false
+            case .waitingForDecode:
+                return false
+            case .headerDecodeError:
+                return false
+            case .idle:
+                return false
             }
         }
     }
@@ -440,8 +446,8 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             /// The error that was reached. This is reported back on any subsequent operation.
             var error: HTTP3Error
 
-            /// The read state when the error occurred.
-            var readState: ReadState
+            /// Whether the read side had already seen the EOF when the error occurred.
+            var seenEOF: Bool
         }
     }
 
@@ -502,10 +508,10 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                     return .encodeHeaders(fields)
                 }
             case .emitStreamError(let error):
-                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                 return .wouldBeStreamError(error)
             case .emitConnectionError(let error):
-                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                 return .wouldBeConnectionError(error)
             case .previousError:
                 self = .init(state: .idle(idleState))
@@ -624,10 +630,10 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                     self = .init(state: .idle(idleState))
                     return .returnFrame(validatedFrame)
                 case .emitStreamError(let error):
-                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                    self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                     return .emitStreamError(error)
                 case .emitConnectionError(let error):
-                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                    self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                     return .emitConnectionError(error)
                 case .previousError:
                     self = .init(state: .idle(idleState))
@@ -637,7 +643,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                 let validationResult = idleState.validator.processInboundUnknownFrame()
                 switch validationResult {
                 case .emitConnectionError(let error):
-                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                    self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                     return .emitConnectionError(error)
                 case .dropFrame:
                     self = .init(state: .idle(idleState))
@@ -649,10 +655,10 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                     return .previousError
                 }
             case .emitConnectionError(let error):
-                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                 return .emitConnectionError(error)
             case .emitStreamError(let error):
-                self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                 return .emitStreamError(error)
             case .decodeHeader(let partialHeader):
                 self = .init(state: .idle(idleState))
@@ -675,7 +681,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                     return .inputClosed(.emitErrorAndEvent(error))
 
                 case .resetStream(let error):
-                    self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+                    self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
                     return .inputClosed(.resetStream(error))
                 }
             }
@@ -765,7 +771,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         switch consume self.state {
         case .idle(let idleState):
             let error = remoteStreamError(errorCode: errorCodeValue, location: .here())
-            self = .init(state: .previousError(.init(error: error, readState: idleState.readState)))
+            self = .init(state: .previousError(.init(error: error, seenEOF: idleState.readState.hasSeenEOF)))
             return .emitStreamError(error)
         case .previousError(let previousError):
             // ignore the new error because we already are in an error state
@@ -801,16 +807,10 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                 return .streamClosed(seenEOF: false)
             }
         case .previousError(let errorState):
-            let finishState = errorState.readState.closed()
+            let seenEOF = errorState.seenEOF
             self = .init(state: .finished)
+            return .streamClosed(seenEOF: seenEOF)
 
-            switch finishState {
-            case .sawEOF:
-                return .streamClosed(seenEOF: true)
-
-            case .noEOF:
-                return .streamClosed(seenEOF: false)
-            }
         case .finished:
             fatalError("Finished called twice")
         }
