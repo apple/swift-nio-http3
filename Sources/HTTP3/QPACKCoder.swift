@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
-@_spi(PackageInternal) public import QPACK
+@_spi(PackageInternal) import QPACK
 
 /// QPACK encoding and decoding for a HTTP/3 connection.
 ///
