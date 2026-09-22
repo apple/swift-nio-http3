@@ -110,7 +110,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: delegate,
             logger: self.logger
         )
@@ -138,7 +137,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(),
             logger: self.logger
         )
@@ -177,7 +175,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(),
             logger: self.logger
         )
@@ -200,7 +197,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(),
             logger: self.logger
         )
@@ -227,7 +223,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(),
             logger: self.logger
         )
@@ -256,7 +251,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { eof, _, _ in sawEOF.succeed(eof) }
             ),
@@ -286,7 +280,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(
                 onConnectionError: { connectionErrorPromise.succeed($0) }
             ),
@@ -317,7 +310,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
             ),
@@ -338,7 +330,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
             ),
@@ -362,7 +353,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
             ),
@@ -423,7 +413,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { _, _, _ in },
             ),
@@ -456,7 +445,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { _, _, _ in },
             ),
@@ -506,7 +494,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: QPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { _, _, _ in },
             ),

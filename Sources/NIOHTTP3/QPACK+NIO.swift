@@ -19,3 +19,14 @@ public import NIOCore
 extension QPACKDecoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 @available(anyAppleOS 26.0, *)
 extension QPACKEncoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
+
+/// Receives the connection-level errors raised on the peer's QPACK unidirectional streams.
+///
+/// Those streams carry nothing this endpoint acts on — see ``QPACKInboundEncoderStreamHandler`` and
+/// ``QPACKInboundDecoderStreamHandler`` — so reporting errors is all their handlers ever need to do.
+protocol QPACKInboundStreamDelegate: ~Copyable {
+    func onError(_ error: HTTP3Error)
+}
+
+/// The peer sent a QPACK instruction which implies a dynamic table, which this implementation does not use.
+struct UnsupportedQPACKInstruction: Error, Hashable {}

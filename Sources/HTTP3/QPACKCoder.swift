@@ -24,10 +24,9 @@ public import HTTPTypes
 ///   coder can be shared freely between all streams of a connection.
 /// - Decoding never blocks, so ``decodeHeaders(_:)`` returns its result synchronously.
 /// - Neither endpoint's QPACK unidirectional streams are ever written to, so this endpoint does not create
-///   them. See RFC 9204 § 4.2, which permits omitting a stream that will not be used.
-/// - The peer is still allowed to create its encoder and decoder streams. Anything it sends on them which
-///   implies a dynamic table is a connection error; see ``receivedEncoderInstruction(_:)`` and
-///   ``receivedDecoderInstruction(_:)``.
+///   them. See RFC 9204 § 4.2, which permits omitting a stream that will not be used. The peer is still
+///   allowed to create its own, but anything it sends on them which implies a dynamic table is a connection
+///   error, which is enforced where those streams are read rather than here.
 @_spi(PackageInternal)
 public struct QPACKCoder: Sendable {
     private let encoder: QPACKEncoder
@@ -109,54 +108,5 @@ public struct QPACKCoder: Sendable {
                 )
             }
         }
-    }
-
-    // MARK: Peer instructions
-
-    /// Call this when an instruction has been received on the peer's QPACK encoder stream.
-    ///
-    /// Since this endpoint advertises a zero dynamic table capacity, the only instruction a conformant peer
-    /// can send is a `Set Dynamic Table Capacity` of zero. Anything else is a `QPACK_ENCODER_STREAM_ERROR`.
-    ///
-    /// - Returns: The connection error to emit, or `nil` if the instruction was acceptable.
-    @_spi(PackageInternal)
-    public func receivedEncoderInstruction(_ instruction: QPACKEncoderInstruction) -> HTTP3Error? {
-        if case .setDynamicTableCapacity(0) = instruction {
-            return nil
-        }
-        return Self.encoderStreamError(location: .here())
-    }
-
-    @inline(never)
-    private static func encoderStreamError(location: HTTP3Error.SourceLocation) -> HTTP3Error {
-        HTTP3Error(
-            code: .qpackEncoderStreamError,
-            message: "Encoder instruction received when the dynamic table is not in use",
-            cause: nil,
-            errorCode: .qpackEncoderStreamError,
-            location: location
-        )
-    }
-
-    /// Call this when an instruction has been received on the peer's QPACK decoder stream.
-    ///
-    /// This endpoint's encoder never references the dynamic table, so there is nothing for the peer's decoder
-    /// to acknowledge, cancel or increment. Any instruction is a `QPACK_DECODER_STREAM_ERROR`.
-    ///
-    /// - Returns: The connection error to emit, or `nil` if the instruction was acceptable.
-    @_spi(PackageInternal)
-    public func receivedDecoderInstruction(_ instruction: QPACKDecoderInstruction) -> HTTP3Error? {
-        Self.decoderStreamError(location: .here())
-    }
-
-    @inline(never)
-    private static func decoderStreamError(location: HTTP3Error.SourceLocation) -> HTTP3Error {
-        HTTP3Error(
-            code: .qpackDecoderStreamError,
-            message: "Decoder instruction received when the dynamic table is not in use",
-            cause: nil,
-            errorCode: .qpackDecoderStreamError,
-            location: location
-        )
     }
 }

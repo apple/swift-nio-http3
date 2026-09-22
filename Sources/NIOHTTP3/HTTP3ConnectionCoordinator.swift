@@ -17,18 +17,15 @@ import HTTPTypes
 import Logging
 import NIOCore
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
 @available(anyAppleOS 26, *)
 final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator> {
 
-    /// The QPACK coder used by all streams of this connection.
     typealias StreamHandler = HTTP3StreamHandler<HTTP3ConnectionCoordinator>
 
     let eventLoop: any EventLoop
-    private let qpackCoder = QPACKCoder()
     private var connectionStateMachine: HTTP3ConnectionStateMachine
     private let outboundControlStreamHandler: HTTP3OutboundControlStreamHandler
     private let streamCreator: QUICStreamCreator
@@ -548,7 +545,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             ),
             streamID: streamID,
             streamType: streamType,
-            qpackCoder: self.qpackCoder,
             delegate: self,
             logger: logger
         )
@@ -751,20 +747,8 @@ extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
 }
 
 @available(anyAppleOS 26, *)
-extension HTTP3ConnectionCoordinator: QPACKInboundEncoderStreamDelegate, QPACKInboundDecoderStreamDelegate {
+extension HTTP3ConnectionCoordinator: QPACKInboundStreamDelegate {
     func onError(_ error: HTTP3Error) {
         self.emitConnectionErrorFromStream(error)
-    }
-
-    func onReceivedInstruction(_ instruction: QPACKEncoderInstruction) {
-        if let error = self.qpackCoder.receivedEncoderInstruction(instruction) {
-            self.emitConnectionErrorFromStream(error)
-        }
-    }
-
-    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction) {
-        if let error = self.qpackCoder.receivedDecoderInstruction(instruction) {
-            self.emitConnectionErrorFromStream(error)
-        }
     }
 }

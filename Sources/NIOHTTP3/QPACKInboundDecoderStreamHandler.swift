@@ -16,16 +16,10 @@
 import NIOCore
 @_spi(PackageInternal) import QPACK
 
-protocol QPACKInboundDecoderStreamDelegate: ~Copyable {
-    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction)
-
-    func onError(_ error: HTTP3Error)
-}
-
-/// Read decoder instructions from a channel and give them to a callback.
-/// This belongs on the incoming decoder stream.
-/// The decoder instructions come from the remote decoder and should be fed into the local encoder.
-final class QPACKInboundDecoderStreamHandler<Delegate: QPACKInboundDecoderStreamDelegate>: ChannelInboundHandler {
+/// Read decoder instructions from the peer's QPACK decoder stream. Since we don't allow
+/// dynamic QPACK compression, all instructions are rejected and a connection error is
+/// emited, if we receive one.
+final class QPACKInboundDecoderStreamHandler<Delegate: QPACKInboundStreamDelegate>: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
 
     let decoder: NIOSingleStepByteToMessageProcessor<QPACKDecoderInstructionDecoder>
@@ -37,33 +31,50 @@ final class QPACKInboundDecoderStreamHandler<Delegate: QPACKInboundDecoderStream
     }
 
     func errorCaught(context: ChannelHandlerContext, error: any Error) {
-        let streamError = HTTP3Error(
-            code: .qpackDecoderStreamError,
-            message: "Inbound QPACK decoder instruction stream error",
-            cause: error,
-            errorCode: .qpackDecoderStreamError,
-            location: .here()
+        self.delegate.onError(
+            Self.streamError(
+                message: "Inbound QPACK decoder instruction stream error",
+                cause: error,
+                location: .here()
+            )
         )
-        self.delegate.onError(streamError)
         context.fireErrorCaught(error)
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let byteBuffer = Self.unwrapInboundIn(data)
         do {
-            try self.decoder.process(buffer: byteBuffer) { instruction in
-                self.delegate.onReceivedInstruction(instruction)
+            try self.decoder.process(buffer: byteBuffer) { _ in
+                throw UnsupportedQPACKInstruction()
             }
-        } catch {
-            let streamError = HTTP3Error(
-                code: .qpackDecoderStreamError,
-                message: "Invalid QPACK decoder instruction",
+        } catch let error as UnsupportedQPACKInstruction {
+            let streamError = Self.streamError(
+                message: "Received a QPACK decoder instruction, but the dynamic table is not in use",
                 cause: error,
-                errorCode: .qpackDecoderStreamError,
                 location: .here()
             )
             self.delegate.onError(streamError)
+            context.fireErrorCaught(streamError)
+        } catch {
+            self.delegate.onError(
+                Self.streamError(message: "Invalid QPACK decoder instruction", cause: error, location: .here())
+            )
             context.fireErrorCaught(error)
         }
+    }
+
+    @inline(never)
+    private static func streamError(
+        message: String,
+        cause: any Error,
+        location: HTTP3Error.SourceLocation
+    ) -> HTTP3Error {
+        HTTP3Error(
+            code: .qpackDecoderStreamError,
+            message: message,
+            cause: cause,
+            errorCode: .qpackDecoderStreamError,
+            location: location
+        )
     }
 }

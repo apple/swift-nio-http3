@@ -50,7 +50,10 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>:
     private let streamType: HTTP3StreamType.Framed
 
     private let delegate: Delegate
-    private let qpackCoder: QPACKCoder
+
+    /// Stateless: QPACK coding here uses the static table only, so there is nothing to share with the
+    /// connection or the other streams.
+    private let qpackCoder = QPACKCoder()
 
     /// The channel context. This handler can only be in one channel at a time.
     private var context: ChannelHandlerContext?
@@ -70,14 +73,12 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate>:
         stateMachine: consuming HTTP3StreamStateMachine,
         streamID: QUICStreamID,
         streamType: HTTP3StreamType.Framed,
-        qpackCoder: QPACKCoder,
         delegate: Delegate,
         logger: Logger
     ) {
         self.streamID = streamID
         self.streamType = streamType
         self.stateMachine = stateMachine
-        self.qpackCoder = qpackCoder
         self.delegate = delegate
         self.logger = logger
     }

@@ -98,33 +98,4 @@ struct QPACKCoderTests {
             return error.h3ErrorCode == .messageError
         }
     }
-
-    // MARK: Peer instructions
-
-    /// A peer which respects our zero `SETTINGS_QPACK_MAX_TABLE_CAPACITY` may still set the capacity to zero.
-    @Test func settingTheDynamicTableCapacityToZeroIsAccepted() {
-        #expect(QPACKCoder().receivedEncoderInstruction(.setDynamicTableCapacity(0)) == nil)
-    }
-
-    @Test(arguments: [
-        QPACKEncoderInstruction.setDynamicTableCapacity(1024),
-        QPACKEncoderInstruction.insertWithLiteralName(name: "cookie", value: "test"),
-        QPACKEncoderInstruction.insertWithNameReference(.staticTable, relativeIndex: 0, value: "test"),
-        QPACKEncoderInstruction.duplicateEntry(relativeIndex: 0),
-    ])
-    func anyOtherEncoderInstructionIsAConnectionError(instruction: QPACKEncoderInstruction) {
-        let error = QPACKCoder().receivedEncoderInstruction(instruction)
-        #expect(error?.h3ErrorCode == .qpackEncoderStreamError)
-    }
-
-    /// Our encoder never references the dynamic table, so the peer's decoder has nothing to tell us.
-    @Test(arguments: [
-        QPACKDecoderInstruction.sectionAcknowledgement(streamID: 0),
-        QPACKDecoderInstruction.streamCancellation(streamID: 0),
-        QPACKDecoderInstruction.insertCountIncrement(increment: 1),
-    ])
-    func anyDecoderInstructionIsAConnectionError(instruction: QPACKDecoderInstruction) {
-        let error = QPACKCoder().receivedDecoderInstruction(instruction)
-        #expect(error?.h3ErrorCode == .qpackDecoderStreamError)
-    }
 }
