@@ -159,26 +159,6 @@ extension ByteBuffer {
     }
 }
 
-/// Encode qpack encoder instructions.
-@_spi(PackageInternal)
-@available(anyAppleOS 26.0, *)
-public struct QPACKEncoderInstructionEncoder {
-    @_spi(PackageInternal)
-    public typealias OutboundIn = QPACKEncoderInstruction
-
-    private let preferHuffmanEncoding: Bool
-
-    @_spi(PackageInternal)
-    public init(preferHuffmanEncoding: Bool) {
-        self.preferHuffmanEncoding = preferHuffmanEncoding
-    }
-
-    @_spi(PackageInternal)
-    public func encode(data: QPACKEncoderInstruction, out: inout ByteBuffer) {
-        out.writeQPACKEncoderInstruction(data, preferHuffmanEncoding: self.preferHuffmanEncoding)
-    }
-}
-
 /// Decode qpack encoder instructions.
 @_spi(PackageInternal)
 @available(anyAppleOS 26.0, *)
@@ -197,21 +177,6 @@ public struct QPACKEncoderInstructionDecoder {
         seenEOF: Bool
     ) throws(IntegerReadingError) -> QPACKEncoderInstruction? {
         try self.decode(buffer: &buffer)
-    }
-}
-
-/// Encode qpack decoder instructions.
-@_spi(PackageInternal)
-public struct QPACKDecoderInstructionEncoder {
-    @_spi(PackageInternal)
-    public typealias OutboundIn = QPACKDecoderInstruction
-
-    @_spi(PackageInternal)
-    public init() {}
-
-    @_spi(PackageInternal)
-    public func encode(data: QPACKDecoderInstruction, out: inout ByteBuffer) {
-        out.writeQPACKDecoderInstruction(data)
     }
 }
 

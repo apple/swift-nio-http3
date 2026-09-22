@@ -34,22 +34,14 @@ struct EncoderInstructionCoderTests {
         instruction: QPACKEncoderInstruction,
         preferHuffmanEncoding: Bool
     ) throws {
-        // Encode "manually". We can trust the result of this because it's tested elsewhere as a unit
-        var expectedResult = ByteBuffer()
-        expectedResult.writeQPACKEncoderInstruction(instruction, preferHuffmanEncoding: false)
-
-        // Encode via the encoder which is under test
-        var testBuffer = ByteBuffer()
-        let encoder = QPACKEncoderInstructionEncoder(preferHuffmanEncoding: preferHuffmanEncoding)
-        encoder.encode(data: instruction, out: &testBuffer)
-
-        // Assert the results are same. This means the encoder works correctly
-        #expect(testBuffer == expectedResult)
+        var buffer = ByteBuffer()
+        buffer.writeQPACKEncoderInstruction(instruction, preferHuffmanEncoding: preferHuffmanEncoding)
 
         // Decode via the decoder under test
         let decoder = QPACKEncoderInstructionDecoder()
-        let decoded = try decoder.decode(buffer: &testBuffer)
+        let decoded = try decoder.decode(buffer: &buffer)
         // Assert the roundtrip worked. This means the decoder works correctly
         #expect(decoded == instruction)
+        #expect(buffer.readableBytes == 0)
     }
 }

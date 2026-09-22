@@ -60,78 +60,6 @@ final class TestDelegate: HTTP3StreamDelegate {
     }
 }
 
-/// A mock ``HTTP3/QPACKConnectionDelegate`` for tests which exercise ``HTTP3StreamHandler`` in isolation.
-final class TestQPACKConnectionDelegate: HTTP3.QPACKConnectionDelegate {
-
-    static func makeUnexpectedQPACKConnectionErrorHandler() -> (HTTP3Error) -> Void {
-        { error in
-            Issue.record("Unexpected QPACK connection error \(error)")
-        }
-    }
-
-    let _connectionError: (HTTP3Error) -> Void
-    let _makeOutboundEncoderStream: () -> Void
-
-    /// The number of times the coder asked for an outbound encoder stream.
-    private(set) var madeOutboundEncoderStreamCount = 0
-
-    init(
-        onConnectionError: @escaping (HTTP3Error) -> Void =
-            TestQPACKConnectionDelegate.makeUnexpectedQPACKConnectionErrorHandler(),
-        onMakeOutboundEncoderStream: @escaping () -> Void = {}
-    ) {
-        self._connectionError = onConnectionError
-        self._makeOutboundEncoderStream = onMakeOutboundEncoderStream
-    }
-
-    func connectionError(_ error: HTTP3Error) {
-        self._connectionError(error)
-    }
-
-    func makeOutboundEncoderStream() {
-        self.madeOutboundEncoderStreamCount += 1
-        self._makeOutboundEncoderStream()
-    }
-}
-
-/// Make a ``QPACKCoder`` suitable for handing to a ``HTTP3StreamHandler`` under test.
-///
-/// Pass a `decoderStreamChannel` if the test drives a decode which references the dynamic table: the coder writes
-/// the resulting acknowledgements to that channel, and traps if it has no outbound decoder stream at all.
-@available(anyAppleOS 26.0, *)
-func makeTestQPACKCoder(
-    encoderMaxTableSize: Int = 4096,
-    decoderMaxTableSize: Int = 4096,
-    decoderMaxBlockedStreams: Int = 16,
-    connectionDelegate: TestQPACKConnectionDelegate = TestQPACKConnectionDelegate(),
-    decoderStreamChannel: EmbeddedChannel? = nil
-) -> NIOQPACKCoder<TestQPACKConnectionDelegate, TestDelegate> {
-    let coder = NIOQPACKCoder<TestQPACKConnectionDelegate, TestDelegate>(
-        encoderMaxTableSize: encoderMaxTableSize,
-        decoderMaxTableSize: decoderMaxTableSize,
-        decoderMaxBlockedStreams: decoderMaxBlockedStreams,
-        errorDelegate: connectionDelegate
-    )
-    if let decoderStreamChannel {
-        coder.outboundDecoderStreamReady(QPACKOutboundDecoderStream(channel: decoderStreamChannel))
-    }
-    return coder
-}
-
-@available(anyAppleOS 26.0, *)
-extension EmbeddedChannel {
-    /// Drain everything a ``QPACKOutboundDecoderStream`` has written to this channel, decoded back into
-    /// instructions.
-    fileprivate func readAllDecoderInstructions() throws -> [QPACKDecoderInstruction] {
-        let processor = NIOSingleStepByteToMessageProcessor(QPACKDecoderInstructionDecoder())
-        var instructions = [QPACKDecoderInstruction]()
-        while let buffer = try self.readOutbound(as: ByteBuffer.self) {
-            try processor.process(buffer: buffer) { instructions.append($0) }
-        }
-        return instructions
-    }
-}
-
 struct NIOHTTP3StreamHandlerTests {
     private var testRequestHeaderFields: [HTTPField] = [
         .init(name: .method, value: "GET"),
@@ -145,7 +73,7 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     private var testRequestPartialHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
+        .init(fieldSection: QPACKEncoder().encode(headers: self.testRequestHeaderFields))
     }
 
     @available(anyAppleOS 26.0, *)
@@ -157,7 +85,7 @@ struct NIOHTTP3StreamHandlerTests {
 
     @available(anyAppleOS 26.0, *)
     private var testUndecodableRequestPartialHeaderBytes: ByteBuffer {
-        var fieldSection = StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields)
+        var fieldSection = QPACKEncoder().encode(headers: self.testRequestHeaderFields)
         // A relative index of 0 against a base of 0 is absolute index -1, which is never in the table.
         fieldSection.lines.append(.indexed(.dynamicTable, index: 0))
         var buffer = ByteBuffer()
@@ -168,43 +96,12 @@ struct NIOHTTP3StreamHandlerTests {
         return buffer
     }
 
-    /// The single field carried by ``testBlockedRequestPartialHeaderBytes``.
-    ///
-    /// It is the entry inserted by ``testUnblockingEncoderInstruction``.
-    private var testBlockedRequestHeaderFields: [HTTPField] {
-        [.init(name: .cookie, value: "test")]
-    }
-
-    /// A field section which the QPACK decoder cannot decode yet.
-    ///
-    /// It declares a required insert count of one and refers to that entry with a post-base index, but the entry
-    /// only arrives with ``testUnblockingEncoderInstruction``. Until then the stream is blocked: RFC 9204 § 2.1.2.
-    @available(anyAppleOS 26.0, *)
-    private var testBlockedRequestPartialHeaderBytes: ByteBuffer {
-        let fieldSection = FieldSection(
-            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 4096),
-            lines: [.indexedWithPostBase(index: 0)]
-        )
-        var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(
-            .headers(.init(fieldSection: fieldSection)),
-            preferHuffmanEncoding: false
-        )
-        return buffer
-    }
-
-    /// The peer's encoder instruction which inserts the entry ``testBlockedRequestPartialHeaderBytes`` needs.
-    private let testUnblockingEncoderInstruction = QPACKEncoderInstruction.insertWithLiteralName(
-        name: "cookie",
-        value: "test"
-    )
-
     private let logger = Logger(label: "NIOHTTP3StreamHandlerTests")
 
     @available(anyAppleOS 26.0, *)
     @Test func receiveInvalidHeaders() throws {
         var errorReceived = false
-        let qpackDelegate = TestQPACKConnectionDelegate(onConnectionError: { error in
+        let delegate = TestDelegate(onConnectionError: { error in
             errorReceived = true
             #expect(error.code == .qpackDecoderError)
             #expect(error.h3ErrorCode == .qpackDecompressionFailed)
@@ -213,8 +110,7 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(connectionDelegate: qpackDelegate),
-            delegate: TestDelegate(),
+            delegate: delegate,
             logger: self.logger
         )
         let eventLoop = EmbeddedEventLoop()
@@ -228,64 +124,11 @@ struct NIOHTTP3StreamHandlerTests {
         expectH3Error(
             code: .qpackDecoderError,
             h3ErrorCode: .qpackDecompressionFailed,
-            message: "Could not decode QPACK headers for stream 5"
+            message: "Could not decode QPACK headers"
         ) {
             _ = try recorderPromise.futureResult.wait()
         }
         #expect(errorReceived)
-    }
-
-    /// Receive headers which can't yet be decoded, but can be later.
-    @available(anyAppleOS 26.0, *)
-    @Test func receiveHeadersWhichNeedInstructions() throws {
-        let eventLoop = EmbeddedEventLoop()
-        // The coder writes its acknowledgements here once the decode goes through.
-        let decoderStreamChannel = EmbeddedChannel()
-        let qpackCoder = makeTestQPACKCoder(decoderStreamChannel: decoderStreamChannel)
-        // The peer's encoder may use a dynamic table, but hasn't inserted anything into it yet.
-        qpackCoder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
-        #expect(try decoderStreamChannel.readOutbound(as: ByteBuffer.self) == nil)
-
-        let handler = HTTP3StreamHandler(
-            stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
-            streamID: 5,
-            streamType: .request,
-            qpackCoder: qpackCoder,
-            delegate: TestDelegate(),
-            logger: self.logger
-        )
-
-        // Record events into a Deque so we can pop them as we expect them and assert nothing left at the end.
-        let seenEvents = NIOLockedValueBox<Deque<DebugInboundEventsHandler.Event>>([])
-        let eventRecorder = DebugInboundEventsHandler { event, _ in
-            seenEvents.withLockedValue { $0.append(event) }
-        }
-        let channel = EmbeddedChannel(handlers: [handler, eventRecorder], loop: eventLoop)
-        #expect(seenEvents.popFirst()?.isChannelRegistered == true)
-
-        // Read in a header which references a dynamic table entry we have not been told about yet. The handler
-        // must hold it back rather than forward a half-decoded frame.
-        try channel.writeInbound(self.testBlockedRequestPartialHeaderBytes)
-        #expect(seenEvents.isEmpty())
-
-        // The missing entry arrives on the peer's encoder stream, which unblocks the decode.
-        qpackCoder.receivedIncomingEncoderInstruction(self.testUnblockingEncoderInstruction)
-
-        // Make sure we read the right value
-        guard let readFrameAny = seenEvents.popFirst()?.readValue else {
-            Issue.record("Expected to read a frame")
-            return
-        }
-        // There's no API to unwrap a NIOAny ... unless you ask a handler to do it
-        let readFrame = handler.unwrapOutboundIn(readFrameAny)
-        #expect(readFrame == .headers(self.testBlockedRequestHeaderFields))
-        // Make sure we also fired a readComplete
-        #expect(seenEvents.popFirst()?.isChannelReadComplete == true)
-        #expect(seenEvents.isEmpty())
-
-        // The peer's encoder must learn that we took the entry, and that the field section using it was processed.
-        let instructions = try decoderStreamChannel.readAllDecoderInstructions()
-        #expect(instructions == [.insertCountIncrement(increment: 1), .sectionAcknowledgement(streamID: 5)])
     }
 
     @available(anyAppleOS 26.0, *)
@@ -294,7 +137,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(),
             logger: self.logger
         )
@@ -333,7 +175,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(),
             logger: self.logger
         )
@@ -356,7 +197,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(),
             logger: self.logger
         )
@@ -383,7 +223,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(),
             logger: self.logger
         )
@@ -412,7 +251,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { eof, _, _ in sawEOF.succeed(eof) }
             ),
@@ -442,7 +280,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
                 onConnectionError: { connectionErrorPromise.succeed($0) }
             ),
@@ -473,7 +310,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
             ),
@@ -494,7 +330,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .control,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
             ),
@@ -508,56 +343,6 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(sawEOF == true)
     }
 
-    @available(anyAppleOS 26.0, *)
-    @Test func channelInactiveAfterEOFWaitingForDecode() throws {
-        let eventLoop = EmbeddedEventLoop()
-        // The bool is true if the close was clean, ie we saw EOF
-        let streamClosedPromise = eventLoop.makePromise(of: Bool.self)
-        let handler = HTTP3StreamHandler(
-            stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
-            streamID: 5,
-            streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
-            delegate: TestDelegate(
-                onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
-            ),
-            logger: self.logger
-        )
-        let channel = EmbeddedChannel(handlers: [handler], loop: eventLoop)
-        // The channel here is a server-side request stream channel.
-        // We will write in a single, QPACK encoded request head, but will not yet decode it.i.e. we will simulate the
-        // QPACK decode being blocked.
-        // Then we will trigger input closed, and then channel inactive.
-        // Usually, channel inactive after input closed means the close is clean.
-        // But here, it is not clean, because we had to abort waiting for a QPACK decode.
-        // Read order must be retained, the inputClose cannot overtake the headers, and we can't read the headers.
-        // And anyway semantically, this must be treated as an unclean close, we must inform the remote QPACK encoder
-        // of the stream cancellation because there are potentially other un-decoded QPACK fields.
-
-        class EnsureNoReadHandler: ChannelInboundHandler {
-            typealias InboundIn = Never
-
-            func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-                Issue.record("Expected no reads, but got \(data)")
-            }
-
-            func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-                Issue.record("Expected no events, but got \(event)")
-            }
-        }
-
-        // Read in a test header
-        try channel.writeInbound(self.testBlockedRequestPartialHeaderBytes)
-
-        // Close the input
-        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
-
-        // Close
-        #expect(try channel.finish().isClean)
-        let sawEOF = try streamClosedPromise.futureResult.wait()
-        #expect(sawEOF == false)
-    }
-
     // Make sure that if we have buffered data which we didn't fire read for, then we do so before forwarding channel inactive.
     @available(anyAppleOS 26.0, *)
     @Test func flushBuffersWhenChannelInactive() throws {
@@ -568,7 +353,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { eof, _, _ in streamClosedPromise.succeed(eof) },
             ),
@@ -629,7 +413,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { _, _, _ in },
             ),
@@ -662,7 +445,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { _, _, _ in },
             ),
@@ -712,7 +494,6 @@ struct NIOHTTP3StreamHandlerTests {
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(),
             delegate: TestDelegate(
                 onStreamClosed: { _, _, _ in },
             ),

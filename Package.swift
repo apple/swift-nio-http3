@@ -45,8 +45,6 @@ let package = Package(
                 .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "DequeModule", package: "swift-collections"),
-                .product(name: "HeapModule", package: "swift-collections"),
                 .target(name: "QPACK"),
             ],
             swiftSettings: swiftSettings
@@ -70,7 +68,6 @@ let package = Package(
             dependencies: [
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
-                .product(name: "DequeModule", package: "swift-collections"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
             swiftSettings: swiftSettings
