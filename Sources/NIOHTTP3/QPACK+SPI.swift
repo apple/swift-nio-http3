@@ -13,43 +13,19 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
-public import NIOQUICHelpers
 @_spi(PackageInternal) @_spi(Benchmarks) private import QPACK
 
 // QPACK isn't a library product, so add entry points for benchmarks here under SPI.
 @_spi(Benchmarks)
 public enum QPACKBenchmarks {
-    /// Encode `headers` with the static-only encoder. Returns the number of field lines
+    /// Encode `headers` with the static table encoder. Returns the number of field lines
     /// produced.
     ///
     /// The return value doesn't matter, but needs to be there so the calling benchmark
     /// can stop the function call from being optimised away.
     @_spi(Benchmarks)
     public static func staticEncode(headers: [HTTPField]) -> Int {
-        let encoder = StaticQPACKEncoder()
+        let encoder = QPACKEncoder()
         return encoder.encode(headers: headers).lines.count
-    }
-
-    /// Create a dynamic encoder and encode `headers` on `streamID`. Returns the number
-    /// of field lines produced.
-    ///
-    /// The return value doesn't matter, but needs to be there so the calling benchmark
-    /// can stop the function call from being optimised away.
-    @_spi(Benchmarks)
-    public static func dynamicEncode(
-        headers: [HTTPField],
-        streamID: QUICStreamID,
-        dynamicTableMaxCapacity: Int,
-        dynamicTableInitialCapacity: Int,
-        maxBlockedStreams: Int,
-        targetEvictableFraction: Double
-    ) -> Int {
-        var (encoder, _) = DynamicQPACKEncoder.create(
-            dynamicTableMaxCapacity: dynamicTableMaxCapacity,
-            dynamicTableInitialCapacity: dynamicTableInitialCapacity,
-            maxBlockedStreams: maxBlockedStreams,
-            targetEvictableFraction: targetEvictableFraction
-        )
-        return encoder.encode(headers: headers, forStream: streamID).fieldSection.lines.count
     }
 }

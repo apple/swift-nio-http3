@@ -67,15 +67,3 @@ final class QPACKInboundDecoderStreamHandler<Delegate: QPACKInboundDecoderStream
         }
     }
 }
-
-@available(anyAppleOS 26.0, *)
-extension HTTP3.QPACKCoder: QPACKInboundDecoderStreamDelegate
-where OutboundEncoderStream: ~Copyable, OutboundDecoderStream: ~Copyable {
-    func onError(_ error: HTTP3Error) {
-        self.connectionError(error)
-    }
-
-    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction) {
-        self.receivedIncomingDecoderInstruction(instruction)
-    }
-}

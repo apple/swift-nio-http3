@@ -121,7 +121,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
     @_spi(PackageInternal)
     public enum InitializeAction: Hashable, Sendable {
-        case createControlAndDecoderStreams
         case createControlStream
     }
 
@@ -129,7 +128,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
     public mutating func initialize() -> InitializeAction? {
         switch consume self.state {
         case .notStarted(let initializedState):
-            let localSettings = initializedState.localSettings
             self = .init(
                 state: .initialized(
                     .init(
@@ -137,12 +135,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                     )
                 )
             )
-            // RFC 9204 § 4.2: An endpoint MAY avoid creating a decoder stream if its decoder sets the maximum capacity of the dynamic table to zero.
-            if localSettings.qpackMaximumTableCapacity > 0 {
-                return .createControlAndDecoderStreams
-            } else {
-                return .createControlStream
-            }
+            // RFC 9204 § 4.2: An endpoint MAY avoid creating a decoder stream if its decoder sets the maximum
+            // capacity of the dynamic table to zero. This implementation always does, and it likewise never
+            // creates an encoder stream because it never sends encoder instructions.
+            return .createControlStream
         case .initialized:
             fatalError("Cannot initialize HTTP3 connection twice")
         case .finished:
@@ -543,34 +539,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
     // MARK: Outbound Streams
 
     @_spi(PackageInternal)
-    public mutating func outboundEncoderStreamReady(streamID: QUICStreamID) {
-        precondition(streamID.isUnidirectional)
-        switch consume self.state {
-        case .initialized(var initializedState):
-            initializedState.streamIDTracker.streamOpened(id: streamID)
-            self = .init(state: .initialized(initializedState))
-        case .notStarted:
-            fatalError("Outbound encoder stream created before state machine started")
-        case .finished:
-            self = .init(state: .finished)
-        }
-    }
-
-    @_spi(PackageInternal)
-    public mutating func outboundDecoderStreamReady(streamID: QUICStreamID) {
-        precondition(streamID.isUnidirectional)
-        switch consume self.state {
-        case .initialized(var initializedState):
-            initializedState.streamIDTracker.streamOpened(id: streamID)
-            self = .init(state: .initialized(initializedState))
-        case .notStarted:
-            fatalError("Outbound decoder stream created before state machine started")
-        case .finished:
-            self = .init(state: .finished)
-        }
-    }
-
-    @_spi(PackageInternal)
     public enum OutboundRequestStreamRequestedAction {
         case create
         case failedToCreateStream(HTTP3Error)
@@ -670,10 +638,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         public struct OnSettings: Hashable, Sendable {
             /// Whether both peers have agreed to use HTTP datagrams. The outcome must be reported downstream.
             public var datagramsNegotiated: Bool
-            /// The peer's maximum QPACK decoder table capacity
-            public var qpackMaximumTableCapacity: UInt64
-            /// The peer's maximum number of QPACK blocked streams
-            public var qpackBlockedStreams: UInt64
         }
     }
 
@@ -689,9 +653,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 self = .init(state: .initialized(initializedState))
                 return .onSettings(
                     ControlFrameReceivedAction.OnSettings(
-                        datagramsNegotiated: datagramsNegotiated,
-                        qpackMaximumTableCapacity: payload.settings.qpackMaximumTableCapacity,
-                        qpackBlockedStreams: payload.settings.qpackBlockedStreams
+                        datagramsNegotiated: datagramsNegotiated
                     )
                 )
             case .notStarted:

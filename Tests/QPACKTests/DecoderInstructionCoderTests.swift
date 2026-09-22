@@ -26,22 +26,14 @@ struct DecoderInstructionCoderTests {
         QPACKDecoderInstruction.streamCancellation(streamID: 30),
     ])
     func roundtripEncodeAndDecodeDecoderInstruction(instruction: QPACKDecoderInstruction) throws {
-        // Encode "manually". We can trust the result of this because it's tested elsewhere as a unit
-        var expectedResult = ByteBuffer()
-        expectedResult.writeQPACKDecoderInstruction(instruction)
-
-        // Encode via the encoder which is under test
-        var testBuffer = ByteBuffer()
-        let encoder = QPACKDecoderInstructionEncoder()
-        encoder.encode(data: instruction, out: &testBuffer)
-
-        // Assert the results are same. This means the encoder works correctly
-        #expect(testBuffer == expectedResult)
+        var buffer = ByteBuffer()
+        buffer.writeQPACKDecoderInstruction(instruction)
 
         // Decode via the decoder under test
         let decoder = QPACKDecoderInstructionDecoder()
-        let decoded = try decoder.decode(buffer: &testBuffer)
+        let decoded = try decoder.decode(buffer: &buffer)
         // Assert the roundtrip worked. This means the decoder works correctly
         #expect(decoded == instruction)
+        #expect(buffer.readableBytes == 0)
     }
 }

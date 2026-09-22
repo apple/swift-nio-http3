@@ -59,15 +59,15 @@ struct HTTP3StreamStateMachineTests {
     }
 
     private var testRequestHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
+        .init(fieldSection: QPACKEncoder().encode(headers: self.testRequestHeaderFields))
     }
 
     private var testResponseHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testResponseHeaderFields))
+        .init(fieldSection: QPACKEncoder().encode(headers: self.testResponseHeaderFields))
     }
 
     private var testTrailer: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testTrailerFields))
+        .init(fieldSection: QPACKEncoder().encode(headers: self.testTrailerFields))
     }
 
     /// These bytes encode `testRequestHeader`.
@@ -91,19 +91,16 @@ struct HTTP3StreamStateMachineTests {
         return .init(buffer: buffer)
     }
 
-    private func testQpackDecoderClosure() -> (HTTP3PartialFrame.Headers) -> QPACKFullDecodeResult {
-        var qpackDecoder = QPACKDecoder(
-            dynamicTableMaxCapacity: 0
-        )
+    private func testQpackDecoderClosure() -> (HTTP3PartialFrame.Headers) -> Result<[HTTPField], QPACKDecoderError> {
+        let qpackDecoder = QPACKDecoder()
         return { partialHeader in
-            guard let prefix = qpackDecoder.decodeFieldSectionPrefix(partialHeader.fieldSection.prefix) else {
-                return .error(QPACKDecoderError.invalidFieldSection)
+            do {
+                return .success(try qpackDecoder.decodeFieldSection(partialHeader.fieldSection))
+            } catch let error as QPACKDecoderError {
+                return .failure(error)
+            } catch {
+                preconditionFailure("Unexpected error \(error)")
             }
-            return qpackDecoder.decodeFieldSection(
-                prefix: prefix,
-                lines: partialHeader.fieldSection.lines,
-                streamID: 1
-            )
         }
     }
 
@@ -828,7 +825,7 @@ extension HTTP3StreamStateMachine {
     }
 
     fileprivate mutating func assertReceivedHeaders(
-        decode: (HTTP3PartialFrame.Headers) -> QPACKFullDecodeResult,
+        decode: (HTTP3PartialFrame.Headers) -> Result<[HTTPField], QPACKDecoderError>,
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
         let next = self.decodeNext()
@@ -839,12 +836,10 @@ extension HTTP3StreamStateMachine {
         self.assertNoNext(sourceLocation: sourceLocation)
         let decoded = decode(partialHeader)
         switch decoded {
-        case .missingInsertCount:
-            Issue.record("Unexpected result", sourceLocation: sourceLocation)
-        case .success(let fields, _):
+        case .success(let fields):
             self.gotHeaderDecodeResult(fields)
             self.assertReturnFrame(expected: .headers(fields), sourceLocation: sourceLocation)
-        case .error(let qpackError):
+        case .failure(let qpackError):
             let error = HTTP3Error(
                 code: .qpackDecoderError,
                 message: "Failed to qpack decode",
@@ -947,7 +942,7 @@ extension HTTP3StreamStateMachine {
 
     /// Do a write, and do the qpack too, and return just one action.
     fileprivate mutating func writeFrameAndQPACK(frame: HTTP3Frame) -> ResolvedAction? {
-        let encoder = StaticQPACKEncoder()
+        let encoder = QPACKEncoder()
         var buffer = ByteBuffer()
         let action = self.writeFrame(frame: frame, into: &buffer)
         switch action {
