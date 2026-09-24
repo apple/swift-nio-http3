@@ -38,7 +38,7 @@ private struct HTTP3FrameByteToMessageDecoder: NIOSingleStepByteToMessageDecoder
 
 struct HTTP3FrameDecoderTests {
     private var testHeader: HTTP3PartialFrame.Headers {
-        let fieldSectionPrefix = EncodedFieldSectionPrefix.staticOnly
+        let fieldSectionPrefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
         let line = FieldLine.literal(requireLiteralRepresentation: false, name: "test", value: "hello")
         return .init(fieldSection: .init(prefix: fieldSectionPrefix, lines: [line]))
     }

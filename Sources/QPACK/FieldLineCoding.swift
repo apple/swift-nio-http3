@@ -14,6 +14,48 @@
 
 public import struct NIOCore.ByteBuffer
 
+/// Represents a FieldSectionPrefix as per RFC 9204 § 4.5.1.
+@_spi(PackageInternal)
+public struct FieldSectionPrefix: Sendable, Hashable {
+    @_spi(PackageInternal)
+    public let requiredInsertCount: Int
+    @_spi(PackageInternal)
+    public let base: Int
+
+    @_spi(PackageInternal)
+    public init(requiredInsertCount: Int, base: Int) {
+        precondition(base >= 0)
+        self.requiredInsertCount = requiredInsertCount
+        self.base = base
+    }
+
+    @_spi(PackageInternal)
+    public func encode(maxCapacity: Int) -> EncodedFieldSectionPrefix {
+        // 4.5.1.1.
+        // The encoder transforms the Required Insert Count as follows before encoding:
+        // if ReqInsertCount == 0:
+        //     EncInsertCount = 0
+        // else:
+        //     EncInsertCount = (ReqInsertCount mod (2 * MaxEntries)) + 1
+        // Where MaxEntries = floor( MaxTableCapacity / 32 )
+        if self.requiredInsertCount == 0 {
+            return .init(encodedRequiredInsertCount: 0, deltaBase: self.base, signBit: false)
+        }
+        let maxEntries = maxCapacity / 32
+        let encodedRequiredInsertCount = (requiredInsertCount % (2 * maxEntries)) + 1
+        let deltaBase: Int
+        let signBit: Bool
+        if self.base >= self.requiredInsertCount {
+            signBit = false
+            deltaBase = self.base - self.requiredInsertCount
+        } else {
+            deltaBase = self.requiredInsertCount - self.base - 1
+            signBit = true
+        }
+        return .init(encodedRequiredInsertCount: encodedRequiredInsertCount, deltaBase: deltaBase, signBit: signBit)
+    }
+}
+
 /// Represents an EncodedFieldSectionPrefix as per RFC 9204 § 4.5.1.
 /// Here, the requiredInsertCount is stored with an encoding as per RFC 9204 § 4.5.1.1.
 /// The deltaBase can be used to get the base relative to the decoded requiredInsertCount.
@@ -27,18 +69,75 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
     @_spi(PackageInternal)
     public let signBit: Bool
 
-    /// The prefix of a field section which references the static table only: a Required Insert Count and a
-    /// Base of zero.
-    @_spi(PackageInternal)
-    public static var staticOnly: Self {
-        .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false)
-    }
-
     @_spi(PackageInternal)
     public init(encodedRequiredInsertCount: Int, deltaBase: Int, signBit: Bool) {
         self.encodedRequiredInsertCount = encodedRequiredInsertCount
         self.deltaBase = deltaBase
         self.signBit = signBit
+    }
+
+    @_spi(PackageInternal)
+    public func decode(totalInserts: Int, maxCapacity: Int) -> FieldSectionPrefix? {
+        // 4.5.1.1.
+        // FullRange = 2 * MaxEntries
+        // if EncodedInsertCount == 0:
+        //     ReqInsertCount = 0
+        // else:
+        // if EncodedInsertCount > FullRange:
+        //     Error
+        // MaxValue = TotalNumberOfInserts + MaxEntries
+        //
+        // # MaxWrapped is the largest possible value of
+        // # ReqInsertCount that is 0 mod 2 * MaxEntries
+        // MaxWrapped = floor(MaxValue / FullRange) * FullRange
+        // ReqInsertCount = MaxWrapped + EncodedInsertCount - 1
+        //
+        // # If ReqInsertCount exceeds MaxValue, the Encoder's value
+        // # must have wrapped one fewer time
+        // if ReqInsertCount > MaxValue:
+        //     if ReqInsertCount <= FullRange:
+        //         Error
+        //     ReqInsertCount -= FullRange
+        //
+        // # Value of 0 must be encoded as 0.
+        // if ReqInsertCount == 0:
+        //     Error
+        if self.encodedRequiredInsertCount == 0 {
+            return .init(requiredInsertCount: 0, base: self.deltaBase)
+        }
+        let maxEntries = maxCapacity / 32
+        let fullRange = 2 * maxEntries
+        if self.encodedRequiredInsertCount > fullRange {
+            return nil
+        }
+        let maxValue = totalInserts + maxEntries
+        // MaxWrapped is the largest possible value of ReqInsertCount that is 0 mod 2 * MaxEntries
+        let maxWrapped = (maxValue / fullRange) * fullRange
+        var reqInsertCount = maxWrapped + self.encodedRequiredInsertCount - 1
+        // If ReqInsertCount exceeds MaxValue, the Encoder's value must have wrapped one fewer time
+        if reqInsertCount > maxValue {
+            if reqInsertCount <= fullRange {
+                return nil
+            }
+            reqInsertCount -= fullRange
+        }
+        // Value of 0 must be encoded as 0.
+        if reqInsertCount == 0 {
+            return nil
+        }
+        let base: Int
+        if self.signBit {
+            base = reqInsertCount - self.deltaBase - 1
+        } else {
+            base = reqInsertCount + self.deltaBase
+        }
+        if base < 0 {
+            // RFC 9204 § 4.5.1.2: The value of Base MUST NOT be negative.
+            // Though the protocol might operate correctly with a negative Base using post-Base indexing, it is unnecessary and inefficient.
+            // An endpoint MUST treat a field block with a Sign bit of 1 as invalid if the value of Required Insert Count is less than or equal to the value of Delta Base.
+            return nil
+        }
+        return .init(requiredInsertCount: reqInsertCount, base: base)
     }
 }
 
@@ -224,7 +323,7 @@ extension ByteBuffer {
         }
     }
 
-    /// Read a single ``EncodedFieldSectionPrefix`` from this `ByteBuffer`.
+    /// Read a single ``FieldSectionPrefix`` from this `ByteBuffer`.
     /// - Returns: The section, or nil if it cannot be decoded.
     mutating func readFieldSectionPrefix() throws(IntegerReadingError) -> EncodedFieldSectionPrefix? {
         guard let result = try self.getFieldSectionPrefix(at: self.readerIndex) else { return nil }
@@ -267,8 +366,10 @@ extension ByteBuffer {
         )
     }
 
-    /// Write a single ``EncodedFieldSectionPrefix`` to this buffer.
-    /// - Parameter prefix: The ``EncodedFieldSectionPrefix`` to write.
+    /// Write a single ``FieldSectionPrefix`` to this buffer.
+    /// - Parameters
+    ///   - prefix: The ``FieldSectionPrefix`` to write.
+    ///   - maxCapacity: The maximum capacity of the dynamic table.
     /// - Returns: The number of bytes written.
     @discardableResult
     @_spi(PackageInternal)
