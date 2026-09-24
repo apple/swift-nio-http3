@@ -35,6 +35,13 @@ final class ErrorCatchingHandler: ChannelInboundHandler, Sendable {
     }
 }
 
+extension HTTP3Settings {
+    static let forTestingWithDynamicTable: Self = HTTP3Settings(
+        qpackMaximumTableCapacity: 1024,
+        qpackBlockedStreams: 10
+    )
+}
+
 extension HTTP3GoawayID: ExpressibleByIntegerLiteral {
     public init(integerLiteral value: UInt64) {
         self.init(rawValue: value)

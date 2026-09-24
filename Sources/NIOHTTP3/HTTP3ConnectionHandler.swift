@@ -80,10 +80,10 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         rttProvider: @escaping (@Sendable () -> TimeAmount),
         gracefulShutdownRTTMultiplier: Int
     ) {
-        if settings.qpackMaximumTableCapacity > 0 || settings.qpackBlockedStreams > 0 {
-            // These settings would enable the peer to use the dynamic table, which this implementation
-            // does not support: it encodes and decodes against the static table only.
-            fatalError("The QPACK dynamic table is not supported")
+        if settings.qpackMaximumTableCapacity > 0 {
+            // These settings would enable the peer to use the dynamic table
+            // We must not allow that, see the DynamicTable doc for explanation.
+            fatalError("Dynamic table is not supported yet")
         }
         self.addTypeHandlers = addTypeHandlers
         self.logger = logger
@@ -329,7 +329,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         // shut the child channels before shutting the connection.
         // If this is triggered, most likely theres a mistake in the way the connection state machine remembers which streams are open,
         // or in the way the channels notify the state machine when they open/close.
-        self.coordinator.assertNoOpenStreams()
+        self.coordinator.assertNoOpenStreamsAndDropQPACKCoder()
         context.fireChannelInactive()
     }
 
