@@ -168,7 +168,8 @@ struct HTTP3FrameCodingTests {
         let settings = HTTP3Settings(
             qpackMaximumTableCapacity: 151_288_809_941_952_652,
             qpackBlockedStreams: 1,
-            h3Datagram: false
+            h3Datagram: false,
+            enableConnectProtocol: false
         )
         var buffer = ByteBuffer()
 
