@@ -495,8 +495,79 @@ struct HTTPMessageParsingTests {
         )
         self.assertRequestHeadersValid(fields: [
             .init(name: .method, value: "CONNECT"),
-            .init(name: .authority, value: "test"),
+            .init(name: .authority, value: "127.0.0.1:8000"),
         ])
+    }
+
+    private static let protocolName = HTTPField.Name(parsed: ":protocol")!
+
+    @Test func pathAndSchemeForbiddenInConnectButRequiredInExtendedConnect() {
+        // :scheme and :path: pseudo-headers must not be present for CONNECT.
+        self.assertRequestHeadersNotValid(
+            fields: [
+                .init(name: .method, value: "CONNECT"),
+                .init(name: .scheme, value: "https"),
+                .init(name: .path, value: "/chat"),
+                .init(name: .authority, value: "example.com:443"),
+            ],
+            expectedError: "CONNECT request must not contain path or scheme"
+        )
+        self.assertRequestHeadersValid(fields: [
+            .init(name: .method, value: "CONNECT"),
+            .init(name: .authority, value: "example.com:443"),
+        ])
+
+        // But :scheme and :path: pseudo-headers must be present for Extended CONNECT
+        self.assertRequestHeadersValid(fields: [
+            .init(name: .method, value: "CONNECT"),
+            .init(name: Self.protocolName, value: "websocket"),
+            .init(name: .scheme, value: "https"),
+            .init(name: .path, value: "/chat"),
+            .init(name: .authority, value: "example.com:443"),
+        ])
+        self.assertRequestHeadersNotValid(
+            fields: [
+                .init(name: .method, value: "CONNECT"),
+                .init(name: Self.protocolName, value: "websocket"),
+                .init(name: .authority, value: "example.com:443"),
+            ],
+            expectedError: "CONNECT request with a :protocol pseudo-header must contain path and scheme"
+        )
+    }
+
+    @Test(arguments: [
+        "example.com:443",
+        "127.0.0.1:8000",
+        "[::1]:443",
+        "a:1",
+    ])
+    func connectValidAuthority(authority: String) {
+        self.assertRequestHeadersValid(fields: [
+            .init(name: .method, value: "CONNECT"),
+            .init(name: .authority, value: authority),
+        ])
+    }
+
+    @Test(arguments: [
+        // Missing port
+        "example.com",
+        // Empty port
+        "example.com:",
+        // Empty host
+        ":443",
+        // Empty host and port
+        ":",
+        // Empty authority
+        "",
+    ])
+    func connectInvalidAuthority(authority: String) {
+        self.assertRequestHeadersNotValid(
+            fields: [
+                .init(name: .method, value: "CONNECT"),
+                .init(name: .authority, value: authority),
+            ],
+            expectedError: "Invalid :authority pseudo-header value"
+        )
     }
 
     // MARK: Response-specific header validation

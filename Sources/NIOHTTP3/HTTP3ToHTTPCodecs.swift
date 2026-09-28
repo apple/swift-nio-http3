@@ -40,6 +40,95 @@ private func invalidHeadersError(message: String, location: HTTP3Error.SourceLoc
 }
 
 extension HTTPRequestPart: HTTPMessagePart {
+    private static func parseNonConnectRequest(request: HTTPRequest) throws(HTTP3Error) {
+        precondition(request.method != .connect)
+
+        let scheme = request.scheme
+        let path = request.path
+        let authority = request.authority
+        let host = request.headerFields[.host]
+
+        // All HTTP/3 requests MUST include exactly one value for the :method, :scheme, and :path pseudo-header fields,
+        // unless the request is a CONNECT request
+        guard let scheme else {
+            throw invalidHeadersError(message: "Missing scheme", location: .here())
+        }
+        guard let path else {
+            throw invalidHeadersError(message: "Missing path", location: .here())
+        }
+        // If the :scheme pseudo-header field identifies a scheme that has a mandatory authority component (including
+        // "http" and "https"), the request MUST contain either an :authority pseudo-header field or a Host header
+        // field.
+        if scheme == "https" || scheme == "http" {
+            guard host != nil || authority != nil else {
+                throw invalidHeadersError(message: "Missing host and authority", location: .here())
+            }
+        }
+        // If these fields are present, they MUST NOT be empty
+        if let host, host.isEmpty {
+            throw invalidHeadersError(message: "host field is empty", location: .here())
+        }
+        if let authority, authority.isEmpty {
+            throw invalidHeadersError(message: "authority field is empty", location: .here())
+        }
+        // If both fields are present, they MUST contain the same value
+        if let host, let authority {
+            guard host == authority else {
+                throw invalidHeadersError(message: "Mismatched authority and host", location: .here())
+            }
+        }
+
+        // The path pseudo-header field MUST NOT be empty for "http" or "https" URIs
+        if scheme == "https" || scheme == "http" {
+            guard !path.isEmpty else {
+                throw invalidHeadersError(message: "Path field is empty", location: .here())
+            }
+        }
+    }
+
+    private static func parseConnectRequest(request: HTTPRequest) throws(HTTP3Error) {
+        precondition(request.method == .connect)
+
+        let scheme = request.scheme
+        let path = request.path
+        let authority = request.authority
+
+        if request.extendedConnectProtocol != nil {
+            // This request contains a :protocol pseudo-header. As such, the rules of RFC 8441 §4 apply.
+            guard scheme != nil, path != nil else {
+                throw invalidHeadersError(
+                    message: "CONNECT request with a :protocol pseudo-header must contain path and scheme",
+                    location: .here()
+                )
+            }
+        } else {
+            // A CONNECT request MUST be constructed as follows:
+
+            // 1. The :scheme and :path pseudo-header fields are omitted
+            guard scheme == nil && path == nil else {
+                throw invalidHeadersError(message: "CONNECT request must not contain path or scheme", location: .here())
+            }
+
+            // 2. The :authority pseudo-header field contains the host and port to connect to (equivalent to the
+            //   authority-form of the request-target of CONNECT requests; see Section 7.1 of [HTTP]).
+            guard let authority else {
+                throw invalidHeadersError(message: "CONNECT request must contain authority", location: .here())
+            }
+
+            let authorityUTF8 = authority.utf8
+            guard let colonIndex = authorityUTF8.firstIndex(of: UInt8(ascii: ":")) else {
+                throw invalidHeadersError(message: "Invalid :authority pseudo-header value", location: .here())
+            }
+
+            let host = authorityUTF8[..<colonIndex]
+            let port = authorityUTF8[authorityUTF8.index(after: colonIndex)...]
+
+            if host.isEmpty || port.isEmpty {
+                throw invalidHeadersError(message: "Invalid :authority pseudo-header value", location: .here())
+            }
+        }
+    }
+
     static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
         let request: HTTPRequest
         do {
@@ -61,55 +150,11 @@ extension HTTPRequestPart: HTTPMessagePart {
         if request.headerFields.contains(.transferEncoding) {
             throw invalidHeadersError(message: "transfer-encoding field must not be present", location: .here())
         }
-        let scheme = request.scheme
-        let path = request.path
-        let authority = request.authority
-        let host = request.headerFields[.host]
-        if request.method != .connect {
-            // All HTTP/3 requests MUST include exactly one value for the :method, :scheme, and :path pseudo-header fields, unless the request is a CONNECT request
-            guard let scheme else {
-                throw invalidHeadersError(message: "Missing scheme", location: .here())
-            }
-            guard let path else {
-                throw invalidHeadersError(message: "Missing path", location: .here())
-            }
-            // If the :scheme pseudo-header field identifies a scheme that has a mandatory authority component (including "http" and "https"), the request MUST contain either an :authority pseudo-header field or a Host header field
-            if scheme == "https" || scheme == "http" {
-                guard host != nil || authority != nil else {
-                    throw invalidHeadersError(message: "Missing host and authority", location: .here())
-                }
-            }
-            // If these fields are present, they MUST NOT be empty
-            if let host, host.isEmpty {
-                throw invalidHeadersError(message: "host field is empty", location: .here())
-            }
-            if let authority, authority.isEmpty {
-                throw invalidHeadersError(message: "authority field is empty", location: .here())
-            }
-            // If both fields are present, they MUST contain the same value
-            if let host, let authority {
-                guard host == authority else {
-                    throw invalidHeadersError(message: "Mismatched authority and host", location: .here())
-                }
-            }
 
-            // The path pseudo-header field MUST NOT be empty for "http" or "https" URIs
-            if scheme == "https" || scheme == "http" {
-                guard !path.isEmpty else {
-                    throw invalidHeadersError(message: "Path field is empty", location: .here())
-                }
-            }
+        if request.method == .connect {
+            try self.parseConnectRequest(request: request)
         } else {
-            // A CONNECT request MUST be constructed as follows:
-            // - The :method pseudo-header field is set to "CONNECT"
-            // - The :scheme and :path pseudo-header fields are omitted
-            // - TODO: The :authority pseudo-header field contains the host and port to connect to (equivalent to the authority-form of the request-target of CONNECT requests; see Section 7.1 of [HTTP]).
-            guard scheme == nil && path == nil else {
-                throw invalidHeadersError(message: "CONNECT request must not contain path or scheme", location: .here())
-            }
-            guard authority != nil else {
-                throw invalidHeadersError(message: "CONNECT request must contain authority", location: .here())
-            }
+            try self.parseNonConnectRequest(request: request)
         }
 
         return .head(request)
