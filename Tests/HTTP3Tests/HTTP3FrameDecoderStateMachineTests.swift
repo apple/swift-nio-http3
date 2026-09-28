@@ -53,9 +53,7 @@ struct HTTP3FrameDecoderStateMachineTests {
 
     @available(anyAppleOS 26.0, *)
     @Test func partialFrame() {
-        let testFrame = HTTP3PartialFrame.settings(
-            .init(qpackMaximumTableCapacity: 1024, h3Datagram: false, enableConnectProtocol: false)
-        )
+        let testFrame = HTTP3PartialFrame.settings(.init(qpackMaximumTableCapacity: 1024, h3Datagram: false))
         var encodedFrame = ByteBuffer()
         encodedFrame.writeHTTP3PartialFrame(testFrame, preferHuffmanEncoding: false)
         #expect(encodedFrame.readableBytes == 6)

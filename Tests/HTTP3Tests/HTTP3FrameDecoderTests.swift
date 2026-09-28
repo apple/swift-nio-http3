@@ -57,7 +57,7 @@ struct HTTP3FrameDecoderTests {
     @available(anyAppleOS 26.0, *)
     @Test func decoderPassesVerification() throws {
         let frames: [HTTP3PartialFrame] = [
-            .settings(.init(qpackMaximumTableCapacity: 1024, h3Datagram: false, enableConnectProtocol: false)),
+            .settings(.init(qpackMaximumTableCapacity: 1024, h3Datagram: false)),
             .settings(.init(qpackMaximumTableCapacity: 151_288_809_941_952_652, qpackBlockedStreams: 1)),
             .goaway(.init(rawValue: 4)),
             .maxPushID(.init(rawValue: 7)),
