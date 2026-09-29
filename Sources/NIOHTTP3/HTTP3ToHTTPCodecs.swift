@@ -115,17 +115,77 @@ extension HTTPRequestPart: HTTPMessagePart {
                 throw invalidHeadersError(message: "CONNECT request must contain authority", location: .here())
             }
 
-            let authorityUTF8 = authority.utf8
-            guard let colonIndex = authorityUTF8.firstIndex(of: UInt8(ascii: ":")) else {
+            guard Self.isValidConnectAuthority(authority) else {
                 throw invalidHeadersError(message: "Invalid :authority pseudo-header value", location: .here())
             }
+        }
+    }
 
-            let host = authorityUTF8[..<colonIndex]
-            let port = authorityUTF8[authorityUTF8.index(after: colonIndex)...]
+    /// Whether `authority` is in authority-form, `uri-host ":" port` (RFC 9110 § 7.1).
+    private static func isValidConnectAuthority(_ authority: String) -> Bool {
+        let utf8 = authority.utf8
+        let hostEnd: String.UTF8View.Index
 
-            if host.isEmpty || port.isEmpty {
-                throw invalidHeadersError(message: "Invalid :authority pseudo-header value", location: .here())
+        if utf8.first == UInt8(ascii: "[") {
+            // IP-literal: must be an IPv6 address.
+            guard let close = utf8.firstIndex(of: UInt8(ascii: "]")) else {
+                return false
             }
+
+            let host = authority[utf8.index(after: utf8.startIndex)..<close]
+            // IPv6 Zone IDs are not supported.
+            guard !host.utf8.contains(UInt8(ascii: "%")) else {
+                return false
+            }
+            // Check if `host` is a valid IPv6 address.
+            guard case .v6 = try? SocketAddress(ipAddress: String(host), port: 0) else {
+                return false
+            }
+            hostEnd = utf8.index(after: close)
+        } else {
+            // IPv4address or reg-name.
+            guard let colon = utf8.firstIndex(of: UInt8(ascii: ":")) else {
+                return false
+            }
+
+            let host = utf8[..<colon]
+            guard !host.isEmpty, host.allSatisfy(Self.isRegNameByte) else {
+                return false
+            }
+            hostEnd = colon
+        }
+
+        // Check that there is something after the ":".
+        guard hostEnd < utf8.endIndex, utf8[hostEnd] == UInt8(ascii: ":") else {
+            return false
+        }
+        let port = utf8[utf8.index(after: hostEnd)...]
+
+        guard port.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }),
+            let portInt = Int(Substring(port))
+        else {
+            return false
+        }
+
+        return portInt <= 65535
+    }
+
+    /// Whether the provided byte is a valid `reg-name` byte (see RFC 3986, Appendix A).
+    private static func isRegNameByte(_ byte: UInt8) -> Bool {
+        switch byte {
+        case UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "A")...UInt8(ascii: "Z"),
+            UInt8(ascii: "0")...UInt8(ascii: "9"):
+            return true
+
+        case UInt8(ascii: "-"), UInt8(ascii: "."), UInt8(ascii: "_"), UInt8(ascii: "~"),  // unreserved
+            UInt8(ascii: "%"),  // pct-encoded
+            UInt8(ascii: "!"), UInt8(ascii: "$"), UInt8(ascii: "&"), UInt8(ascii: "'"), UInt8(ascii: "("),
+            UInt8(ascii: ")"), UInt8(ascii: "*"), UInt8(ascii: "+"), UInt8(ascii: ","), UInt8(ascii: ";"),
+            UInt8(ascii: "="):  // sub-delims
+            return true
+
+        default:
+            return false
         }
     }
 

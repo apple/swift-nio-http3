@@ -559,6 +559,26 @@ struct HTTPMessageParsingTests {
         ":",
         // Empty authority
         "",
+        // Non-numeric port
+        "example.com:abc",
+        // Extra colon
+        "a:b:c",
+        // Port out of range
+        "example.com:65536",
+        // Invalid character in host
+        "exa mple.com:443",
+        "exa@mple.com:443",
+        // IP-literal without port
+        "[::1]",
+        // IP-literal missing closing bracket
+        "[::1:443",
+        // IP-literal that is not IPv6
+        "[127.0.0.1]:443",
+        "[example.com]:443",
+        // Unbracketed IPv6
+        "::1:443",
+        // IPv6 zone ID.
+        "[fe80::1%1]:443"
     ])
     func connectInvalidAuthority(authority: String) {
         self.assertRequestHeadersNotValid(
