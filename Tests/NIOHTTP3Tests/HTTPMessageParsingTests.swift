@@ -578,7 +578,7 @@ struct HTTPMessageParsingTests {
         // Unbracketed IPv6
         "::1:443",
         // IPv6 zone ID.
-        "[fe80::1%1]:443"
+        "[fe80::1%1]:443",
     ])
     func connectInvalidAuthority(authority: String) {
         self.assertRequestHeadersNotValid(
