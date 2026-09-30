@@ -43,7 +43,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     public typealias OutboundOut = ByteBuffer
 
     private let addTypeHandlers: Bool
-    private let coordinator: HTTP3ConnectionCoordinator<StreamCreator>
+    let coordinator: HTTP3ConnectionCoordinator<StreamCreator>
     private let logger: Logger
     private let inboundStreamInitializer: H3InboundStreamInitializer
     private let internalInboundStreamInitializer:
