@@ -465,6 +465,9 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 streamType: .unidirectional(streamType)
             )
             throw error
+        case .doNothing:
+            // WebTransport stream
+            break
         }
 
     }
