@@ -40,7 +40,7 @@ private func invalidHeadersError(message: String, location: HTTP3Error.SourceLoc
 }
 
 extension HTTPRequestPart: HTTPMessagePart {
-    private static func parseNonConnectRequest(request: HTTPRequest) throws(HTTP3Error) {
+    private static func validateNonConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
         precondition(request.method != .connect)
 
         let scheme = request.scheme
@@ -86,7 +86,7 @@ extension HTTPRequestPart: HTTPMessagePart {
         }
     }
 
-    private static func parseConnectRequest(request: HTTPRequest) throws(HTTP3Error) {
+    private static func validateConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
         precondition(request.method == .connect)
 
         let scheme = request.scheme
@@ -212,9 +212,9 @@ extension HTTPRequestPart: HTTPMessagePart {
         }
 
         if request.method == .connect {
-            try self.parseConnectRequest(request: request)
+            try Self.validateConnectRequest(request)
         } else {
-            try self.parseNonConnectRequest(request: request)
+            try Self.validateNonConnectRequest(request)
         }
 
         return .head(request)
