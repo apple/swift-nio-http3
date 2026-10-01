@@ -1321,7 +1321,9 @@ struct EndToEndTests {
             inboundStreamInitializer: {
                 let channel = $0.channel
                 return channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandler(HTTP3ToHTTPServerCodec())
+                    try channel.pipeline.syncOperations.addHandler(
+                        HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
+                    )
                     // Handler uses shared counter to respond immediately for first 2, wait for 3rd
                     try channel.pipeline.syncOperations.addHandler(
                         ControllableEchoResponseHandler(
