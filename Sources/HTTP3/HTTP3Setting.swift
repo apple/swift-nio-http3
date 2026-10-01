@@ -103,7 +103,7 @@ extension HTTP3Setting {
         /// The value must be either zero or one; the default is zero. A value of one indicates that the sender is
         /// willing to receive Extended CONNECT requests.
         ///
-        /// See [RFC 9220 § 3.2](https://www.rfc-editor.org/rfc/rfc9220.html#section-3-2)
+        /// See [RFC 9220 § 3](https://www.rfc-editor.org/rfc/rfc9220.html#section-3-2)
         @inlinable
         public static var enableConnectProtocol: HTTP3Setting.Identifier { Self(extensionSetting: 0x08)! }
     }
