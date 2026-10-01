@@ -17,11 +17,14 @@ import HTTPTypes
 public import NIOCore
 public import NIOHTTPTypes
 
-protocol HTTPMessagePart {
-    static func head(fields: [HTTPField]) throws(HTTP3Error) -> Self
-    static func body(buffer: ByteBuffer) -> Self
-    static func end(trailers: [HTTPField]) throws(HTTP3Error) -> Self
-    static func end() -> Self
+/// Processes and validates the contents of HTTP/3 frames into the parts of an HTTP message.
+protocol HTTPMessagePartProcessor {
+    associatedtype Part
+
+    func head(fields: [HTTPField]) throws(HTTP3Error) -> Part
+    func body(buffer: ByteBuffer) -> Part
+    func end(trailers: [HTTPField]) throws(HTTP3Error) -> Part
+    func end() -> Part
 }
 
 struct HTTP3FieldError: Error, CustomStringConvertible {
@@ -39,7 +42,11 @@ private func invalidHeadersError(message: String, location: HTTP3Error.SourceLoc
     )
 }
 
-extension HTTPRequestPart: HTTPMessagePart {
+/// Processes and validates the parts of a request, as received by a server.
+struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
+    /// Whether we can accept Extended CONNECT requests, i.e. if we sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1.
+    let isExtendedConnectEnabled: Bool
+
     private static func validateNonConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
         precondition(request.method != .connect)
 
@@ -86,7 +93,7 @@ extension HTTPRequestPart: HTTPMessagePart {
         }
     }
 
-    private static func validateConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
+    private func validateConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
         precondition(request.method == .connect)
 
         let scheme = request.scheme
@@ -98,6 +105,18 @@ extension HTTPRequestPart: HTTPMessagePart {
             guard scheme != nil, path != nil else {
                 throw invalidHeadersError(
                     message: "CONNECT request with a :protocol pseudo-header must contain path and scheme",
+                    location: .here()
+                )
+            }
+
+            // A client MUST NOT send an Extended CONNECT request unless we sent SETTINGS_ENABLE_CONNECT_PROTOCOL
+            // with a value of 1 (RFC 8441 § 3).
+            guard self.isExtendedConnectEnabled else {
+                throw HTTP3Error(
+                    code: .extendedConnectNotEnabled,
+                    message: "Extended CONNECT request received, but SETTINGS_ENABLE_CONNECT_PROTOCOL was not sent",
+                    cause: nil,
+                    errorCode: .messageError,
                     location: .here()
                 )
             }
@@ -189,7 +208,7 @@ extension HTTPRequestPart: HTTPMessagePart {
         }
     }
 
-    static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
+    func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
         let request: HTTPRequest
         do {
             request = try HTTPRequest(parsed: fields)
@@ -212,7 +231,7 @@ extension HTTPRequestPart: HTTPMessagePart {
         }
 
         if request.method == .connect {
-            try Self.validateConnectRequest(request)
+            try self.validateConnectRequest(request)
         } else {
             try Self.validateNonConnectRequest(request)
         }
@@ -220,11 +239,11 @@ extension HTTPRequestPart: HTTPMessagePart {
         return .head(request)
     }
 
-    static func body(buffer: ByteBuffer) -> HTTPRequestPart {
+    func body(buffer: ByteBuffer) -> HTTPRequestPart {
         .body(buffer)
     }
 
-    static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
+    func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
         if trailers.isEmpty {
             return .end(nil)
         } else {
@@ -242,13 +261,14 @@ extension HTTPRequestPart: HTTPMessagePart {
         }
     }
 
-    static func end() -> HTTPRequestPart {
+    func end() -> HTTPRequestPart {
         .end(nil)
     }
 }
 
-extension HTTPResponsePart: HTTPMessagePart {
-    static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
+/// Parses the parts of a response, as received by a client.
+struct HTTPResponsePartProcessor: HTTPMessagePartProcessor {
+    func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         let response: HTTPResponse
         do {
             response = try HTTPResponse(parsed: fields)
@@ -270,11 +290,11 @@ extension HTTPResponsePart: HTTPMessagePart {
         return .head(response)
     }
 
-    static func body(buffer: ByteBuffer) -> HTTPResponsePart {
+    func body(buffer: ByteBuffer) -> HTTPResponsePart {
         .body(buffer)
     }
 
-    static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
+    func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         if trailers.isEmpty {
             return .end(nil)
         } else {
@@ -292,14 +312,16 @@ extension HTTPResponsePart: HTTPMessagePart {
         }
     }
 
-    static func end() -> HTTPResponsePart {
+    func end() -> HTTPResponsePart {
         .end(nil)
     }
 }
 
 /// Process HTTP3Frames into HTTPMessageParts.
 /// Use this to convert incoming frames into message parts.
-struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
+struct HTTPMessageParsingStateMachine<Processor: HTTPMessagePartProcessor> {
+    typealias Part = Processor.Part
+
     enum State {
         case awaitingHeaders
         case awaitingBodyOrTrailers
@@ -309,7 +331,12 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
 
     private var state = State.awaitingHeaders
 
-    init() {}
+    /// Processes and validates the parts of the message.
+    private let processor: Processor
+
+    init(_ processor: Processor) {
+        self.processor = processor
+    }
 
     enum ProcessFrameAction {
         case returnPart(Part)
@@ -324,7 +351,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
             switch frame {
             case .headers(let headers):
                 do {
-                    let part = try Part.head(fields: headers.fields)
+                    let part = try self.processor.head(fields: headers.fields)
                     if headers.representsInterimResponse {
                         // Multiple interim (1xx) responses can precede the final response; remain in the same state to
                         // accept further interim responses or the final response. We can only reach this branch on the
@@ -347,7 +374,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
             case .headers(let headers):
                 // If the incoming frame is of type 'headers', it must be the trailers
                 do {
-                    let part = try Part.end(trailers: headers.fields)
+                    let part = try self.processor.end(trailers: headers.fields)
                     self.state = .messageComplete
                     return .returnPart(part)
                 } catch {
@@ -356,7 +383,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
                 }
             // Any number of data frames is fine. State stays as-is
             case .data(let payload):
-                return .returnPart(.body(buffer: payload.payload))
+                return .returnPart(self.processor.body(buffer: payload.payload))
             case .cancelPush, .settings, .maxPushID, .pushPromise, .goaway:
                 // This should not happen because the stream state machine shouldn't allow a bad frame to get here
                 fatalError("Unexpected frame")
@@ -380,7 +407,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
             return .none
         case .awaitingBodyOrTrailers:
             self.state = .messageComplete
-            return .returnPart(.end())
+            return .returnPart(self.processor.end())
         case .failed:
             return .none
         case .messageComplete:
@@ -398,7 +425,11 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     public typealias OutboundIn = HTTPRequestPart
     public typealias OutboundOut = HTTP3Frame
 
-    private var readState: HTTPMessageParsingStateMachine<HTTPResponsePart> = .init()
+    private var readState = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
+
+    /// Whether the server sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1, i.e. whether it accepts Extended
+    /// CONNECT requests (RFC 9220 § 3). We start with `false` and update this once the server's SETTINGS have arrived.
+    private var isExtendedConnectEnabled = false
 
     public init() {}
 
@@ -420,6 +451,21 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
 
         switch part {
         case .head(let request):
+            // A client MUST NOT send an Extended CONNECT request unless it has received
+            // SETTINGS_ENABLE_CONNECT_PROTOCOL with value 1 from the server (RFC 9220 § 3).
+            if request.method == .connect, request.extendedConnectProtocol != nil && !self.isExtendedConnectEnabled {
+                let error = HTTP3Error(
+                    code: .extendedConnectNotEnabled,
+                    message: "The server has not enabled Extended CONNECT (SETTINGS_ENABLE_CONNECT_PROTOCOL)",
+                    cause: nil,
+                    errorCode: nil,
+                    location: .here()
+                )
+                context.fireErrorCaught(error)
+                promise?.fail(error)
+                return
+            }
+
             var fields = [HTTPField]()
             fields.reserveCapacity(request.headerFields.count + 5)
             fields.append(request.pseudoHeaderFields.method)
@@ -461,6 +507,12 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     }
 
     public func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if let settings = event as? ReceivedSettings {
+            self.isExtendedConnectEnabled = settings.extendedConnectSupported
+            context.fireUserInboundEventTriggered(event)
+            return
+        }
+
         guard event as? ChannelEvent == ChannelEvent.inputClosed else {
             context.fireUserInboundEventTriggered(event)
             return
@@ -489,9 +541,16 @@ public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
     public typealias OutboundIn = HTTPResponsePart
     public typealias OutboundOut = HTTP3Frame
 
-    private var readState: HTTPMessageParsingStateMachine<HTTPRequestPart> = .init()
+    private var readState: HTTPMessageParsingStateMachine<HTTPRequestPartProcessor>
 
-    public init() {}
+    /// Create a new ``HTTP3ToHTTPServerCodec``.
+    ///
+    /// - Parameter isExtendedConnectEnabled: Whether Extended CONNECT requests are accepted. This must match the
+    ///   `SETTINGS_ENABLE_CONNECT_PROTOCOL` value sent to the peer. If `false`, incoming Extended CONNECT requests will
+    ///   result in a malformed message error per RFC 8441 § 3.
+    public init(isExtendedConnectEnabled: Bool) {
+        self.readState = .init(HTTPRequestPartProcessor(isExtendedConnectEnabled: isExtendedConnectEnabled))
+    }
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let frame = self.unwrapInboundIn(data)

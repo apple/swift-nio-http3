@@ -39,7 +39,7 @@ struct HTTPMessageParsingTests {
 
     @Test(arguments: 0...10)
     func testProcessRequestFramesWithTrailers(numDataFrames: Int) throws {
-        var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
         // Headers
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
@@ -60,7 +60,7 @@ struct HTTPMessageParsingTests {
 
     @Test(arguments: 1...10)
     func testProcessResponseFramesWithTrailers(numDataFrames: Int) throws {
-        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
         // Headers
         let action1 = machine.processFrame(frame: self.validResponseHead)
         #expect(
@@ -81,7 +81,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testProcessInvalidHeaders() throws {
-        var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
         // Headers
         let action1 = machine.processFrame(frame: .headers([]))  // Invalid because missing required headers
         action1.assertError { error in
@@ -101,7 +101,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testProcessInvalidTrailers() throws {
-        var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
         // Valid headers
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
@@ -127,7 +127,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testEmitsEndOnClose() {
-        var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
             action1?.returnPart
@@ -142,7 +142,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testNoActionOnCloseAfterTrailers() throws {
-        var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
             action1?.returnPart
@@ -158,7 +158,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testSingleInterimThenFinal() throws {
-        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
 
         let action1 = machine.processFrame(frame: self.informationalEarlyHintsHead)
         #expect(action1?.returnPart == .head(.init(status: .init(code: 103))))
@@ -175,7 +175,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testMultipleInterimThenFinal() throws {
-        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
 
         let action1 = machine.processFrame(frame: self.informationalEarlyHintsHead)
         #expect(action1?.returnPart == .head(.init(status: .init(code: 103))))
@@ -195,7 +195,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testInvalidInterimHeaders() throws {
-        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
 
         // 1xx response with a forbidden transfer-encoding field.
         let action1 = machine.processFrame(
@@ -499,8 +499,6 @@ struct HTTPMessageParsingTests {
         ])
     }
 
-    private static let protocolName = HTTPField.Name(parsed: ":protocol")!
-
     @Test func pathAndSchemeForbiddenInConnectButRequiredInExtendedConnect() {
         // :scheme and :path: pseudo-headers must not be present for CONNECT.
         self.assertRequestHeadersNotValid(
@@ -520,7 +518,7 @@ struct HTTPMessageParsingTests {
         // But :scheme and :path: pseudo-headers must be present for Extended CONNECT
         self.assertRequestHeadersValid(fields: [
             .init(name: .method, value: "CONNECT"),
-            .init(name: Self.protocolName, value: "websocket"),
+            .init(name: .protocol, value: "websocket"),
             .init(name: .scheme, value: "https"),
             .init(name: .path, value: "/chat"),
             .init(name: .authority, value: "example.com:443"),
@@ -528,11 +526,43 @@ struct HTTPMessageParsingTests {
         self.assertRequestHeadersNotValid(
             fields: [
                 .init(name: .method, value: "CONNECT"),
-                .init(name: Self.protocolName, value: "websocket"),
+                .init(name: .protocol, value: "websocket"),
                 .init(name: .authority, value: "example.com:443"),
             ],
             expectedError: "CONNECT request with a :protocol pseudo-header must contain path and scheme"
         )
+    }
+
+    private static let extendedConnectFields: [HTTPField] = [
+        .init(name: .method, value: "CONNECT"),
+        .init(name: .protocol, value: "websocket"),
+        .init(name: .scheme, value: "https"),
+        .init(name: .path, value: "/"),
+        .init(name: .authority, value: "example.com:443"),
+    ]
+
+    private static let extendedConnectHead: HTTP3Frame = .headers(extendedConnectFields)
+
+    @Test func extendedConnectRequestIsAnErrorWhenSettingNotEnabled() {
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        guard case .emitError(let error) = machine.processFrame(frame: Self.extendedConnectHead) else {
+            Issue.record("Expected an error")
+            return
+        }
+        #expect(error.h3ErrorCode == .messageError)
+
+        // Further request parts aren't delivered.
+        #expect(machine.processFrame(frame: .data(.init(bytes: [1, 2, 3]))) == nil)
+        #expect(machine.inputClosed() == nil)
+    }
+
+    @Test func extendedConnectRequestIsDeliveredWhenSettingEnabled() {
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: true))
+        guard case .returnPart(.head(let request)) = machine.processFrame(frame: Self.extendedConnectHead) else {
+            Issue.record("Expected the request head to be delivered")
+            return
+        }
+        #expect(request.extendedConnectProtocol == "websocket")
     }
 
     @Test(arguments: [
@@ -638,7 +668,7 @@ struct HTTPMessageParsingTests {
     ])
     func testTrailersNoPseudo(testHeader: HTTPField) throws {
         // Requests
-        var machine1 = HTTPMessageParsingStateMachine<HTTPRequestPart>()
+        var machine1 = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
         _ = machine1.processFrame(frame: self.validRequestHead)
         let action1 = machine1.processFrame(frame: .headers([testHeader]))
         action1?.assertError {
@@ -652,7 +682,7 @@ struct HTTPMessageParsingTests {
         }
 
         // Responses
-        var machine2 = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+        var machine2 = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
         _ = machine2.processFrame(frame: self.validResponseHead)
         let action2 = machine2.processFrame(frame: .headers([testHeader]))
         action2?.assertError {
@@ -673,7 +703,7 @@ struct HTTPMessageParsingTests {
         expectedError: String,
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: true))
         let action = machine.processFrame(frame: .headers(fields))
         action.assertError(sourceLocation: sourceLocation) { error in
             expectH3ErrorEqual(
@@ -692,7 +722,7 @@ struct HTTPMessageParsingTests {
         expectedError: String,
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
         let action = machine.processFrame(frame: .headers(fields))
         action.assertError(sourceLocation: sourceLocation) { error in
             expectH3ErrorEqual(
@@ -710,7 +740,7 @@ struct HTTPMessageParsingTests {
         fields: [HTTPField],
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: true))
         let action = machine.processFrame(frame: .headers(fields))
         switch action {
         case .returnPart:
@@ -726,7 +756,7 @@ struct HTTPMessageParsingTests {
         fields: [HTTPField],
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
+        var machine = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
         let action = machine.processFrame(frame: .headers(fields))
         switch action {
         case .returnPart:
@@ -740,7 +770,7 @@ struct HTTPMessageParsingTests {
 }
 
 extension HTTPMessageParsingStateMachine.ProcessFrameAction {
-    fileprivate var returnPart: Part? {
+    fileprivate var returnPart: Processor.Part? {
         switch self {
         case .returnPart(let part): return part
         case .emitError: return nil
@@ -759,7 +789,7 @@ extension HTTPMessageParsingStateMachine.ProcessFrameAction {
     }
 }
 
-extension HTTPMessageParsingStateMachine<HTTPRequestPart>.ProcessFrameAction? {
+extension HTTPMessageParsingStateMachine<HTTPRequestPartProcessor>.ProcessFrameAction? {
     fileprivate func assertError(
         sourceLocation: SourceLocation = #_sourceLocation,
         _ verifier: (HTTP3Error) -> Void = { _ in }
@@ -771,7 +801,7 @@ extension HTTPMessageParsingStateMachine<HTTPRequestPart>.ProcessFrameAction? {
     }
 }
 
-extension HTTPMessageParsingStateMachine<HTTPResponsePart>.ProcessFrameAction? {
+extension HTTPMessageParsingStateMachine<HTTPResponsePartProcessor>.ProcessFrameAction? {
     fileprivate func assertError(
         sourceLocation: SourceLocation = #_sourceLocation,
         _ verifier: (HTTP3Error) -> Void = { _ in }
