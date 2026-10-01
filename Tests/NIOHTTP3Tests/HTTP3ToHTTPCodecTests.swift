@@ -372,7 +372,7 @@ struct HTTP3ToHTTPCodecTests {
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
         let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
 
-        let codec = HTTP3ToHTTPServerCodec()
+        let codec = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
 
         let channel = EmbeddedChannel(handlers: [codec, dataRecorder], loop: eventLoop)
 
@@ -415,7 +415,7 @@ struct HTTP3ToHTTPCodecTests {
             inboundEvents.withLockedValue { $0.append(event) }
         }
 
-        let codec = HTTP3ToHTTPServerCodec()
+        let codec = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
 
         let channel = EmbeddedChannel(handlers: [codec, eventRecorder], loop: eventLoop)
 

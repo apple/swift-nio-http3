@@ -610,6 +610,38 @@ struct HTTPMessageParsingTests {
         )
     }
 
+    private static let extendedConnectFields: [HTTPField] = [
+        .init(name: .method, value: "CONNECT"),
+        .init(name: .protocol, value: "websocket"),
+        .init(name: .scheme, value: "https"),
+        .init(name: .path, value: "/"),
+        .init(name: .authority, value: "example.com:443"),
+    ]
+
+    private static let extendedConnectHead: HTTP3Frame = .headers(extendedConnectFields)
+
+    @Test func extendedConnectRequestIsAnErrorWhenSettingNotEnabled() {
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        guard case .emitError(let error) = machine.processFrame(frame: Self.extendedConnectHead) else {
+            Issue.record("Expected an error")
+            return
+        }
+        #expect(error.h3ErrorCode == .messageError)
+
+        // Further request parts aren't delivered.
+        #expect(machine.processFrame(frame: .data(.init(bytes: [1, 2, 3]))) == nil)
+        #expect(machine.inputClosed() == nil)
+    }
+
+    @Test func extendedConnectRequestIsDeliveredWhenSettingEnabled() {
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: true))
+        guard case .returnPart(.head(let request)) = machine.processFrame(frame: Self.extendedConnectHead) else {
+            Issue.record("Expected the request head to be delivered")
+            return
+        }
+        #expect(request.extendedConnectProtocol == "websocket")
+    }
+
     @Test(arguments: [
         "example.com:443",
         "127.0.0.1:8000",
