@@ -812,6 +812,7 @@ struct EndToEndTests {
     }
 
     @Test(
+        .timeLimit(.minutes(1)),
         arguments: Self.standardAuthenticationConfigurations
     )
     @available(anyAppleOS 26, *)
@@ -826,10 +827,8 @@ struct EndToEndTests {
         let serverLogger = Logger(label: "Server")
 
         let streamErrorPromise = self.eventLoopGroup.any().makePromise(of: (any Error).self)
-        defer { streamErrorPromise.fail(NeverFulfilled()) }
 
         let serverConnectionPromise = self.eventLoopGroup.any().makePromise(of: (any Channel)?.self)
-        defer { serverConnectionPromise.fail(NeverFulfilled()) }
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
 
@@ -839,19 +838,11 @@ struct EndToEndTests {
             settings: .init(),
             logger: serverLogger,
             inboundConnectionInitializer: { conn in
-                conn.eventLoop.makeCompletedFuture {
+                return conn.eventLoop.makeCompletedFuture {
                     try conn.pipeline.syncOperations.addHandler(
                         DebugInboundEventsHandler { event, _ in
-                            switch event {
-                            case .active:
+                            if case .active = event {
                                 serverConnectionPromise.succeed(conn)
-
-                            case .inactive:
-                                // The connection closed before activating. Just fail the promise.
-                                serverConnectionPromise.fail(NeverFulfilled())
-
-                            default:
-                                ()
                             }
                         }
                     )
