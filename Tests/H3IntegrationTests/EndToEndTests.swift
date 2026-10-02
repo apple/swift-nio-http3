@@ -828,10 +828,8 @@ struct EndToEndTests {
         let streamErrorPromise = self.eventLoopGroup.any().makePromise(of: (any Error).self)
         defer { streamErrorPromise.fail(NeverFulfilled()) }
 
-        let lastServerConnection: NIOLockedValueBox<(any Channel)?> = .init(nil)
-
-        let serverConnectionActivePromise = self.eventLoopGroup.any().makePromise(of: Void.self)
-        defer { serverConnectionActivePromise.fail(NeverFulfilled()) }
+        let serverConnectionPromise = self.eventLoopGroup.any().makePromise(of: (any Channel)?.self)
+        defer { serverConnectionPromise.fail(NeverFulfilled()) }
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
 
@@ -841,12 +839,19 @@ struct EndToEndTests {
             settings: .init(),
             logger: serverLogger,
             inboundConnectionInitializer: { conn in
-                lastServerConnection.withLockedValue { $0 = conn }
-                return conn.eventLoop.makeCompletedFuture {
+                conn.eventLoop.makeCompletedFuture {
                     try conn.pipeline.syncOperations.addHandler(
                         DebugInboundEventsHandler { event, _ in
-                            if case .active = event {
-                                serverConnectionActivePromise.succeed()
+                            switch event {
+                            case .active:
+                                serverConnectionPromise.succeed(conn)
+
+                            case .inactive:
+                                // The connection closed before activating. Just fail the promise.
+                                serverConnectionPromise.fail(NeverFulfilled())
+
+                            default:
+                                ()
                             }
                         }
                     )
@@ -871,11 +876,8 @@ struct EndToEndTests {
             )
         }.get()
 
-        // Wait for the handshake to complete on the server before initiating the close.
-        try await serverConnectionActivePromise.futureResult.get()
-
-        // Now close the server connection while the request stream is open
-        let serverConnection = try #require(lastServerConnection.withLockedValue { $0 })
+        // Wait for the established connection, and then close the connection while the request stream is open.
+        let serverConnection = try await #require(serverConnectionPromise.futureResult.get())
         try await serverConnection.close()
 
         // The request stream should see an error, not a clean close
