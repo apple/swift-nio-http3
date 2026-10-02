@@ -127,6 +127,7 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOHTTPTypes", package: "swift-nio-extras"),
+                .product(name: "NIOExtras", package: "swift-nio-extras"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
