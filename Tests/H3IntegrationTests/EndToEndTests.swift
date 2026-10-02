@@ -16,6 +16,7 @@ import HTTPTypes
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
+import NIOExtras
 import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
@@ -829,6 +830,9 @@ struct EndToEndTests {
 
         let lastServerConnection: NIOLockedValueBox<(any Channel)?> = .init(nil)
 
+        let serverConnectionActivePromise = self.eventLoopGroup.any().makePromise(of: Void.self)
+        defer { serverConnectionActivePromise.fail(NeverFulfilled()) }
+
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
 
         let serverChannel = try await self.makeServer(
@@ -838,7 +842,15 @@ struct EndToEndTests {
             logger: serverLogger,
             inboundConnectionInitializer: { conn in
                 lastServerConnection.withLockedValue { $0 = conn }
-                return conn.eventLoop.makeSucceededVoidFuture()
+                return conn.eventLoop.makeCompletedFuture {
+                    try conn.pipeline.syncOperations.addHandler(
+                        DebugInboundEventsHandler { event, _ in
+                            if case .active = event {
+                                serverConnectionActivePromise.succeed()
+                            }
+                        }
+                    )
+                }
             }
         )
 
@@ -858,6 +870,9 @@ struct EndToEndTests {
                 ErrorCatchingHandler(errorPromise: streamErrorPromise)
             )
         }.get()
+
+        // Wait for the handshake to complete on the server before initiating the close.
+        try await serverConnectionActivePromise.futureResult.get()
 
         // Now close the server connection while the request stream is open
         let serverConnection = try #require(lastServerConnection.withLockedValue { $0 })
