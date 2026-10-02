@@ -838,7 +838,7 @@ struct EndToEndTests {
             settings: .init(),
             logger: serverLogger,
             inboundConnectionInitializer: { conn in
-                return conn.eventLoop.makeCompletedFuture {
+                conn.eventLoop.makeCompletedFuture {
                     try conn.pipeline.syncOperations.addHandler(
                         DebugInboundEventsHandler { event, _ in
                             if case .active = event {
