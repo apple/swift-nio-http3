@@ -97,5 +97,14 @@ extension HTTP3Setting {
         /// See [RFC 9297 § 2.1.1](https://www.rfc-editor.org/rfc/rfc9297.html#section-2.1.1)
         @inlinable
         public static var h3Datagram: HTTP3Setting.Identifier { Self(extensionSetting: 0x33)! }
+
+        /// Corresponds to `SETTINGS_ENABLE_CONNECT_PROTOCOL`.
+        ///
+        /// The value must be either zero or one; the default is zero. A value of one indicates that the sender is
+        /// willing to receive Extended CONNECT requests.
+        ///
+        /// See [RFC 9220 § 3](https://www.rfc-editor.org/rfc/rfc9220.html#section-3-2)
+        @inlinable
+        public static var enableConnectProtocol: HTTP3Setting.Identifier { Self(extensionSetting: 0x08)! }
     }
 }

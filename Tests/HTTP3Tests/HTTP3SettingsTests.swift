@@ -24,12 +24,14 @@ struct HTTP3SettingsTests {
             qpackMaximumTableCapacity: 100,
             qpackBlockedStreams: 200,
             maximumFieldSectionSize: 300,
-            h3Datagram: true
+            h3Datagram: true,
+            enableConnectProtocol: true
         )
         #expect(settings.qpackMaximumTableCapacity == 100)
         #expect(settings.qpackBlockedStreams == 200)
         #expect(settings.maximumFieldSectionSize == 300)
         #expect(settings.h3Datagram)
+        #expect(settings.enableConnectProtocol)
         #expect(settings.other == [])
     }
 
@@ -42,11 +44,13 @@ struct HTTP3SettingsTests {
             HTTP3Setting(identifier: .qpackBlockedStreams, value: 40),
             HTTP3Setting(identifier: .qpackMaximumTableCapacity, value: 50),
             HTTP3Setting(identifier: .h3Datagram, value: 0),
+            HTTP3Setting(identifier: .enableConnectProtocol, value: 0),
         ])
         #expect(settings.qpackBlockedStreams == 40)
         #expect(settings.qpackMaximumTableCapacity == 50)
         #expect(settings.maximumFieldSectionSize == nil)
         #expect(settings.h3Datagram == false)
+        #expect(settings.enableConnectProtocol == false)
         #expect(
             settings.other
                 == [
@@ -68,6 +72,7 @@ struct HTTP3SettingsTests {
             .qpackMaximumTableCapacity,
             .maximumFieldSectionSize,
             .h3Datagram,
+            .enableConnectProtocol,
         ]
     )
     func duplicateKnownSetting(identifier: HTTP3Setting.Identifier) {
@@ -98,11 +103,12 @@ struct HTTP3SettingsTests {
             HTTP3Setting(identifier: .qpackMaximumTableCapacity, value: 2),
             HTTP3Setting(identifier: .maximumFieldSectionSize, value: 3),
             HTTP3Setting(identifier: .h3Datagram, value: 1),
+            HTTP3Setting(identifier: .enableConnectProtocol, value: 1),
             HTTP3Setting(identifier: .init(extensionSetting: 20)!, value: 4),
             HTTP3Setting(identifier: .init(extensionSetting: 30)!, value: 5),
         ])
         let writtenBytes = buffer.writeHTTP3Settings(settings)
-        #expect(writtenBytes == 12)
+        #expect(writtenBytes == 14)
         #expect(
             [UInt8](buffer: buffer)
                 == [
@@ -110,6 +116,7 @@ struct HTTP3SettingsTests {
                     1, 2,
                     6, 3,
                     0x33, 1,
+                    8, 1,
                     20, 4,
                     30, 5,
                 ]
@@ -139,7 +146,7 @@ struct HTTP3SettingsTests {
 
     @Test
     func settingsCodingIgnoresDefault() {
-        let settings = HTTP3Settings(qpackBlockedStreams: 0, h3Datagram: false)
+        let settings = HTTP3Settings(qpackBlockedStreams: 0, h3Datagram: false, enableConnectProtocol: false)
         var buffer = ByteBuffer()
         let writtenBytes = buffer.writeHTTP3Settings(settings)
         // The value is the default, so we don't need to write it out
@@ -154,6 +161,7 @@ struct HTTP3SettingsTests {
         #expect(empty.qpackBlockedStreams == 0)
         #expect(empty.maximumFieldSectionSize == nil)
         #expect(empty.h3Datagram == false)
+        #expect(empty.enableConnectProtocol == false)
         #expect(empty.other == [])
     }
 
@@ -163,14 +171,29 @@ struct HTTP3SettingsTests {
         #expect(settings.h3Datagram)
     }
 
-    @Test(arguments: [UInt64(2), 3, 42])
-    func h3DatagramSettingWithInvalidValue(value: UInt64) {
+    @Test(
+        arguments: [
+            (HTTP3Setting.Identifier.h3Datagram, UInt64(2)),
+            (.h3Datagram, 3),
+            (.h3Datagram, 42),
+            (HTTP3Setting.Identifier.enableConnectProtocol, UInt64(2)),
+            (.enableConnectProtocol, 3),
+            (.enableConnectProtocol, 42),
+        ]
+    )
+    func settingWithInvalidValue(identifier: HTTP3Setting.Identifier, value: UInt64) {
         expectH3Error(
             code: .invalidFramePayload,
             h3ErrorCode: .settingsError,
-            message: "Settings contains invalid value \(value) for identifier \(HTTP3Setting.Identifier.h3Datagram)"
+            message: "Settings contains invalid value \(value) for identifier \(identifier)"
         ) {
-            _ = try HTTP3Settings(parsing: [HTTP3Setting(identifier: .h3Datagram, value: value)])
+            _ = try HTTP3Settings(parsing: [HTTP3Setting(identifier: identifier, value: value)])
         }
+    }
+
+    @Test
+    func connectProtocolSettingIsDisabledByDefault() {
+        let settings = HTTP3Settings(qpackMaximumTableCapacity: 1024)
+        #expect(settings.enableConnectProtocol == false)
     }
 }

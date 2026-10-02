@@ -21,6 +21,7 @@ public struct HTTP3Settings: Hashable, Sendable {
     private var _qpackBlockedStreams: UInt64?
     private var _maximumFieldSectionSize: UInt64?
     private var _h3Datagram: Bool?
+    private var _enableConnectProtocol: Bool?
     private var _other: [HTTP3Setting] = []
 
     /// The maximum capacity of the qpack dynamic table. Corresponds to `SETTINGS_QPACK_MAX_TABLE_CAPACITY`.
@@ -47,6 +48,12 @@ public struct HTTP3Settings: Hashable, Sendable {
         self._h3Datagram ?? false
     }
 
+    /// Whether the sender is willing to receive Extended CONNECT requests. Corresponds to
+    /// `SETTINGS_ENABLE_CONNECT_PROTOCOL`. Returns `false` if this setting was not explicitly set.
+    public var enableConnectProtocol: Bool {
+        self._enableConnectProtocol ?? false
+    }
+
     /// All settings which are not understood by this implementation.
     /// There are guaranteed to be no duplicated identifiers in this array.
     public var other: [HTTP3Setting] {
@@ -64,12 +71,15 @@ public struct HTTP3Settings: Hashable, Sendable {
     ///   - maximumFieldSectionSize: The maximum size of a field section. Corresponds to `SETTINGS_MAX_FIELD_SECTION_SIZE`.
     ///   - h3Datagram: Whether this endpoint is willing to receive HTTP datagrams. Corresponds to `SETTINGS_H3_DATAGRAM`.
     ///     Defaults to 'true' per RFC 9297 § 2.1.1.
+    ///   - enableConnectProtocol: Whether this endpoint is willing to receive Extended CONNECT requests. Corresponds to
+    ///     `SETTINGS_ENABLE_CONNECT_PROTOCOL`. Defaults to `false` per [RFC 9220 § 5](https://www.rfc-editor.org/info/rfc9220/#section-5-2.6.1).
     /// - Precondition: The values must be QUIC-encodable integers, that means they must be between 1 and 2^62-1.
     public init(
         qpackMaximumTableCapacity: UInt64? = nil,
         qpackBlockedStreams: UInt64? = nil,
         maximumFieldSectionSize: UInt64? = nil,
-        h3Datagram: Bool = true
+        h3Datagram: Bool = true,
+        enableConnectProtocol: Bool = false
     ) {
         self.init()
 
@@ -90,6 +100,7 @@ public struct HTTP3Settings: Hashable, Sendable {
         self._qpackBlockedStreams = qpackBlockedStreams
         self._maximumFieldSectionSize = maximumFieldSectionSize
         self._h3Datagram = h3Datagram
+        self._enableConnectProtocol = enableConnectProtocol
     }
 
     /// Parse the provided settings into a ``HTTP3Settings``.
@@ -171,6 +182,22 @@ public struct HTTP3Settings: Hashable, Sendable {
                     location: .here()
                 )
             }
+        case .enableConnectProtocol:
+            if self._enableConnectProtocol != nil {
+                throw duplicateSettingError(identifier: setting.identifier, location: .here())
+            }
+            switch setting.value {
+            case 0:
+                self._enableConnectProtocol = false
+            case 1:
+                self._enableConnectProtocol = true
+            default:
+                throw invalidSettingValueError(
+                    identifier: setting.identifier,
+                    value: setting.value,
+                    location: .here()
+                )
+            }
         default:
             // A linear search is likely cheaper than using a Set or other technique to detect duplicates
             // That is because we do not expect many unknown settings
@@ -190,6 +217,7 @@ public struct HTTP3Settings: Hashable, Sendable {
         hasher.combine(self.qpackBlockedStreams)
         hasher.combine(self.maximumFieldSectionSize)
         hasher.combine(self.h3Datagram)
+        hasher.combine(self.enableConnectProtocol)
         hasher.combine(self.other)
     }
 
@@ -200,7 +228,9 @@ public struct HTTP3Settings: Hashable, Sendable {
         // same as one with it not set
         lhs.qpackMaximumTableCapacity == rhs.qpackMaximumTableCapacity
             && lhs.qpackBlockedStreams == rhs.qpackBlockedStreams
-            && lhs.maximumFieldSectionSize == rhs.maximumFieldSectionSize && lhs.h3Datagram == rhs.h3Datagram
+            && lhs.maximumFieldSectionSize == rhs.maximumFieldSectionSize
+            && lhs.h3Datagram == rhs.h3Datagram
+            && lhs.enableConnectProtocol == rhs.enableConnectProtocol
             && lhs.other == rhs.other
     }
 }
@@ -272,6 +302,9 @@ extension ByteBuffer {
         }
         if settings.h3Datagram {
             bytesWritten += self.writeHTTP3Setting(.init(identifier: .h3Datagram, value: 1))
+        }
+        if settings.enableConnectProtocol {
+            bytesWritten += self.writeHTTP3Setting(.init(identifier: .enableConnectProtocol, value: 1))
         }
         for setting in settings.other {
             bytesWritten += self.writeHTTP3Setting(setting)
