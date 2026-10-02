@@ -72,7 +72,7 @@ public struct HTTP3Settings: Hashable, Sendable {
     ///   - h3Datagram: Whether this endpoint is willing to receive HTTP datagrams. Corresponds to `SETTINGS_H3_DATAGRAM`.
     ///     Defaults to 'true' per RFC 9297 § 2.1.1.
     ///   - enableConnectProtocol: Whether this endpoint is willing to receive Extended CONNECT requests. Corresponds to
-    ///     `SETTINGS_ENABLE_CONNECT_PROTOCOL`. Defaults to `false` per RFC 9220 § 5.2.6.1.
+    ///     `SETTINGS_ENABLE_CONNECT_PROTOCOL`. Defaults to `false` per [RFC 9220 § 5](https://www.rfc-editor.org/info/rfc9220/#section-5-2.6.1).
     /// - Precondition: The values must be QUIC-encodable integers, that means they must be between 1 and 2^62-1.
     public init(
         qpackMaximumTableCapacity: UInt64? = nil,

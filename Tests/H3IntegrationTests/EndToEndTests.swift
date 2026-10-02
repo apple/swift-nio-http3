@@ -16,6 +16,7 @@ import HTTPTypes
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
+import NIOExtras
 import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
@@ -811,6 +812,7 @@ struct EndToEndTests {
     }
 
     @Test(
+        .timeLimit(.minutes(1)),
         arguments: Self.standardAuthenticationConfigurations
     )
     @available(anyAppleOS 26, *)
@@ -825,9 +827,8 @@ struct EndToEndTests {
         let serverLogger = Logger(label: "Server")
 
         let streamErrorPromise = self.eventLoopGroup.any().makePromise(of: (any Error).self)
-        defer { streamErrorPromise.fail(NeverFulfilled()) }
 
-        let lastServerConnection: NIOLockedValueBox<(any Channel)?> = .init(nil)
+        let serverConnectionPromise = self.eventLoopGroup.any().makePromise(of: (any Channel)?.self)
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
 
@@ -837,8 +838,15 @@ struct EndToEndTests {
             settings: .init(),
             logger: serverLogger,
             inboundConnectionInitializer: { conn in
-                lastServerConnection.withLockedValue { $0 = conn }
-                return conn.eventLoop.makeSucceededVoidFuture()
+                conn.eventLoop.makeCompletedFuture {
+                    try conn.pipeline.syncOperations.addHandler(
+                        DebugInboundEventsHandler { event, _ in
+                            if case .active = event {
+                                serverConnectionPromise.succeed(conn)
+                            }
+                        }
+                    )
+                }
             }
         )
 
@@ -859,8 +867,8 @@ struct EndToEndTests {
             )
         }.get()
 
-        // Now close the server connection while the request stream is open
-        let serverConnection = try #require(lastServerConnection.withLockedValue { $0 })
+        // Wait for the established connection, and then close the connection while the request stream is open.
+        let serverConnection = try await #require(serverConnectionPromise.futureResult.get())
         try await serverConnection.close()
 
         // The request stream should see an error, not a clean close
