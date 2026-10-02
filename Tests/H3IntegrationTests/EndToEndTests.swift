@@ -44,7 +44,7 @@ final class EchoHTTPServerHandler: ChannelInboundHandler {
         case .end:
             context.write(self.wrapOutboundOut(.head(.init(status: .ok))), promise: nil)
             context.write(self.wrapOutboundOut(.body(self.receivedData)), promise: nil)
-            context.write(self.wrapOutboundOut(.end()), promise: nil)
+            context.write(self.wrapOutboundOut(.end(nil)), promise: nil)
         }
         context.fireChannelRead(data)
     }
@@ -188,7 +188,7 @@ private final class ControllableEchoResponseHandler: ChannelInboundHandler {
     private func sendResponse(context: ChannelHandlerContext, body: ByteBuffer) {
         context.write(self.wrapOutboundOut(.head(self.responseToSend)), promise: nil)
         context.write(self.wrapOutboundOut(.body(body)), promise: nil)
-        context.writeAndFlush(self.wrapOutboundOut(.end()), promise: nil)
+        context.writeAndFlush(self.wrapOutboundOut(.end(nil)), promise: nil)
     }
 }
 
@@ -1329,7 +1329,9 @@ struct EndToEndTests {
             inboundStreamInitializer: {
                 let channel = $0.channel
                 return channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandler(HTTP3ToHTTPServerCodec())
+                    try channel.pipeline.syncOperations.addHandler(
+                        HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
+                    )
                     // Handler uses shared counter to respond immediately for first 2, wait for 3rd
                     try channel.pipeline.syncOperations.addHandler(
                         ControllableEchoResponseHandler(
@@ -1377,8 +1379,8 @@ struct EndToEndTests {
                 ),
                 promise: nil
             )
-            requestStreamChannel.write(HTTPRequestPart.body(buffer: .init(string: "hello world")), promise: nil)
-            try await requestStreamChannel.writeAndFlush(HTTPRequestPart.end())
+            requestStreamChannel.write(HTTPRequestPart.body(.init(string: "hello world")), promise: nil)
+            try await requestStreamChannel.writeAndFlush(HTTPRequestPart.end(nil))
 
             let response = try await inboundDataPromise.futureResult.get()
             #expect(response[0] == .head(.init(status: .ok)))
@@ -1710,7 +1712,10 @@ struct EndToEndTests {
             recorders: recorders
         ) { _, _, _ in
             // Both peers must advertise support for datagrams to be negotiated.
-            let expected = ReceivedSettings(datagramsSupported: support.client && support.server)
+            let expected = ReceivedSettings(
+                datagramsSupported: support.client && support.server,
+                extendedConnectSupported: false
+            )
             #expect(recorders.client.recordedEvents == [expected])
             #expect(recorders.server.recordedEvents == [expected])
         }

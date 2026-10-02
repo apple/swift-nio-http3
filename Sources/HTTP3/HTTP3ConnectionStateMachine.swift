@@ -674,6 +674,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             public var qpackMaximumTableCapacity: UInt64
             /// The peer's maximum number of QPACK blocked streams
             public var qpackBlockedStreams: UInt64
+            /// Whether the server is willing to receive Extended CONNECT requests (`SETTINGS_ENABLE_CONNECT_PROTOCOL`).
+            public var extendedConnectSupported: Bool
         }
     }
 
@@ -691,7 +693,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                     ControlFrameReceivedAction.OnSettings(
                         datagramsNegotiated: datagramsNegotiated,
                         qpackMaximumTableCapacity: payload.settings.qpackMaximumTableCapacity,
-                        qpackBlockedStreams: payload.settings.qpackBlockedStreams
+                        qpackBlockedStreams: payload.settings.qpackBlockedStreams,
+                        extendedConnectSupported: settings.enableConnectProtocol
                     )
                 )
             case .notStarted:

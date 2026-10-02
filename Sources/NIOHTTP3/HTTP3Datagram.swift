@@ -86,13 +86,17 @@ extension HTTP3Datagram {
     }
 }
 
-/// Fired on the connection channel once the peer's SETTINGS have been received.
+/// A channel event containing relevant values from the SETTINGS exchange.
 public struct ReceivedSettings: Hashable, Sendable {
     /// Whether both peers advertised support for HTTP datagrams.
     public var datagramsSupported: Bool
 
-    public init(datagramsSupported: Bool) {
+    /// Whether the server is willing to receive Extended CONNECT requests.
+    public var extendedConnectSupported: Bool
+
+    public init(datagramsSupported: Bool, extendedConnectSupported: Bool) {
         self.datagramsSupported = datagramsSupported
+        self.extendedConnectSupported = extendedConnectSupported
     }
 }
 

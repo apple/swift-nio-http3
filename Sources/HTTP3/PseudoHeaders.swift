@@ -20,4 +20,5 @@ extension HTTPField.Name {
     static var authority: HTTPField.Name { .init(parsed: ":authority")! }
     static var path: HTTPField.Name { .init(parsed: ":path")! }
     static var status: HTTPField.Name { .init(parsed: ":status")! }
+    static var `protocol`: HTTPField.Name { .init(parsed: ":protocol")! }
 }

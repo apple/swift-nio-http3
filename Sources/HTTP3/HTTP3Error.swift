@@ -150,6 +150,7 @@ extension HTTP3Error {
             case peerTerminatedInboundStream
             case datagramsNotNegotiated
             case connectionClosed
+            case extendedConnectNotEnabled
         }
 
         public var description: String {
@@ -275,6 +276,11 @@ extension HTTP3Error {
         /// The operation requires a connection which is no longer open.
         public static var connectionClosed: Self {
             Self(.connectionClosed)
+        }
+
+        /// An Extended CONNECT request was received, but `SETTINGS_ENABLE_CONNECT_PROTOCOL` was not sent to the client.
+        public static var extendedConnectNotEnabled: Self {
+            Self(.extendedConnectNotEnabled)
         }
     }
 
