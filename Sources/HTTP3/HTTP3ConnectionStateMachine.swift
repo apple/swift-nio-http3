@@ -507,6 +507,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
     @_spi(PackageInternal)
     public enum InboundUnknownStreamAction {
         case emitStreamError(HTTP3Error)
+        /// WebTransport stream
+        case doNothing
     }
 
     @_spi(PackageInternal)
@@ -525,18 +527,24 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case .initialized(var initializedState):
             initializedState.streamIDTracker.streamOpened(id: streamID)
             self = .init(state: .initialized(initializedState))
-            // We don't understand the stream type
-            // RFC 9114: Recipients of unknown stream types MUST either abort reading of the stream or discard incoming data without further processing
-            // If reading is aborted, the recipient SHOULD use the H3_STREAM_CREATION_ERROR error code
-            return .emitStreamError(
-                HTTP3Error(
-                    code: .streamCreationError,
-                    message: "Rejecting inbound stream of unknown type \(streamType.rawValue)",
-                    cause: nil,
-                    errorCode: .streamCreationError,
-                    location: .here()
+            switch streamType.rawValue {
+            case 0x54:
+                // WebTransport stream (Section 9.4 of draft-ietf-webtrans-http3-16)
+                return .doNothing
+            default:
+                // We don't understand the stream type
+                // RFC 9114: Recipients of unknown stream types MUST either abort reading of the stream or discard incoming data without further processing
+                // If reading is aborted, the recipient SHOULD use the H3_STREAM_CREATION_ERROR error code
+                return .emitStreamError(
+                    HTTP3Error(
+                        code: .streamCreationError,
+                        message: "Rejecting inbound stream of unknown type \(streamType.rawValue)",
+                        cause: nil,
+                        errorCode: .streamCreationError,
+                        location: .here()
+                    )
                 )
-            )
+            }
         }
     }
 
