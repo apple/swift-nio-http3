@@ -482,7 +482,6 @@ struct AsyncEndToEndTests {
                 privateKeyPath: privateKeyPath
             )
             let (channel, mux) = try await DatagramBootstrap(group: self.eventLoopGroup)
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(
                     host: "127.0.0.1",
                     port: 0,
@@ -519,7 +518,6 @@ struct AsyncEndToEndTests {
                 keyPath: keyPath
             )
             let (channel, mux) = try await DatagramBootstrap(group: self.eventLoopGroup)
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(
                     host: "127.0.0.1",
                     port: 0,
@@ -566,7 +564,6 @@ struct AsyncEndToEndTests {
             logger.info("Starting QUIC client")
 
             return try await DatagramBootstrap(group: self.eventLoopGroup)
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(host: "127.0.0.1", port: 0) { channel in
                     channel.eventLoop.makeCompletedFuture {
                         let mux = try channel.pipeline.syncOperations.configureHTTP3Client(
@@ -582,7 +579,6 @@ struct AsyncEndToEndTests {
             logger.info("Starting QUIC client")
 
             return try await DatagramBootstrap(group: self.eventLoopGroup)
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(host: "127.0.0.1", port: 0) { channel in
                     channel.eventLoop.makeCompletedFuture {
                         let mux = try channel.pipeline.syncOperations.configureHTTP3Client(
