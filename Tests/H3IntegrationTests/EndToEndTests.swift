@@ -1314,6 +1314,9 @@ struct EndToEndTests {
         let responsePromise = self.eventLoopGroup.any().makePromise(of: Void.self)
         // Shared counter across all streams
         let sharedRequestCounter = NIOLockedValueBox<Int>(0)
+        // Completes once the client has processed the server's SETTINGS and GOAWAY
+        let clientControlStreamFramesPromise = self.eventLoopGroup.any().makePromise(of: [HTTP3Frame].self)
+        defer { clientControlStreamFramesPromise.fail(NeverFulfilled()) }
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
 
@@ -1351,7 +1354,19 @@ struct EndToEndTests {
             host: host,
             port: serverPort,
             settings: .init(),
-            logger: clientLogger
+            logger: clientLogger,
+            internalInboundStreamInitializer: { streamChannel, _, streamType in
+                switch streamType {
+                case .control:
+                    // Sits behind the handler that processes control frames, so it only sees frames already processed
+                    return streamChannel.eventLoop.makeCompletedFuture {
+                        let recorder = InboundDataRecorder(promise: clientControlStreamFramesPromise, targetCount: 2)
+                        try streamChannel.pipeline.syncOperations.addHandler(recorder)
+                    }
+                case .push, .qpackEncoder, .qpackDecoder, .unknown:
+                    return streamChannel.eventLoop.makeSucceededVoidFuture()
+                }
+            }
         )
 
         func makeRequest() async throws {
@@ -1407,6 +1422,11 @@ struct EndToEndTests {
         try await serverH3HandlerFuture.flatMapThrowing {
             try $0.sendGoaway(id: 12)
         }.get()
+
+        // `sendGoaway` only queues the frame. Wait until the client has processed it, otherwise the request below can
+        // open stream 12 before the GOAWAY arrives and fail with `ChannelError.ioOnClosedChannel` instead.
+        let clientReceivedControlFrames = try await clientControlStreamFramesPromise.futureResult.get()
+        #expect(clientReceivedControlFrames == [.settings(.init()), .goaway(12)])
 
         // Now client refuses new outbound requests because we received GOAWAY
         await #expect(throws: HTTP3Error.self) {
@@ -1824,7 +1844,6 @@ struct EndToEndTests {
             serverName = name
         }
         let h3ConnectionMultiplexer = try await DatagramBootstrap(group: eventLoopGroup)
-            .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: "127.0.0.1", port: 0) { channel in
                 channel.eventLoop.makeCompletedFuture {
                     var config = HTTP3ClientConfiguration.defaults
@@ -1880,7 +1899,6 @@ struct EndToEndTests {
                 .makeH3ServerConfig(certPath: certPath, keyPath: keyPath)
             }
         let channel = try await DatagramBootstrap(group: eventLoopGroup)
-            .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: host, port: port) { channel in
                 channel.eventLoop.makeCompletedFuture {
                     var config = HTTP3ServerConfiguration.defaults
