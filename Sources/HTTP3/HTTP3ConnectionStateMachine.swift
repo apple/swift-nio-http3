@@ -81,6 +81,102 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
 
         struct Initialized: ~Copyable {
+            /// Tracks whether the peer's SETTINGS have arrived.
+            enum NegotiatedSettingsState: ~Copyable {
+                /// The peer's SETTINGS haven't arrived yet.
+                case awaiting(type: HTTP3ConnectionType, localSettings: HTTP3Settings)
+
+                /// The peer's SETTINGS have arrived. New streams created from this point onward should be informed of
+                /// the settings upon initialization.
+                case received(NegotiatedSettings)
+
+                struct NegotiatedSettings: Hashable, Sendable {
+                    /// Whether both peers advertised support for HTTP datagrams.
+                    var datagramsSupported: Bool
+
+                    /// Whether the server is willing to receive Extended CONNECT requests.
+                    var extendedConnectSupported: Bool
+
+                    init(datagramsSupported: Bool, extendedConnectSupported: Bool) {
+                        self.datagramsSupported = datagramsSupported
+                        self.extendedConnectSupported = extendedConnectSupported
+                    }
+                }
+
+                /// The peer's SETTINGS have arrived.
+                mutating func settingsReceived(_ peerSettings: HTTP3Settings) {
+                    switch consume self {
+                    case .awaiting(let role, let localSettings):
+                        let datagramsSupported = localSettings.h3Datagram && peerSettings.h3Datagram
+
+                        let extendedConnectSupported: Bool
+                        switch role {
+                        case .server:
+                            // Only servers can express `SETTINGS_ENABLE_CONNECT_PROTOCOL`. If a client sends us this
+                            // setting, it is meaningless; just use the value we sent. See RFC 8441 § 3.
+                            extendedConnectSupported = localSettings.enableConnectProtocol
+
+                        case .client:
+                            extendedConnectSupported = peerSettings.enableConnectProtocol
+                        }
+
+                        self = .received(
+                            NegotiatedSettings(
+                                datagramsSupported: datagramsSupported,
+                                extendedConnectSupported: extendedConnectSupported
+                            )
+                        )
+
+                    case .received:
+                        // The control stream validator only lets one SETTINGS frame through.
+                        preconditionFailure("The peer's SETTINGS were received twice")
+                    }
+                }
+
+                /// Whether HTTP datagrams may be used on this connection.
+                ///
+                /// - Returns: `true` only once the peer's SETTINGS have arrived and both endpoints advertised
+                /// `SETTINGS_H3_DATAGRAM` with a value of 1 (RFC 9297 § 2.1.1). Before then, it always returns `false`.
+                var datagramsNegotiated: Bool {
+                    switch self {
+                    case .awaiting:
+                        // We have not yet received the peer's SETTINGS frame. Therefore, we cannot say that datagrams
+                        // are supported until then.
+                        return false
+
+                    case .received(let negotiatedSettings):
+                        return negotiatedSettings.datagramsSupported
+                    }
+                }
+
+                /// Whether Extended CONNECT requests may be used on this connection, i.e. whether the server sent
+                /// `SETTINGS_ENABLE_CONNECT_PROTOCOL` with a value of 1 (RFC 9220 § 3).
+                ///
+                /// - Returns:
+                ///   - For clients, `false` until the server's SETTINGS arrive, and from then on the value of
+                ///     `SETTINGS_ENABLE_CONNECT_PROTOCOL` in those SETTINGS.
+                ///   - For servers, the value of ``HTTP3Settings/enableConnectProtocol`` passed when creating this
+                ///     state machine (see ``HTTP3ConnectionStateMachine/init(settings:type:)``).
+                var extendedConnectSupported: Bool {
+                    switch self {
+                    case .awaiting(let role, let localSettings):
+                        switch role {
+                        case .client:
+                            return false
+
+                        case .server:
+                            // SETTINGS_ENABLE_CONNECT_PROTOCOL is not a negotiable setting; only the server can express
+                            // whether it supports it or not. Therefore, if we are a server, we don't need to wait for
+                            // the client's SETTINGS to arrive to know whether Extended CONNECT supported.
+                            return localSettings.enableConnectProtocol
+                        }
+
+                    case .received(let negotiatedSettings):
+                        return negotiatedSettings.extendedConnectSupported
+                    }
+                }
+            }
+
             var inboundControlStream: InboundStreamCreationState
             var inboundQPACKDecoderStream: InboundStreamCreationState
             var inboundQPACKEncoderStream: InboundStreamCreationState
@@ -88,21 +184,41 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let type: HTTP3ConnectionType
             var streamIDTracker = StreamIDTracker()
             var quiescingState: HTTP3ConnectionQuiescingStateMachine
-            var remoteAllowsDatagrams = false
-            let localAllowsDatagrams: Bool
 
-            var datagramsNegotiated: Bool {
-                self.localAllowsDatagrams && self.remoteAllowsDatagrams
-            }
+            var settingsState: NegotiatedSettingsState
 
             init(notStarted: consuming NotStarted) {
                 self.inboundControlStream = .init()
                 self.inboundQPACKDecoderStream = .init()
                 self.inboundQPACKEncoderStream = .init()
                 self.type = notStarted.type
-                self.localAllowsDatagrams = notStarted.localSettings.h3Datagram
+                self.settingsState = .awaiting(type: notStarted.type, localSettings: notStarted.localSettings)
                 self.quiescingState = .init(type: notStarted.type)
             }
+        }
+    }
+
+    /// Whether Extended CONNECT requests may be used on this connection, i.e. whether the server sent
+    /// `SETTINGS_ENABLE_CONNECT_PROTOCOL` with a value of 1 (RFC 9220 § 3).
+    @_spi(PackageInternal)
+    public var extendedConnectSupported: Bool {
+        switch self.state {
+        case .notStarted(let notStarted):
+            switch notStarted.type {
+            case .client:
+                return false
+
+            case .server:
+                return notStarted.localSettings.enableConnectProtocol
+            }
+
+        case .initialized(let initialized):
+            return initialized.settingsState.extendedConnectSupported
+
+        case .finished:
+            // A stream can finish being set up after the connection has finished. Nothing may be sent or received on
+            // it, so Extended CONNECT isn't allowed either.
+            return false
         }
     }
 
@@ -184,7 +300,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             }
 
         case .initialized(let initialized):
-            guard initialized.datagramsNegotiated else {
+            guard initialized.settingsState.datagramsNegotiated else {
                 return .datagramsNotNegotiated(location: .here())
             }
 
@@ -239,7 +355,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             )
 
         case .initialized(let initialized):
-            guard initialized.datagramsNegotiated else {
+            guard initialized.settingsState.datagramsNegotiated else {
                 return .drop(
                     code: .datagramsNotNegotiated,
                     message: "Datagrams have not been negotiated by both peers",
@@ -674,6 +790,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             public var qpackMaximumTableCapacity: UInt64
             /// The peer's maximum number of QPACK blocked streams
             public var qpackBlockedStreams: UInt64
+            /// Whether the server is willing to receive Extended CONNECT requests (`SETTINGS_ENABLE_CONNECT_PROTOCOL`).
+            public var extendedConnectSupported: Bool
+            /// The stream IDs to notify about the peer's SETTINGS arriving.
+            public var streamIDsToNotify: [QUICStreamID]?
         }
     }
 
@@ -684,14 +804,27 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let settings = payload.settings
             switch consume self.state {
             case .initialized(var initializedState):
-                initializedState.remoteAllowsDatagrams = settings.h3Datagram
-                let datagramsNegotiated = initializedState.datagramsNegotiated
+                initializedState.settingsState.settingsReceived(settings)
+
+                let datagramsNegotiated = initializedState.settingsState.datagramsNegotiated
+                let extendedConnectSupported = initializedState.settingsState.extendedConnectSupported
+
+                var streamIDsToNotify: [QUICStreamID]? = nil
+                // If we are a client, we need to send this event to all open outbound request streams.
+                if initializedState.type == .client {
+                    streamIDsToNotify = initializedState.streamIDTracker.getOpenStreamIDs { streamID in
+                        streamID.type == .clientInitiatedBidirectional
+                    }
+                }
+
                 self = .init(state: .initialized(initializedState))
                 return .onSettings(
                     ControlFrameReceivedAction.OnSettings(
                         datagramsNegotiated: datagramsNegotiated,
                         qpackMaximumTableCapacity: payload.settings.qpackMaximumTableCapacity,
-                        qpackBlockedStreams: payload.settings.qpackBlockedStreams
+                        qpackBlockedStreams: payload.settings.qpackBlockedStreams,
+                        extendedConnectSupported: extendedConnectSupported,
+                        streamIDsToNotify: streamIDsToNotify
                     )
                 )
             case .notStarted:

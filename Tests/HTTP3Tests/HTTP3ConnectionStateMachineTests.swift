@@ -403,6 +403,58 @@ struct HTTP3ConnectionStateMachineTests {
         #expect(action2 == nil)
     }
 
+    @available(anyAppleOS 26, *)
+    @Test func clientExtendedConnectSettingsValueIgnored() {
+        // A client's value of this setting is meaningless (RFC 8441 § 3). The state machine should ignore the value.
+        let localSettings = HTTP3Settings(enableConnectProtocol: true)
+        let stateMachine = HTTP3ConnectionStateMachine(settings: localSettings, type: .client)
+
+        #expect(stateMachine.extendedConnectSupported == false)
+    }
+
+    @available(anyAppleOS 26, *)
+    @Test(arguments: [true, false])
+    func clientLearnsExtendedConnectSupportFromServer(serverAllowsExtendedConnect: Bool) {
+        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .client)
+
+        // Until the server's SETTINGS arrive, Extended CONNECT isn't allowed.
+        #expect(stateMachine.extendedConnectSupported == false)
+        #expect(stateMachine.initialize() == .createControlStream)
+        #expect(stateMachine.extendedConnectSupported == false)
+
+        let action = stateMachine.receivedControlFrame(
+            .settings(HTTP3Settings(enableConnectProtocol: serverAllowsExtendedConnect))
+        )
+        guard case .onSettings(let settings) = action else {
+            Issue.record("Unexpected action \(String(describing: action))")
+            return
+        }
+
+        #expect(settings.extendedConnectSupported == serverAllowsExtendedConnect)
+        #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
+    }
+
+    @available(anyAppleOS 26, *)
+    @Test(arguments: [true, false], [true, false])
+    func serverUsesItsOwnExtendedConnectSetting(serverAllowsExtendedConnect: Bool, clientSent: Bool) {
+        let localSettings = HTTP3Settings(enableConnectProtocol: serverAllowsExtendedConnect)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: localSettings, type: .server)
+
+        // The server knows its own setting from the start. It doesn't need to wait for the client's SETTINGS.
+        #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
+        #expect(stateMachine.initialize() == .createControlStream)
+        #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
+
+        // Whatever the client sends for this setting is ignored.
+        let action = stateMachine.receivedControlFrame(.settings(HTTP3Settings(enableConnectProtocol: clientSent)))
+        guard case .onSettings(let settings) = action else {
+            Issue.record("Unexpected action \(String(describing: action))")
+            return
+        }
+        #expect(settings.extendedConnectSupported == serverAllowsExtendedConnect)
+        #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
+    }
+
     // MARK: GOAWAY
 
     @available(anyAppleOS 26, *)

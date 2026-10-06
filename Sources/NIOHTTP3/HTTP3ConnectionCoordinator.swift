@@ -280,7 +280,11 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                         incoming: false
                     )
                     if addTypeHandlers {
-                        try streamChannel.pipeline.syncOperations.addHandler(HTTP3ToHTTPClientCodec())
+                        try streamChannel.pipeline.syncOperations.addHandler(
+                            HTTP3ToHTTPClientCodec(
+                                extendedConnectSupported: self.connectionStateMachine.extendedConnectSupported
+                            )
+                        )
                     }
                     self.emitBufferedDatagrams(forStream: streamID)
                     return HTTP3StreamInitializerParameters(params)
@@ -343,7 +347,11 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     incoming: true
                 )
                 if addTypeHandlers {
-                    try streamChannel.pipeline.syncOperations.addHandler(HTTP3ToHTTPServerCodec())
+                    try streamChannel.pipeline.syncOperations.addHandler(
+                        HTTP3ToHTTPServerCodec(
+                            extendedConnectSupported: self.connectionStateMachine.extendedConnectSupported
+                        )
+                    )
                 }
                 // State machine now considers the stream to be open: deliver the datagrams now.
                 self.emitBufferedDatagrams(forStream: streamID)
@@ -595,9 +603,18 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 maxQueueSize: Int(clamping: onSettings.qpackBlockedStreams),
                 peersDynamicTableSize: Int(clamping: onSettings.qpackMaximumTableCapacity)
             )
-            self.connection?.fireReceivedSettingsEvent(
-                ReceivedSettings(datagramsSupported: onSettings.datagramsNegotiated)
+            let receivedSettings = ReceivedSettings(
+                datagramsSupported: onSettings.datagramsNegotiated,
+                extendedConnectSupported: onSettings.extendedConnectSupported
             )
+
+            if let streamIDsToNotify = onSettings.streamIDsToNotify {
+                for streamID in streamIDsToNotify {
+                    self.streamHandlers[streamID]?.peerSettingsReceived(receivedSettings)
+                }
+            }
+
+            self.connection?.fireReceivedSettingsEvent(receivedSettings)
         case .cancelStreams(let ids):
             self.cancelStreamsDueToReceivingGoaway(ids)
         case .closeConnection:
