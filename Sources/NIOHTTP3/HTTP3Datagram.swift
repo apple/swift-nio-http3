@@ -86,7 +86,7 @@ extension HTTP3Datagram {
     }
 }
 
-/// A channel event containing relevant values from the SETTINGS exchange.
+/// A channel event containing negotiated values from the SETTINGS exchange.
 public struct ReceivedSettings: Hashable, Sendable {
     /// Whether both peers advertised support for HTTP datagrams.
     public var datagramsSupported: Bool

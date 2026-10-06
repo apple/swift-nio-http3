@@ -121,7 +121,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test func clientCodecRefusesExtendedConnectRequestWhenSettingNotEnabled() throws {
-        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec())
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
 
         // Sending an Extended CONNECT request is only allowed once the server has sent SETTINGS_ENABLE_CONNECT_PROTOCOL.
         let error = try #require(throws: HTTP3Error.self) {
@@ -134,7 +134,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test func clientCodecSendsExtendedConnectRequestWhenSettingEnabled() throws {
-        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec())
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
 
         // Simulate the server's SETTINGS arriving.
         channel.pipeline.fireUserInboundEventTriggered(
@@ -148,8 +148,9 @@ struct HTTP3ToHTTPCodecTests {
         #expect(headers.fields.contains(HTTPField(name: .protocol, value: "websocket")))
     }
 
-    @Test func clientCodecSendConnectRequestWhenExtendedConnectSettingNotEnabled() throws {
-        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec())
+    @Test(arguments: [true, false])
+    func clientCodecCanSendConnectRequestIndependentOfExtendedConnectSetting(settingValue: Bool) throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: settingValue))
 
         // This is just a normal CONNECT request, not an Extended CONNECT request.
         try channel.writeOutbound(
@@ -161,7 +162,7 @@ struct HTTP3ToHTTPCodecTests {
         }
     }
 
-    @Test func clientCodecRefusesExtendedConnectRequestServerDoesNotSupport() throws {
+    @Test func clientCodecRefusesExtendedConnectRequestWhenServerDoesNotSupport() throws {
         let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec())
 
         // Simulate the server's SETTINGS arriving.
@@ -192,7 +193,7 @@ struct HTTP3ToHTTPCodecTests {
 
     @Test
     func testServerCodecWrite() throws {
-        let handler = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
+        let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
         let framesPromise = eventLoop.makePromise(of: [WriteOrClose<HTTP3Frame>].self)
         let recorder = OutboundDataRecorderWithClose(promise: framesPromise, targetCount: 5)
@@ -232,7 +233,7 @@ struct HTTP3ToHTTPCodecTests {
 
     @Test
     func testServerCodecRead() throws {
-        let handler = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
+        let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
         let recorder = InboundDataRecorder(promise: partsPromise, targetCount: 3)
@@ -252,7 +253,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test func serverCodecRejectsExtendedConnectRequestWhenSettingNotEnabled() throws {
-        let handler = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: false)
         let channel = EmbeddedChannel(handler: handler)
 
         // Receiving an Extended CONNECT request without having sent SETTINGS_ENABLE_CONNECT_PROTOCOL = 1 should result
@@ -271,7 +272,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test func serverCodecAcceptsExtendedConnectRequestWhenSettingEnabled() throws {
-        let handler = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: true)
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: true)
         let channel = EmbeddedChannel(handler: handler)
 
         try channel.writeInbound(self.extendedConnectRequestHead)
@@ -283,7 +284,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test func serverCodecAcceptsConnectWhenExtendedConnectSettingNotEnabled() throws {
-        let handler = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: false)
         let channel = EmbeddedChannel(handler: handler)
 
         // This is just a normal CONNECT request, not an Extended CONNECT request.
@@ -305,7 +306,7 @@ struct HTTP3ToHTTPCodecTests {
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
         let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
 
-        let codec = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
+        let codec = HTTP3ToHTTPServerCodec()
 
         let channel = EmbeddedChannel(handlers: [codec, dataRecorder], loop: eventLoop)
 
@@ -348,7 +349,7 @@ struct HTTP3ToHTTPCodecTests {
             inboundEvents.withLockedValue { $0.append(event) }
         }
 
-        let codec = HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: false)
+        let codec = HTTP3ToHTTPServerCodec()
 
         let channel = EmbeddedChannel(handlers: [codec, eventRecorder], loop: eventLoop)
 

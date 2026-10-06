@@ -39,70 +39,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     /// it's removed from the channel pipeline.
     private var connection: HTTP3ConnectionHandler<QUICStreamCreator>?
     private let preferHuffmanEncoding: Bool
-
-    /// Whether we advertised `SETTINGS_ENABLE_CONNECT_PROTOCOL` to the client.
-    ///
-    /// - Note: This flag is only applicable to servers.
-    private let isExtendedConnectEnabled: Bool
-
-    /// Whether the peer's SETTINGS have arrived, and which outbound request streams need to be informed about them.
-    private enum PeerSettingsState: ~Copyable {
-        /// The peer's SETTINGS haven't arrived yet. The associated value stores stream IDs for active streams that were
-        /// opened before the peer's SETTINGS arrived (so that we can inform them when the settings eventually arrive).
-        case awaiting(initializedOutboundRequestStreams: Set<QUICStreamID>)
-
-        /// The SETTINGS have arrived. New streams created from this point onward are informed of the settings upon
-        /// initialization.
-        case received(ReceivedSettings)
-
-        /// An outbound request stream's initializer has completed.
-        ///
-        /// - Returns: The peer's SETTINGS, if they have already arrived and the stream should be told about them now.
-        mutating func outboundRequestStreamInitialized(_ streamID: QUICStreamID) -> ReceivedSettings? {
-            switch consume self {
-            case .awaiting(var initializedOutboundRequestStreams):
-                // Store the stream ID so that we can deliver the peer's SETTINGS to the stream once they arrive.
-                initializedOutboundRequestStreams.insert(streamID)
-                self = .awaiting(initializedOutboundRequestStreams: initializedOutboundRequestStreams)
-                return nil
-
-            case .received(let receivedSettings):
-                self = .received(receivedSettings)
-                return receivedSettings
-            }
-        }
-
-        /// The peer's SETTINGS have arrived.
-        ///
-        /// - Returns: The outbound request streams which were initialized before the SETTINGS arrived, and which should
-        ///   be told about them now.
-        mutating func settingsReceived(_ receivedSettings: ReceivedSettings) -> Set<QUICStreamID> {
-            switch consume self {
-            case .awaiting(let initializedOutboundRequestStreams):
-                self = .received(receivedSettings)
-                return initializedOutboundRequestStreams
-
-            case .received:
-                // The control stream validator only lets one SETTINGS frame through.
-                preconditionFailure("The peer's SETTINGS were received twice")
-            }
-        }
-
-        /// An outbound request stream has closed.
-        mutating func outboundRequestStreamClosed(_ streamID: QUICStreamID) {
-            switch consume self {
-            case .awaiting(var initializedOutboundRequestStreams):
-                initializedOutboundRequestStreams.remove(streamID)
-                self = .awaiting(initializedOutboundRequestStreams: initializedOutboundRequestStreams)
-
-            case .received(let receivedSettings):
-                self = .received(receivedSettings)
-            }
-        }
-    }
-
-    private var peerSettingsState = PeerSettingsState.awaiting(initializedOutboundRequestStreams: [])
-
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.
     private var streamHandlers = [QUICStreamID: StreamHandler]()
@@ -124,7 +60,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.streamCreator = streamCreator
         self.logger = logger
         self.preferHuffmanEncoding = preferHuffmanEncoding
-        self.isExtendedConnectEnabled = localSettings.enableConnectProtocol
         self.datagramBuffer = HTTP3DatagramBuffer(maxAllowedSize: maxBufferedDatagramBytes)
 
         self.qpackCoder = QPACKCoder(
@@ -345,24 +280,16 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                         incoming: false
                     )
                     if addTypeHandlers {
-                        try streamChannel.pipeline.syncOperations.addHandler(HTTP3ToHTTPClientCodec())
+                        try streamChannel.pipeline.syncOperations.addHandler(
+                            HTTP3ToHTTPClientCodec(
+                                extendedConnectSupported: self.connectionStateMachine.extendedConnectSupported
+                            )
+                        )
                     }
                     self.emitBufferedDatagrams(forStream: streamID)
                     return HTTP3StreamInitializerParameters(params)
                 }.assumeIsolated().flatMap {
                     streamInitializer($0)
-                }.map { output in
-                    // Check if we have received the peer's SETTINGS; if so, we can inform the stream about it now.
-                    // Otherwise, the stream ID will be added to a set, which will be emptied when the peer's SETTINGS
-                    // eventually arrive.
-
-                    guard let streamHandler = self.streamHandlers[streamID] else { return output }
-
-                    if let receivedSettings = self.peerSettingsState.outboundRequestStreamInitialized(streamID) {
-                        streamHandler.peerSettingsReceived(receivedSettings)
-                    }
-
-                    return output
                 }.nonisolated()
             }
         case .failedToCreateStream(let error):
@@ -421,7 +348,9 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 )
                 if addTypeHandlers {
                     try streamChannel.pipeline.syncOperations.addHandler(
-                        HTTP3ToHTTPServerCodec(isExtendedConnectEnabled: self.isExtendedConnectEnabled)
+                        HTTP3ToHTTPServerCodec(
+                            extendedConnectSupported: self.connectionStateMachine.extendedConnectSupported
+                        )
                     )
                 }
                 // State machine now considers the stream to be open: deliver the datagrams now.
@@ -678,11 +607,13 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 datagramsSupported: onSettings.datagramsNegotiated,
                 extendedConnectSupported: onSettings.extendedConnectSupported
             )
-            let initializedOutboundRequestStreams = self.peerSettingsState.settingsReceived(receivedSettings)
-            // Send this event to all the request streams that opened before the SETTINGS arrived.
-            for streamID in initializedOutboundRequestStreams {
-                self.streamHandlers[streamID]?.peerSettingsReceived(receivedSettings)
+
+            if let streamIDsToNotify = onSettings.streamIDsToNotify {
+                for streamID in streamIDsToNotify {
+                    self.streamHandlers[streamID]?.peerSettingsReceived(receivedSettings)
+                }
             }
+
             self.connection?.fireReceivedSettingsEvent(receivedSettings)
         case .cancelStreams(let ids):
             self.cancelStreamsDueToReceivingGoaway(ids)
@@ -747,7 +678,6 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.logger.trace("Stream has closed", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
         // It's safe to remove this now: the coder drops any decode still queued for this stream below.
         self.streamHandlers[streamID] = nil
-        self.peerSettingsState.outboundRequestStreamClosed(streamID)
         if case .request = streamType {
             // Only request streams carry field sections, so only they can have QPACK state to clean up.
             self.qpackCoder?.requestStreamClosed(streamID: streamID, seenEOF: seenEOF)

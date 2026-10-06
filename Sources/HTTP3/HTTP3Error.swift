@@ -278,7 +278,8 @@ extension HTTP3Error {
             Self(.connectionClosed)
         }
 
-        /// An Extended CONNECT request was received, but `SETTINGS_ENABLE_CONNECT_PROTOCOL` was not sent to the client.
+        /// An Extended CONNECT request was sent or received, but the server hasn't enabled Extended CONNECT by sending
+        /// `SETTINGS_ENABLE_CONNECT_PROTOCOL` with a value of 1 (RFC 9220 § 3).
         public static var extendedConnectNotEnabled: Self {
             Self(.extendedConnectNotEnabled)
         }

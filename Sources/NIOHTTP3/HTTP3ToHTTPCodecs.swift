@@ -45,7 +45,11 @@ private func invalidHeadersError(message: String, location: HTTP3Error.SourceLoc
 /// Processes and validates the parts of a request, as received by a server.
 struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
     /// Whether we can accept Extended CONNECT requests, i.e. if we sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1.
-    let isExtendedConnectEnabled: Bool
+    let extendedConnectSupported: Bool
+
+    init(extendedConnectSupported: Bool = false) {
+        self.extendedConnectSupported = extendedConnectSupported
+    }
 
     private static func validateNonConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
         precondition(request.method != .connect)
@@ -111,7 +115,7 @@ struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
 
             // A client MUST NOT send an Extended CONNECT request unless we sent SETTINGS_ENABLE_CONNECT_PROTOCOL
             // with a value of 1 (RFC 8441 § 3).
-            guard self.isExtendedConnectEnabled else {
+            guard self.extendedConnectSupported else {
                 throw HTTP3Error(
                     code: .extendedConnectNotEnabled,
                     message: "Extended CONNECT request received, but SETTINGS_ENABLE_CONNECT_PROTOCOL was not sent",
@@ -428,10 +432,17 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     private var readState = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
 
     /// Whether the server sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1, i.e. whether it accepts Extended
-    /// CONNECT requests (RFC 9220 § 3). We start with `false` and update this once the server's SETTINGS have arrived.
-    private var isExtendedConnectEnabled = false
+    /// CONNECT requests (RFC 9220 § 3).
+    private var extendedConnectSupported: Bool
 
-    public init() {}
+    /// - Parameter extendedConnectSupported: Whether the server sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1,
+    ///   i.e. whether it accepts Extended CONNECT requests (RFC 9220 § 3).
+    ///
+    ///   Set to `false` if the server's SETTINGS frame hasn't arrived yet (the ``ReceivedSettings`` inbound event will
+    ///   fire when the server's SETTINGS arrive, and the flag will automatically be updated then).
+    public init(extendedConnectSupported: Bool = false) {
+        self.extendedConnectSupported = extendedConnectSupported
+    }
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let frame = self.unwrapInboundIn(data)
@@ -453,17 +464,20 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
         case .head(let request):
             // A client MUST NOT send an Extended CONNECT request unless it has received
             // SETTINGS_ENABLE_CONNECT_PROTOCOL with value 1 from the server (RFC 9220 § 3).
-            if request.method == .connect, request.extendedConnectProtocol != nil && !self.isExtendedConnectEnabled {
-                let error = HTTP3Error(
-                    code: .extendedConnectNotEnabled,
-                    message: "The server has not enabled Extended CONNECT (SETTINGS_ENABLE_CONNECT_PROTOCOL)",
-                    cause: nil,
-                    errorCode: nil,
-                    location: .here()
-                )
-                context.fireErrorCaught(error)
-                promise?.fail(error)
-                return
+            if request.method == .connect, request.extendedConnectProtocol != nil {
+                guard self.extendedConnectSupported else {
+                    let error = HTTP3Error(
+                        code: .extendedConnectNotEnabled,
+                        message: "The server has not enabled Extended CONNECT (SETTINGS_ENABLE_CONNECT_PROTOCOL)",
+                        cause: nil,
+                        errorCode: nil,
+                        location: .here()
+                    )
+                    context.fireErrorCaught(error)
+                    promise?.fail(error)
+
+                    return
+                }
             }
 
             var fields = [HTTPField]()
@@ -508,7 +522,7 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
 
     public func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         if let settings = event as? ReceivedSettings {
-            self.isExtendedConnectEnabled = settings.extendedConnectSupported
+            self.extendedConnectSupported = settings.extendedConnectSupported
             context.fireUserInboundEventTriggered(event)
             return
         }
@@ -545,11 +559,11 @@ public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
 
     /// Create a new ``HTTP3ToHTTPServerCodec``.
     ///
-    /// - Parameter isExtendedConnectEnabled: Whether Extended CONNECT requests are accepted. This must match the
+    /// - Parameter extendedConnectSupported: Whether Extended CONNECT requests are accepted. This must match the
     ///   `SETTINGS_ENABLE_CONNECT_PROTOCOL` value sent to the peer. If `false`, incoming Extended CONNECT requests will
     ///   result in a malformed message error per RFC 8441 § 3.
-    public init(isExtendedConnectEnabled: Bool) {
-        self.readState = .init(HTTPRequestPartProcessor(isExtendedConnectEnabled: isExtendedConnectEnabled))
+    public init(extendedConnectSupported: Bool = false) {
+        self.readState = .init(HTTPRequestPartProcessor(extendedConnectSupported: extendedConnectSupported))
     }
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {

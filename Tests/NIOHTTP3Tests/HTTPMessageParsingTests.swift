@@ -39,7 +39,7 @@ struct HTTPMessageParsingTests {
 
     @Test(arguments: 0...10)
     func testProcessRequestFramesWithTrailers(numDataFrames: Int) throws {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor())
         // Headers
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
@@ -81,7 +81,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testProcessInvalidHeaders() throws {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor())
         // Headers
         let action1 = machine.processFrame(frame: .headers([]))  // Invalid because missing required headers
         action1.assertError { error in
@@ -101,7 +101,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testProcessInvalidTrailers() throws {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor())
         // Valid headers
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
@@ -127,7 +127,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testEmitsEndOnClose() {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor())
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
             action1?.returnPart
@@ -142,7 +142,7 @@ struct HTTPMessageParsingTests {
 
     @Test
     func testNoActionOnCloseAfterTrailers() throws {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor())
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
             action1?.returnPart
@@ -499,7 +499,7 @@ struct HTTPMessageParsingTests {
         ])
     }
 
-    @Test func pathAndSchemeForbiddenInConnectButRequiredInExtendedConnect() {
+    @Test func pathAndSchemeForbiddenInConnect() {
         // :scheme and :path: pseudo-headers must not be present for CONNECT.
         self.assertRequestHeadersNotValid(
             fields: [
@@ -514,22 +514,28 @@ struct HTTPMessageParsingTests {
             .init(name: .method, value: "CONNECT"),
             .init(name: .authority, value: "example.com:443"),
         ])
+    }
 
-        // But :scheme and :path: pseudo-headers must be present for Extended CONNECT
-        self.assertRequestHeadersValid(fields: [
-            .init(name: .method, value: "CONNECT"),
-            .init(name: .protocol, value: "websocket"),
-            .init(name: .scheme, value: "https"),
-            .init(name: .path, value: "/chat"),
-            .init(name: .authority, value: "example.com:443"),
-        ])
+    @Test func pathAndSchemeRequiredInExtendedConnect() {
+        // :scheme and :path: pseudo-headers must be present for Extended CONNECT
+        self.assertRequestHeadersValid(
+            fields: [
+                .init(name: .method, value: "CONNECT"),
+                .init(name: .protocol, value: "websocket"),
+                .init(name: .scheme, value: "https"),
+                .init(name: .path, value: "/chat"),
+                .init(name: .authority, value: "example.com:443"),
+            ],
+            extendedConnectSupported: true
+        )
         self.assertRequestHeadersNotValid(
             fields: [
                 .init(name: .method, value: "CONNECT"),
                 .init(name: .protocol, value: "websocket"),
                 .init(name: .authority, value: "example.com:443"),
             ],
-            expectedError: "CONNECT request with a :protocol pseudo-header must contain path and scheme"
+            extendedConnectSupported: true,
+            expectedError: "CONNECT request with a :protocol pseudo-header must contain path and scheme",
         )
     }
 
@@ -544,7 +550,7 @@ struct HTTPMessageParsingTests {
     private static let extendedConnectHead: HTTP3Frame = .headers(extendedConnectFields)
 
     @Test func extendedConnectRequestIsAnErrorWhenSettingNotEnabled() {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(extendedConnectSupported: false))
         guard case .emitError(let error) = machine.processFrame(frame: Self.extendedConnectHead) else {
             Issue.record("Expected an error")
             return
@@ -557,7 +563,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test func extendedConnectRequestIsDeliveredWhenSettingEnabled() {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: true))
+        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(extendedConnectSupported: true))
         guard case .returnPart(.head(let request)) = machine.processFrame(frame: Self.extendedConnectHead) else {
             Issue.record("Expected the request head to be delivered")
             return
@@ -668,7 +674,7 @@ struct HTTPMessageParsingTests {
     ])
     func testTrailersNoPseudo(testHeader: HTTPField) throws {
         // Requests
-        var machine1 = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: false))
+        var machine1 = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor())
         _ = machine1.processFrame(frame: self.validRequestHead)
         let action1 = machine1.processFrame(frame: .headers([testHeader]))
         action1?.assertError {
@@ -700,10 +706,13 @@ struct HTTPMessageParsingTests {
 
     private func assertRequestHeadersNotValid(
         fields: [HTTPField],
+        extendedConnectSupported: Bool = false,
         expectedError: String,
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: true))
+        var machine = HTTPMessageParsingStateMachine(
+            HTTPRequestPartProcessor(extendedConnectSupported: extendedConnectSupported)
+        )
         let action = machine.processFrame(frame: .headers(fields))
         action.assertError(sourceLocation: sourceLocation) { error in
             expectH3ErrorEqual(
@@ -738,9 +747,12 @@ struct HTTPMessageParsingTests {
 
     private func assertRequestHeadersValid(
         fields: [HTTPField],
+        extendedConnectSupported: Bool = false,
         sourceLocation: SourceLocation = #_sourceLocation
     ) {
-        var machine = HTTPMessageParsingStateMachine(HTTPRequestPartProcessor(isExtendedConnectEnabled: true))
+        var machine = HTTPMessageParsingStateMachine(
+            HTTPRequestPartProcessor(extendedConnectSupported: extendedConnectSupported)
+        )
         let action = machine.processFrame(frame: .headers(fields))
         switch action {
         case .returnPart:
