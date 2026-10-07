@@ -317,11 +317,11 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case .initialized(let initialized):
             switch initialized.settingsState {
             case .awaiting(_, let localSettings):
-                // The peer's SETTINGS frame hasn't arrived yet. Let's first check if we support receiving datagrams.
+                // The peer's SETTINGS frame hasn't arrived yet. If we support receiving datagrams, then we buffer
+                // datagrams until the peer advertises their support. Otherwise, this is a connection error.
                 guard localSettings.h3Datagram else {
                     return .datagramsNotNegotiated(location: .here())
                 }
-                // OK, we support receiving datagrams. Let's buffer datagrams until the peer advertises their support.
 
             case .received(let negotiatedSettings):
                 guard negotiatedSettings.datagramsSupported else {
