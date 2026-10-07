@@ -222,6 +222,21 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
+    /// Whether both peers advertised support for HTTP datagrams. Always `false` until the peer's SETTINGS arrive.
+    @_spi(PackageInternal)
+    public var datagramsNegotiated: Bool {
+        switch self.state {
+        case .notStarted:
+            return false
+
+        case .initialized(let initialized):
+            return initialized.settingsState.datagramsNegotiated
+
+        case .finished:
+            return false
+        }
+    }
+
     private let state: State
 
     @_spi(PackageInternal)
@@ -300,8 +315,18 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             }
 
         case .initialized(let initialized):
-            guard initialized.settingsState.datagramsNegotiated else {
-                return .datagramsNotNegotiated(location: .here())
+            switch initialized.settingsState {
+            case .awaiting(_, let localSettings):
+                // The peer's SETTINGS frame hasn't arrived yet. Let's first check if we support receiving datagrams.
+                guard localSettings.h3Datagram else {
+                    return .datagramsNotNegotiated(location: .here())
+                }
+                // OK, we support receiving datagrams. Let's buffer datagrams until the peer advertises their support.
+
+            case .received(let negotiatedSettings):
+                guard negotiatedSettings.datagramsSupported else {
+                    return .datagramsNotNegotiated(location: .here())
+                }
             }
 
             // If the connection is quiescing then the datagram may never be allowed on some streams.
@@ -315,7 +340,12 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             case .notYetOpen:
                 return .buffer
             case .open:
-                return .forward
+                if initialized.settingsState.datagramsNegotiated {
+                    // We only forward datagrams when both peers have advertised support.
+                    return .forward
+                }
+                // Until then, datagrams are buffered.
+                return .buffer
             case .closed:
                 return .discard
             }

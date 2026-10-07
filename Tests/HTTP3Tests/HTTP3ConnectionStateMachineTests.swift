@@ -917,6 +917,67 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @available(anyAppleOS 26, *)
+    @Test(arguments: [HTTP3ConnectionType.server, .client])
+    func receivedDatagramBeforePeerSettings(type: HTTP3ConnectionType) {
+        var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: type)
+        _ = stateMachine.initialize()
+
+        let streamID: QUICStreamID = 0
+        switch type {
+        case .server:
+            _ = stateMachine.inboundRequestStreamReceived(streamID: streamID)
+
+        case .client:
+            stateMachine.outboundRequestStreamReady(streamID: streamID)
+        }
+
+        // The stream is open but datagrams are buffered until we know whether they're supported.
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isBuffer)
+
+        // Simulate the peer's SETTINGS arriving.
+        let action = stateMachine.receivedControlFrame(.settings(HTTP3Settings(h3Datagram: true)))
+        guard case .onSettings(let onSettings) = action else {
+            Issue.record("Unexpected action \(action)")
+            return
+        }
+        #expect(onSettings.datagramsNegotiated)
+
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
+    }
+
+    @available(anyAppleOS 26, *)
+    @Test(arguments: [HTTP3ConnectionType.server, .client])
+    func receivedDatagramBeforePeerSettingsAreDiscardedWhenNoRemoteSupport(type: HTTP3ConnectionType) {
+        var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: type)
+        _ = stateMachine.initialize()
+
+        let streamID: QUICStreamID = 0
+        switch type {
+        case .server:
+            _ = stateMachine.inboundRequestStreamReceived(streamID: streamID)
+
+        case .client:
+            stateMachine.outboundRequestStreamReady(streamID: streamID)
+        }
+
+        // The stream is open but datagrams are buffered until we know whether they're supported.
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isBuffer)
+
+        // Simulate the peer's SETTINGS arriving without support for datagrams.
+        let action = stateMachine.receivedControlFrame(.settings(HTTP3Settings(h3Datagram: false)))
+        guard case .onSettings(let onSettings) = action else {
+            Issue.record("Unexpected action \(action)")
+            return
+        }
+
+        // Datagrams weren't negotiated, so the buffered datagrams must be discarded.
+        #expect(!onSettings.datagramsNegotiated)
+
+        // The peer must not be able to send datagrams now.
+        stateMachine.expectReceivingDatagramIsConnectionError(streamID: streamID, code: .datagramsNotNegotiated)
+    }
+
+    @available(anyAppleOS 26, *)
     @Test func receivedDatagramBeforeStartedWithoutLocalSupport() {
         let stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
         stateMachine.expectReceivingDatagramIsConnectionError(streamID: 0, code: .datagramsNotNegotiated)
