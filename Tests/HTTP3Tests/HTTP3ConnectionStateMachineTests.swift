@@ -947,7 +947,7 @@ struct HTTP3ConnectionStateMachineTests {
 
     @available(anyAppleOS 26, *)
     @Test(arguments: [HTTP3ConnectionType.server, .client])
-    func receivedDatagramBeforePeerSettingsAreDiscardedWhenNoRemoteSupport(type: HTTP3ConnectionType) {
+    func receivedDatagramBeforePeerSettingsWithoutRemoteSupport(type: HTTP3ConnectionType) {
         var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: type)
         _ = stateMachine.initialize()
 
@@ -963,23 +963,39 @@ struct HTTP3ConnectionStateMachineTests {
         // The stream is open but datagrams are buffered until we know whether they're supported.
         #expect(stateMachine.receivedDatagram(streamID: streamID).isBuffer)
 
-        // Simulate the peer's SETTINGS arriving without support for datagrams.
-        let action = stateMachine.receivedControlFrame(.settings(HTTP3Settings(h3Datagram: false)))
-        guard case .onSettings(let onSettings) = action else {
-            Issue.record("Unexpected action \(action)")
-            return
-        }
+        // Simulate the peer's SETTINGS arriving with SETTINGS_H3_DATAGRAM set to 0. Now we know that the datagram sent
+        // by the peer earlier was not valid. Therefore we expect a connection error.
+        stateMachine.expectReceivingConflictingSettingsIsConnectionError(
+            HTTP3Settings(h3Datagram: false),
+            code: .datagramsNotNegotiated
+        )
 
-        // Datagrams weren't negotiated, so the buffered datagrams must be discarded.
-        #expect(!onSettings.datagramsNegotiated)
+        // The connection is finished, so later datagrams should be dropped.
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isDiscard)
+    }
 
-        // The peer must not be able to send datagrams now.
-        stateMachine.expectReceivingDatagramIsConnectionError(streamID: streamID, code: .datagramsNotNegotiated)
+    @available(anyAppleOS 26, *)
+    @Test func receivedDiscardedDatagramBeforePeerSettingsWithoutRemoteSupport() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: .server)
+        _ = stateMachine.initialize()
+
+        // A datagram for a closed stream is discarded rather than buffered, but it's still a datagram the peer must
+        // not have sent.
+        let streamID = idGenerator.inboundBidi()
+        _ = stateMachine.inboundRequestStreamReceived(streamID: streamID)
+        _ = stateMachine.streamClosed(streamID: streamID, streamType: .request)
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isDiscard)
+
+        stateMachine.expectReceivingConflictingSettingsIsConnectionError(
+            HTTP3Settings(h3Datagram: false),
+            code: .datagramsNotNegotiated
+        )
     }
 
     @available(anyAppleOS 26, *)
     @Test func receivedDatagramBeforeStartedWithoutLocalSupport() {
-        let stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
         stateMachine.expectReceivingDatagramIsConnectionError(streamID: 0, code: .datagramsNotNegotiated)
     }
 
@@ -1257,7 +1273,7 @@ extension HTTP3ConnectionStateMachine {
         }
     }
 
-    func expectReceivingDatagramIsConnectionError(
+    mutating func expectReceivingDatagramIsConnectionError(
         streamID: QUICStreamID,
         code: HTTP3Error.Code,
         sourceLocation: SourceLocation = #_sourceLocation
@@ -1271,6 +1287,19 @@ extension HTTP3ConnectionStateMachine {
         case .connectionError(let error):
             error.expect(code: code, h3ErrorCode: .generalProtocolError, sourceLocation: sourceLocation)
         }
+    }
+
+    mutating func expectReceivingConflictingSettingsIsConnectionError(
+        _ settings: HTTP3Settings,
+        code: HTTP3Error.Code,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        let action = self.receivedControlFrame(.settings(settings))
+        guard case .emitConnectionError(let error) = action else {
+            Issue.record("Unexpected action \(action)", sourceLocation: sourceLocation)
+            return
+        }
+        error.expect(code: code, h3ErrorCode: .generalProtocolError, sourceLocation: sourceLocation)
     }
 
     /// Returns a state machine which has already exchanged settings with the 'remote' and created the required streams.
