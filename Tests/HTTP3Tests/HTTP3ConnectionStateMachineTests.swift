@@ -403,6 +403,58 @@ struct HTTP3ConnectionStateMachineTests {
         #expect(action2 == nil)
     }
 
+    @available(anyAppleOS 26, *)
+    @Test func clientExtendedConnectSettingsValueIgnored() {
+        // A client's value of this setting is meaningless (RFC 8441 § 3). The state machine should ignore the value.
+        let localSettings = HTTP3Settings(enableConnectProtocol: true)
+        let stateMachine = HTTP3ConnectionStateMachine(settings: localSettings, type: .client)
+
+        #expect(stateMachine.extendedConnectSupported == false)
+    }
+
+    @available(anyAppleOS 26, *)
+    @Test(arguments: [true, false])
+    func clientLearnsExtendedConnectSupportFromServer(serverAllowsExtendedConnect: Bool) {
+        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .client)
+
+        // Until the server's SETTINGS arrive, Extended CONNECT isn't allowed.
+        #expect(stateMachine.extendedConnectSupported == false)
+        #expect(stateMachine.initialize() == .createControlStream)
+        #expect(stateMachine.extendedConnectSupported == false)
+
+        let action = stateMachine.receivedControlFrame(
+            .settings(HTTP3Settings(enableConnectProtocol: serverAllowsExtendedConnect))
+        )
+        guard case .onSettings(let settings) = action else {
+            Issue.record("Unexpected action \(String(describing: action))")
+            return
+        }
+
+        #expect(settings.extendedConnectSupported == serverAllowsExtendedConnect)
+        #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
+    }
+
+    @available(anyAppleOS 26, *)
+    @Test(arguments: [true, false], [true, false])
+    func serverUsesItsOwnExtendedConnectSetting(serverAllowsExtendedConnect: Bool, clientSent: Bool) {
+        let localSettings = HTTP3Settings(enableConnectProtocol: serverAllowsExtendedConnect)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: localSettings, type: .server)
+
+        // The server knows its own setting from the start. It doesn't need to wait for the client's SETTINGS.
+        #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
+        #expect(stateMachine.initialize() == .createControlStream)
+        #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
+
+        // Whatever the client sends for this setting is ignored.
+        let action = stateMachine.receivedControlFrame(.settings(HTTP3Settings(enableConnectProtocol: clientSent)))
+        guard case .onSettings(let settings) = action else {
+            Issue.record("Unexpected action \(String(describing: action))")
+            return
+        }
+        #expect(settings.extendedConnectSupported == serverAllowsExtendedConnect)
+        #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
+    }
+
     // MARK: GOAWAY
 
     @available(anyAppleOS 26, *)
@@ -865,8 +917,85 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @available(anyAppleOS 26, *)
+    @Test(arguments: [HTTP3ConnectionType.server, .client])
+    func receivedDatagramBeforePeerSettings(type: HTTP3ConnectionType) {
+        var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: type)
+        _ = stateMachine.initialize()
+
+        let streamID: QUICStreamID = 0
+        switch type {
+        case .server:
+            _ = stateMachine.inboundRequestStreamReceived(streamID: streamID)
+
+        case .client:
+            stateMachine.outboundRequestStreamReady(streamID: streamID)
+        }
+
+        // The stream is open but datagrams are buffered until we know whether they're supported.
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isBuffer)
+
+        // Simulate the peer's SETTINGS arriving.
+        let action = stateMachine.receivedControlFrame(.settings(HTTP3Settings(h3Datagram: true)))
+        guard case .onSettings(let onSettings) = action else {
+            Issue.record("Unexpected action \(action)")
+            return
+        }
+        #expect(onSettings.datagramsNegotiated)
+
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
+    }
+
+    @available(anyAppleOS 26, *)
+    @Test(arguments: [HTTP3ConnectionType.server, .client])
+    func receivedDatagramBeforePeerSettingsWithoutRemoteSupport(type: HTTP3ConnectionType) {
+        var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: type)
+        _ = stateMachine.initialize()
+
+        let streamID: QUICStreamID = 0
+        switch type {
+        case .server:
+            _ = stateMachine.inboundRequestStreamReceived(streamID: streamID)
+
+        case .client:
+            stateMachine.outboundRequestStreamReady(streamID: streamID)
+        }
+
+        // The stream is open but datagrams are buffered until we know whether they're supported.
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isBuffer)
+
+        // Simulate the peer's SETTINGS arriving with SETTINGS_H3_DATAGRAM set to 0. Now we know that the datagram sent
+        // by the peer earlier was not valid. Therefore we expect a connection error.
+        stateMachine.expectReceivingConflictingSettingsIsConnectionError(
+            HTTP3Settings(h3Datagram: false),
+            code: .datagramsNotNegotiated
+        )
+
+        // The connection is finished, so later datagrams should be dropped.
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isDiscard)
+    }
+
+    @available(anyAppleOS 26, *)
+    @Test func receivedDiscardedDatagramBeforePeerSettingsWithoutRemoteSupport() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: .server)
+        _ = stateMachine.initialize()
+
+        // A datagram for a closed stream is discarded rather than buffered, but it's still a datagram the peer must
+        // not have sent.
+        let streamID = idGenerator.inboundBidi()
+        _ = stateMachine.inboundRequestStreamReceived(streamID: streamID)
+        _ = stateMachine.streamClosed(streamID: streamID, streamType: .request)
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isDiscard)
+
+        stateMachine.expectReceivingConflictingSettingsIsConnectionError(
+            HTTP3Settings(h3Datagram: false),
+            code: .datagramsNotNegotiated
+        )
+    }
+
+    @available(anyAppleOS 26, *)
     @Test func receivedDatagramBeforeStartedWithoutLocalSupport() {
-        let stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
         stateMachine.expectReceivingDatagramIsConnectionError(streamID: 0, code: .datagramsNotNegotiated)
     }
 
@@ -1144,7 +1273,7 @@ extension HTTP3ConnectionStateMachine {
         }
     }
 
-    func expectReceivingDatagramIsConnectionError(
+    mutating func expectReceivingDatagramIsConnectionError(
         streamID: QUICStreamID,
         code: HTTP3Error.Code,
         sourceLocation: SourceLocation = #_sourceLocation
@@ -1158,6 +1287,19 @@ extension HTTP3ConnectionStateMachine {
         case .connectionError(let error):
             error.expect(code: code, h3ErrorCode: .generalProtocolError, sourceLocation: sourceLocation)
         }
+    }
+
+    mutating func expectReceivingConflictingSettingsIsConnectionError(
+        _ settings: HTTP3Settings,
+        code: HTTP3Error.Code,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        let action = self.receivedControlFrame(.settings(settings))
+        guard case .emitConnectionError(let error) = action else {
+            Issue.record("Unexpected action \(action)", sourceLocation: sourceLocation)
+            return
+        }
+        error.expect(code: code, h3ErrorCode: .generalProtocolError, sourceLocation: sourceLocation)
     }
 
     /// Returns a state machine which has already exchanged settings with the 'remote' and created the required streams.
