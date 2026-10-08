@@ -159,7 +159,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
                 /// If we are awaiting the peer's SETTINGS, this method updates the state to mark that the peer has sent
                 /// a datagram. This is so that if we later receive the peer's SETTINGS with SETTINGS_H3_DATAGRAM set to
-                /// 0, we can emit a connection error. 
+                /// 0, we can emit a connection error.
                 mutating func datagramReceived() {
                     switch consume self {
                     case .awaiting(var awaiting):
