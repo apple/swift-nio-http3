@@ -605,10 +605,10 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             )
             let receivedSettings = ReceivedSettings(
                 datagramsSupported: onSettings.datagramsNegotiated,
-                extendedConnectSupported: onSettings.extendedConnectSupported
+                extendedConnectSupported: onSettings.extendedConnect.isSupported
             )
 
-            if let streamIDsToNotify = onSettings.streamIDsToNotify {
+            if case .supported(let streamIDsToNotify) = onSettings.extendedConnect {
                 for streamID in streamIDsToNotify {
                     self.streamHandlers[streamID]?.peerSettingsReceived(receivedSettings)
                 }

@@ -153,8 +153,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 /// `SETTINGS_ENABLE_CONNECT_PROTOCOL` with a value of 1 (RFC 9220 § 3).
                 ///
                 /// - Returns:
-                ///   - For clients, `false` until the server's SETTINGS arrive, and from then on the value of
-                ///     `SETTINGS_ENABLE_CONNECT_PROTOCOL` in those SETTINGS.
+                ///   - For clients, `false` until the server's SETTINGS arrive, and from then on, the value of
+                ///     `SETTINGS_ENABLE_CONNECT_PROTOCOL` in the server's SETTINGS.
                 ///   - For servers, the value of ``HTTP3Settings/enableConnectProtocol`` passed when creating this
                 ///     state machine (see ``HTTP3ConnectionStateMachine/init(settings:type:)``).
                 var extendedConnectSupported: Bool {
@@ -791,9 +791,31 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             /// The peer's maximum number of QPACK blocked streams
             public var qpackBlockedStreams: UInt64
             /// Whether the server is willing to receive Extended CONNECT requests (`SETTINGS_ENABLE_CONNECT_PROTOCOL`).
-            public var extendedConnectSupported: Bool
-            /// The stream IDs to notify about the peer's SETTINGS arriving.
-            public var streamIDsToNotify: [QUICStreamID]?
+            public var extendedConnect: ExtendedConnectSupport
+
+            @_spi(PackageInternal)
+            public enum ExtendedConnectSupport: Hashable, Sendable {
+                /// The server does not support Extended CONNECT.
+                case unsupported
+
+                /// The server supports Extended CONNECT.
+                ///
+                /// `streamIDsToNotify` contains the outbound request streams that were opened before the server's
+                /// SETTINGS arrived. These streams must now be notified about the fact that the server supports
+                /// Extended CONNECT. This array is empty unless we are the client.
+                case supported(streamIDsToNotify: [QUICStreamID])
+
+                /// Whether the server supports Extended CONNECT.
+                public var isSupported: Bool {
+                    switch self {
+                    case .unsupported:
+                        return false
+
+                    case .supported:
+                        return true
+                    }
+                }
+            }
         }
     }
 
@@ -809,12 +831,20 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 let datagramsNegotiated = initializedState.settingsState.datagramsNegotiated
                 let extendedConnectSupported = initializedState.settingsState.extendedConnectSupported
 
-                var streamIDsToNotify: [QUICStreamID]? = nil
-                // If we are a client, we need to send this event to all open outbound request streams.
-                if initializedState.type == .client {
-                    streamIDsToNotify = initializedState.streamIDTracker.getOpenStreamIDs { streamID in
-                        streamID.type == .clientInitiatedBidirectional
+                let extendedConnect: ControlFrameReceivedAction.OnSettings.ExtendedConnectSupport
+                if extendedConnectSupported {
+                    var streamIDsToNotify: [QUICStreamID] = []
+                    // If we are a client, we may have opened outbound request streams before we received the server's
+                    // SETTINGS. Now that the server has confirmed they support Extended CONNECT, we need to inform all
+                    // open outbound request streams about it.
+                    if initializedState.type == .client {
+                        streamIDsToNotify = initializedState.streamIDTracker.getOpenStreamIDs { streamID in
+                            streamID.type == .clientInitiatedBidirectional
+                        }
                     }
+                    extendedConnect = .supported(streamIDsToNotify: streamIDsToNotify)
+                } else {
+                    extendedConnect = .unsupported
                 }
 
                 self = .init(state: .initialized(initializedState))
@@ -823,8 +853,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                         datagramsNegotiated: datagramsNegotiated,
                         qpackMaximumTableCapacity: payload.settings.qpackMaximumTableCapacity,
                         qpackBlockedStreams: payload.settings.qpackBlockedStreams,
-                        extendedConnectSupported: extendedConnectSupported,
-                        streamIDsToNotify: streamIDsToNotify
+                        extendedConnect: extendedConnect
                     )
                 )
             case .notStarted:
