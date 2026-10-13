@@ -86,7 +86,7 @@ public enum HTTP3MessageValidation {
         let scheme = request.scheme
         let path = request.path
         let authority = request.authority
-        let host = request.headerFields[.http3Host]
+        let host = request.headerFields[.host]
 
         // All HTTP/3 requests MUST include exactly one value for the :method, :scheme, and :path pseudo-header fields,
         // unless the request is a CONNECT request
@@ -269,5 +269,5 @@ public enum HTTP3MessageValidation {
 extension HTTPField.Name {
     // `HTTPField.Name.host` is unavailable in HTTPTypes (it steers callers to `:authority`), but
     // RFC 9114 requires us to validate `Host` against `:authority`, so construct the name once.
-    static let http3Host = HTTPField.Name(parsed: "host")!
+    static let host = HTTPField.Name(parsed: "host")!
 }
