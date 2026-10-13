@@ -26,7 +26,7 @@ protocol HTTPMessagePart {
 
 extension HTTPRequestPart: HTTPMessagePart {
     static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
-        .head(try HTTP3MessageValidation.request(fields: fields))
+        .head(try HTTP3MessageDecoding.request(fields: fields))
     }
 
     static func body(buffer: ByteBuffer) -> HTTPRequestPart {
@@ -34,7 +34,7 @@ extension HTTPRequestPart: HTTPMessagePart {
     }
 
     static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
-        .end(try HTTP3MessageValidation.trailers(fields: trailers))
+        .end(try HTTP3MessageDecoding.trailers(fields: trailers))
     }
 
     static func end() -> HTTPRequestPart {
@@ -44,7 +44,7 @@ extension HTTPRequestPart: HTTPMessagePart {
 
 extension HTTPResponsePart: HTTPMessagePart {
     static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
-        .head(try HTTP3MessageValidation.response(fields: fields))
+        .head(try HTTP3MessageDecoding.response(fields: fields))
     }
 
     static func body(buffer: ByteBuffer) -> HTTPResponsePart {
@@ -52,7 +52,7 @@ extension HTTPResponsePart: HTTPMessagePart {
     }
 
     static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
-        .end(try HTTP3MessageValidation.trailers(fields: trailers))
+        .end(try HTTP3MessageDecoding.trailers(fields: trailers))
     }
 
     static func end() -> HTTPResponsePart {

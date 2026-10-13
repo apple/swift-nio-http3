@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
+
 import enum NIOCore.SocketAddress
 
 /// Turns decoded field sections into HTTP messages, enforcing the rules RFC 9114 § 4.2 and § 4.3 place on them.
@@ -20,7 +21,7 @@ import enum NIOCore.SocketAddress
 /// Every violation is a malformed message, which RFC 9114 § 4.1.2 requires to be treated as a stream error of type
 /// H3_MESSAGE_ERROR.
 @_spi(PackageInternal)
-public enum HTTP3MessageValidation {
+public enum HTTP3MessageDecoding {
     struct FieldError: Error, CustomStringConvertible {
         let description: String
     }
