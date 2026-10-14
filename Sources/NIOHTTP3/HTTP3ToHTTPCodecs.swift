@@ -27,21 +27,6 @@ protocol HTTPMessagePartProcessor {
     func end() -> Part
 }
 
-struct HTTP3FieldError: Error, CustomStringConvertible {
-    let description: String
-}
-
-private func invalidHeadersError(message: String, location: HTTP3Error.SourceLocation) -> HTTP3Error {
-    let cause = HTTP3FieldError(description: message)
-    return HTTP3Error(
-        code: .malformedMessage,
-        message: "Invalid headers",
-        cause: cause,
-        errorCode: .messageError,
-        location: location
-    )
-}
-
 /// Processes and validates the parts of a request, as received by a server.
 struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
     /// Whether we can accept Extended CONNECT requests, i.e. if we sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1.
@@ -51,196 +36,10 @@ struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
         self.extendedConnectSupported = extendedConnectSupported
     }
 
-    private static func validateNonConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
-        precondition(request.method != .connect)
-
-        let scheme = request.scheme
-        let path = request.path
-        let authority = request.authority
-        let host = request.headerFields[.host]
-
-        // All HTTP/3 requests MUST include exactly one value for the :method, :scheme, and :path pseudo-header fields,
-        // unless the request is a CONNECT request
-        guard let scheme else {
-            throw invalidHeadersError(message: "Missing scheme", location: .here())
-        }
-        guard let path else {
-            throw invalidHeadersError(message: "Missing path", location: .here())
-        }
-        // If the :scheme pseudo-header field identifies a scheme that has a mandatory authority component (including
-        // "http" and "https"), the request MUST contain either an :authority pseudo-header field or a Host header
-        // field.
-        if scheme == "https" || scheme == "http" {
-            guard host != nil || authority != nil else {
-                throw invalidHeadersError(message: "Missing host and authority", location: .here())
-            }
-        }
-        // If these fields are present, they MUST NOT be empty
-        if let host, host.isEmpty {
-            throw invalidHeadersError(message: "host field is empty", location: .here())
-        }
-        if let authority, authority.isEmpty {
-            throw invalidHeadersError(message: "authority field is empty", location: .here())
-        }
-        // If both fields are present, they MUST contain the same value
-        if let host, let authority {
-            guard host == authority else {
-                throw invalidHeadersError(message: "Mismatched authority and host", location: .here())
-            }
-        }
-
-        // The path pseudo-header field MUST NOT be empty for "http" or "https" URIs
-        if scheme == "https" || scheme == "http" {
-            guard !path.isEmpty else {
-                throw invalidHeadersError(message: "Path field is empty", location: .here())
-            }
-        }
-    }
-
-    private func validateConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
-        precondition(request.method == .connect)
-
-        let scheme = request.scheme
-        let path = request.path
-        let authority = request.authority
-
-        if request.extendedConnectProtocol != nil {
-            // This request contains a :protocol pseudo-header. As such, the rules of RFC 8441 §4 apply.
-            guard scheme != nil, path != nil else {
-                throw invalidHeadersError(
-                    message: "CONNECT request with a :protocol pseudo-header must contain path and scheme",
-                    location: .here()
-                )
-            }
-
-            // A client MUST NOT send an Extended CONNECT request unless we sent SETTINGS_ENABLE_CONNECT_PROTOCOL
-            // with a value of 1 (RFC 8441 § 3).
-            guard self.extendedConnectSupported else {
-                throw HTTP3Error(
-                    code: .extendedConnectNotEnabled,
-                    message: "Extended CONNECT request received, but SETTINGS_ENABLE_CONNECT_PROTOCOL was not sent",
-                    cause: nil,
-                    errorCode: .messageError,
-                    location: .here()
-                )
-            }
-        } else {
-            // A CONNECT request MUST be constructed as follows:
-
-            // 1. The :scheme and :path pseudo-header fields are omitted
-            guard scheme == nil && path == nil else {
-                throw invalidHeadersError(message: "CONNECT request must not contain path or scheme", location: .here())
-            }
-
-            // 2. The :authority pseudo-header field contains the host and port to connect to (equivalent to the
-            //   authority-form of the request-target of CONNECT requests; see Section 7.1 of [HTTP]).
-            guard let authority else {
-                throw invalidHeadersError(message: "CONNECT request must contain authority", location: .here())
-            }
-
-            guard Self.isValidConnectAuthority(authority) else {
-                throw invalidHeadersError(message: "Invalid :authority pseudo-header value", location: .here())
-            }
-        }
-    }
-
-    /// Whether `authority` is in authority-form, `uri-host ":" port` (RFC 9110 § 7.1).
-    private static func isValidConnectAuthority(_ authority: String) -> Bool {
-        let utf8 = authority.utf8
-        let hostEnd: String.UTF8View.Index
-
-        if utf8.first == UInt8(ascii: "[") {
-            // IP-literal: must be an IPv6 address.
-            guard let close = utf8.firstIndex(of: UInt8(ascii: "]")) else {
-                return false
-            }
-
-            let host = authority[utf8.index(after: utf8.startIndex)..<close]
-            // IPv6 Zone IDs are not supported.
-            guard !host.utf8.contains(UInt8(ascii: "%")) else {
-                return false
-            }
-            // Check if `host` is a valid IPv6 address.
-            guard case .v6 = try? SocketAddress(ipAddress: String(host), port: 0) else {
-                return false
-            }
-            hostEnd = utf8.index(after: close)
-        } else {
-            // IPv4address or reg-name.
-            guard let colon = utf8.firstIndex(of: UInt8(ascii: ":")) else {
-                return false
-            }
-
-            let host = utf8[..<colon]
-            guard !host.isEmpty, host.allSatisfy(Self.isRegNameByte) else {
-                return false
-            }
-            hostEnd = colon
-        }
-
-        // Check that there is something after the ":".
-        guard hostEnd < utf8.endIndex, utf8[hostEnd] == UInt8(ascii: ":") else {
-            return false
-        }
-        let port = utf8[utf8.index(after: hostEnd)...]
-
-        guard port.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }),
-            let portInt = Int(Substring(port))
-        else {
-            return false
-        }
-
-        return portInt <= 65535
-    }
-
-    /// Whether the provided byte is a valid `reg-name` byte (see RFC 3986, Appendix A).
-    private static func isRegNameByte(_ byte: UInt8) -> Bool {
-        switch byte {
-        case UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "A")...UInt8(ascii: "Z"),
-            UInt8(ascii: "0")...UInt8(ascii: "9"):
-            return true
-
-        case UInt8(ascii: "-"), UInt8(ascii: "."), UInt8(ascii: "_"), UInt8(ascii: "~"),  // unreserved
-            UInt8(ascii: "%"),  // pct-encoded
-            UInt8(ascii: "!"), UInt8(ascii: "$"), UInt8(ascii: "&"), UInt8(ascii: "'"), UInt8(ascii: "("),
-            UInt8(ascii: ")"), UInt8(ascii: "*"), UInt8(ascii: "+"), UInt8(ascii: ","), UInt8(ascii: ";"),
-            UInt8(ascii: "="):  // sub-delims
-            return true
-
-        default:
-            return false
-        }
-    }
-
     func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
-        let request: HTTPRequest
-        do {
-            request = try HTTPRequest(parsed: fields)
-        } catch {
-            throw HTTP3Error(
-                code: .malformedMessage,
-                message: "Invalid headers",
-                cause: error,
-                errorCode: .messageError,
-                location: .here()
-            )
-        }
-        if let te = request.headerFields[.te] {
-            if te != "trailers" {
-                throw invalidHeadersError(message: "te field must contain trailers if present", location: .here())
-            }
-        }
-        if request.headerFields.contains(.transferEncoding) {
-            throw invalidHeadersError(message: "transfer-encoding field must not be present", location: .here())
-        }
-
-        if request.method == .connect {
-            try self.validateConnectRequest(request)
-        } else {
-            try Self.validateNonConnectRequest(request)
-        }
-
-        return .head(request)
+        return .head(
+            try HTTP3MessageDecoding.request(fields: fields, extendedConnectSupported: self.extendedConnectSupported)
+        )
     }
 
     func body(buffer: ByteBuffer) -> HTTPRequestPart {
@@ -248,21 +47,7 @@ struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
     }
 
     func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
-        if trailers.isEmpty {
-            return .end(nil)
-        } else {
-            do {
-                return try .end(HTTPFields(parsedTrailerFields: trailers))
-            } catch {
-                throw HTTP3Error(
-                    code: .malformedMessage,
-                    message: "Invalid trailers",
-                    cause: error,
-                    errorCode: .messageError,
-                    location: .here()
-                )
-            }
-        }
+        .end(try HTTP3MessageDecoding.trailers(fields: trailers))
     }
 
     func end() -> HTTPRequestPart {
@@ -273,25 +58,7 @@ struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
 /// Parses the parts of a response, as received by a client.
 struct HTTPResponsePartProcessor: HTTPMessagePartProcessor {
     func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
-        let response: HTTPResponse
-        do {
-            response = try HTTPResponse(parsed: fields)
-        } catch {
-            throw HTTP3Error(
-                code: .malformedMessage,
-                message: "Invalid headers",
-                cause: error,
-                errorCode: .messageError,
-                location: .here()
-            )
-        }
-        if response.headerFields.contains(.te) {
-            throw invalidHeadersError(message: "te field must not be present", location: .here())
-        }
-        if response.headerFields.contains(.transferEncoding) {
-            throw invalidHeadersError(message: "transfer-encoding field must not be present", location: .here())
-        }
-        return .head(response)
+        .head(try HTTP3MessageDecoding.response(fields: fields))
     }
 
     func body(buffer: ByteBuffer) -> HTTPResponsePart {
@@ -299,21 +66,7 @@ struct HTTPResponsePartProcessor: HTTPMessagePartProcessor {
     }
 
     func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
-        if trailers.isEmpty {
-            return .end(nil)
-        } else {
-            do {
-                return try .end(HTTPFields(parsedTrailerFields: trailers))
-            } catch {
-                throw HTTP3Error(
-                    code: .malformedMessage,
-                    message: "Invalid trailers",
-                    cause: error,
-                    errorCode: .messageError,
-                    location: .here()
-                )
-            }
-        }
+        .end(try HTTP3MessageDecoding.trailers(fields: trailers))
     }
 
     func end() -> HTTPResponsePart {
@@ -631,9 +384,3 @@ public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
 
 @available(*, unavailable)
 extension HTTP3ToHTTPServerCodec: Sendable {}
-
-extension HTTPField.Name {
-    // `HTTPField.Name.host` is unavailable in HTTPTypes (it steers callers to `:authority`), but
-    // RFC 9114 requires us to validate `Host` against `:authority`, so construct the name once.
-    static let host = HTTPField.Name(parsed: "host")!
-}

@@ -81,13 +81,12 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
 
         struct Initialized: ~Copyable {
-            /// Tracks whether the peer's SETTINGS have arrived.
+            /// Determines the settings that are in effect on the connection.
             enum NegotiatedSettingsState: ~Copyable {
                 /// The peer's SETTINGS haven't arrived yet.
                 case awaiting(type: HTTP3ConnectionType, localSettings: HTTP3Settings)
 
-                /// The peer's SETTINGS have arrived. New streams created from this point onward should be informed of
-                /// the settings upon initialization.
+                /// The peer's SETTINGS have arrived.
                 case received(NegotiatedSettings)
 
                 struct NegotiatedSettings: Hashable, Sendable {
@@ -103,7 +102,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                     }
                 }
 
-                /// The peer's SETTINGS have arrived.
+                /// Updates the state with negotiated settings values.
                 mutating func settingsReceived(_ peerSettings: HTTP3Settings) {
                     switch consume self {
                     case .awaiting(let role, let localSettings):
@@ -162,6 +161,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                     case .awaiting(let role, let localSettings):
                         switch role {
                         case .client:
+                            // Only servers can express this setting. But we haven't received their SETTINGS yet, so per
+                            // RFC 9114 § 7.2.4.2, we just use the default value 0 here (RFC 9220).
                             return false
 
                         case .server:
