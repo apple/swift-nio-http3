@@ -162,7 +162,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                         switch role {
                         case .client:
                             // Only servers can express this setting. But we haven't received their SETTINGS yet, so per
-                            // RFC 9114 § 7.2.4.2, we just use the default value 0 here (RFC 9220).
+                            // RFC 9114 § 7.2.4.2, we just use the default value 0 (RFC 9220) here.
                             return false
 
                         case .server:
