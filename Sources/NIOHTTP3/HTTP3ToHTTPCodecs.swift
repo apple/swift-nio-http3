@@ -55,7 +55,7 @@ struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
     }
 }
 
-/// Parses the parts of a response, as received by a client.
+/// Processes and validates the parts of a response, as received by a server.
 struct HTTPResponsePartProcessor: HTTPMessagePartProcessor {
     func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         .head(try HTTP3MessageDecoding.response(fields: fields))
