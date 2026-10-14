@@ -92,37 +92,37 @@ public enum HTTP3MessageDecoding {
         // All HTTP/3 requests MUST include exactly one value for the :method, :scheme, and :path pseudo-header fields,
         // unless the request is a CONNECT request
         guard let scheme else {
-            throw invalidHeadersError(message: "Missing scheme", location: .here())
+            throw Self.invalidHeadersError(message: "Missing scheme", location: .here())
         }
         guard let path else {
-            throw invalidHeadersError(message: "Missing path", location: .here())
+            throw Self.invalidHeadersError(message: "Missing path", location: .here())
         }
         // If the :scheme pseudo-header field identifies a scheme that has a mandatory authority component (including
         // "http" and "https"), the request MUST contain either an :authority pseudo-header field or a Host header
         // field.
         if scheme == "https" || scheme == "http" {
             guard host != nil || authority != nil else {
-                throw invalidHeadersError(message: "Missing host and authority", location: .here())
+                throw Self.invalidHeadersError(message: "Missing host and authority", location: .here())
             }
         }
         // If these fields are present, they MUST NOT be empty
         if let host, host.isEmpty {
-            throw invalidHeadersError(message: "host field is empty", location: .here())
+            throw Self.invalidHeadersError(message: "host field is empty", location: .here())
         }
         if let authority, authority.isEmpty {
-            throw invalidHeadersError(message: "authority field is empty", location: .here())
+            throw Self.invalidHeadersError(message: "authority field is empty", location: .here())
         }
         // If both fields are present, they MUST contain the same value
         if let host, let authority {
             guard host == authority else {
-                throw invalidHeadersError(message: "Mismatched authority and host", location: .here())
+                throw Self.invalidHeadersError(message: "Mismatched authority and host", location: .here())
             }
         }
 
         // The path pseudo-header field MUST NOT be empty for "http" or "https" URIs
         if scheme == "https" || scheme == "http" {
             guard !path.isEmpty else {
-                throw invalidHeadersError(message: "Path field is empty", location: .here())
+                throw Self.invalidHeadersError(message: "Path field is empty", location: .here())
             }
         }
     }
@@ -140,7 +140,7 @@ public enum HTTP3MessageDecoding {
         if request.extendedConnectProtocol != nil {
             // This request contains a :protocol pseudo-header. As such, the rules of RFC 8441 §4 apply.
             guard scheme != nil, path != nil else {
-                throw invalidHeadersError(
+                throw Self.invalidHeadersError(
                     message: "CONNECT request with a :protocol pseudo-header must contain path and scheme",
                     location: .here()
                 )
@@ -162,7 +162,7 @@ public enum HTTP3MessageDecoding {
 
             // 1. The :scheme and :path pseudo-header fields are omitted
             guard scheme == nil && path == nil else {
-                throw invalidHeadersError(message: "CONNECT request must not contain path or scheme", location: .here())
+                throw Self.invalidHeadersError(message: "CONNECT request must not contain path or scheme", location: .here())
             }
 
             // 2. The :authority pseudo-header field contains the host and port to connect to (equivalent to the
