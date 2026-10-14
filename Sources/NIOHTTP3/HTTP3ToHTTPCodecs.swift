@@ -37,7 +37,7 @@ struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
     }
 
     func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
-        return .head(
+        .head(
             try HTTP3MessageDecoding.request(fields: fields, extendedConnectSupported: self.extendedConnectSupported)
         )
     }

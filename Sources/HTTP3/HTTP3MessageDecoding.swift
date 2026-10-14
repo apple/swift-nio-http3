@@ -127,7 +127,10 @@ public enum HTTP3MessageDecoding {
         }
     }
 
-    private static func validateConnectRequest(_ request: HTTPRequest, extendedConnectSupported: Bool) throws(HTTP3Error) {
+    private static func validateConnectRequest(
+        _ request: HTTPRequest,
+        extendedConnectSupported: Bool
+    ) throws(HTTP3Error) {
         precondition(request.method == .connect)
 
         let scheme = request.scheme
