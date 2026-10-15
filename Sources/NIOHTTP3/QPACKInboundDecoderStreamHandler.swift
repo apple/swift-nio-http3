@@ -17,7 +17,8 @@ import NIOCore
 @_spi(PackageInternal) import QPACK
 
 protocol QPACKInboundDecoderStreamDelegate: ~Copyable {
-    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction)
+    /// - Throws: A connection error, if the instruction can't be applied.
+    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction) throws(QPACKError)
 
     func onError(_ error: HTTP3Error)
 }
@@ -52,8 +53,12 @@ final class QPACKInboundDecoderStreamHandler<Delegate: QPACKInboundDecoderStream
         let byteBuffer = Self.unwrapInboundIn(data)
         do {
             try self.decoder.process(buffer: byteBuffer) { instruction in
-                self.delegate.onReceivedInstruction(instruction)
+                try self.delegate.onReceivedInstruction(instruction)
             }
+        } catch let error as QPACKError {
+            // The instruction parsed, but the encoder can't apply it.
+            assert(error.isConnectionError)
+            self.delegate.onError(HTTP3Error(error, location: .here()))
         } catch {
             let streamError = HTTP3Error(
                 code: .qpackDecoderStreamError,
