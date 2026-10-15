@@ -59,7 +59,7 @@ public protocol QPACKConnectionDelegate {
 public protocol QPACKDecodeReceiver {
     /// Inform the QPACKDecodeReceiver that a decode has happened.
     ///
-    /// Called once per ``QPACKCoder/decodeHeaders(_:streamID:decodeReceiver:)``, unless the stream is closed via
+    /// Called once per ``QPACKCoder/decodeFields(_:streamID:decodeReceiver:)``, unless the stream is closed via
     /// ``QPACKCoder/requestStreamClosed(streamID:seenEOF:)`` with `seenEOF: false` while the decode is still
     /// blocked, in which case the pending decode is dropped and this is never called.
     ///
@@ -68,7 +68,7 @@ public protocol QPACKDecodeReceiver {
     ///
     /// - Important: If the decoder has all the necessary QPACK decode information available the decoder
     ///              will invoke this method syncronously from
-    ///              ``QPACKCoder/decodeHeaders(_:streamID:decodeReceiver:)``.
+    ///              ``QPACKCoder/decodeFields(_:streamID:decodeReceiver:)``.
     func decodeResult(_ result: Result<[HTTPField], HTTP3Error>)
 }
 
@@ -190,10 +190,6 @@ public final class QPACKCoder<
         }
     }
 
-    public func connectionError(_ httpError: HTTP3Error) {
-        self.connection.connectionError(httpError)
-    }
-
     // MARK: Encode
 
     /// QPACK encode your HTTP fields. If new instructions need to be send to the peer as a side-effect of the encode the
@@ -275,7 +271,7 @@ public final class QPACKCoder<
     ///   - streamID: The stream id of the stream, that received the header frame
     ///   - decodeReceiver: The object that needs to be informed about the decode result.
     @_spi(PackageInternal)
-    public func decodeHeaders(
+    public func decodeFields(
         _ fieldSection: FieldSection,
         streamID: QUICStreamID,
         decodeReceiver: DecodeReceiver

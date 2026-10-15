@@ -267,7 +267,7 @@ struct QPACKCoderTests {
             prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
             lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
         )
-        coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: 0, decodeReceiver: receiver)
 
         #expect(receiver.decodedFields == [[.init(name: .cookie, value: "test")]])
         // A field section which only uses the static table needs no acknowledgement.
@@ -292,7 +292,7 @@ struct QPACKCoderTests {
             prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
             lines: [.indexedWithPostBase(index: 0)]
         )
-        coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: streamID, decodeReceiver: receiver)
 
         #expect(receiver.decodedFields == [[.init(name: .cookie, value: "test")]])
         // The field section referenced the dynamic table, so the peer's encoder must be acknowledged.
@@ -314,7 +314,7 @@ struct QPACKCoderTests {
             prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
             lines: [.indexedWithPostBase(index: 0)]
         )
-        coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: streamID, decodeReceiver: receiver)
         #expect(receiver.results.isEmpty)
 
         // The missing entry arrives, which unblocks the decode.
@@ -346,7 +346,7 @@ struct QPACKCoderTests {
         let streamIDs: [QUICStreamID] = [0, 4, 8]
         let receivers = streamIDs.map { streamID -> TestDecodeReceiver in
             let receiver = TestDecodeReceiver()
-            coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
+            coder.decodeFields(headers, streamID: streamID, decodeReceiver: receiver)
             #expect(receiver.results.isEmpty)
             return receiver
         }
@@ -384,8 +384,8 @@ struct QPACKCoderTests {
         }
         let receiver0 = TestDecodeReceiver()
         let receiver4 = TestDecodeReceiver()
-        coder.decodeHeaders(headers(requiredInsertCount: 2), streamID: 4, decodeReceiver: receiver4)
-        coder.decodeHeaders(headers(requiredInsertCount: 1), streamID: 0, decodeReceiver: receiver0)
+        coder.decodeFields(headers(requiredInsertCount: 2), streamID: 4, decodeReceiver: receiver4)
+        coder.decodeFields(headers(requiredInsertCount: 1), streamID: 0, decodeReceiver: receiver0)
 
         // The first entry only unblocks stream 0.
         coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "one"))
@@ -411,7 +411,7 @@ struct QPACKCoderTests {
             prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
             lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
         )
-        coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: 0, decodeReceiver: receiver)
 
         #expect(receiver.results.count == 1)
         expectH3ErrorEqual(
@@ -435,7 +435,7 @@ struct QPACKCoderTests {
             prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
             lines: [.indexedWithPostBase(index: 0)]
         )
-        coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: 0, decodeReceiver: receiver)
 
         expectH3ErrorEqual(
             error: connection.errors.first,
@@ -463,7 +463,7 @@ struct QPACKCoderTests {
             prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
             lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
         )
-        coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: 0, decodeReceiver: receiver)
 
         expectH3ErrorEqual(
             error: connection.errors.first,
@@ -487,13 +487,13 @@ struct QPACKCoderTests {
 
         // We promised to support one blocked stream, so the first one is simply queued.
         let receiver1 = TestDecodeReceiver()
-        coder.decodeHeaders(headers, streamID: 1, decodeReceiver: receiver1)
+        coder.decodeFields(headers, streamID: 1, decodeReceiver: receiver1)
         #expect(receiver1.results.isEmpty)
         #expect(connection.errors.isEmpty)
 
         // RFC 9204 § 2.1.2: more blocked streams than promised is a connection error.
         let receiver2 = TestDecodeReceiver()
-        coder.decodeHeaders(headers, streamID: 2, decodeReceiver: receiver2)
+        coder.decodeFields(headers, streamID: 2, decodeReceiver: receiver2)
         expectH3ErrorEqual(
             error: connection.errors.first,
             expectedCode: .qpackDecoderError,
@@ -576,7 +576,7 @@ struct QPACKCoderTests {
             prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
             lines: [.indexedWithPostBase(index: 0)]
         )
-        coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: streamID, decodeReceiver: receiver)
         #expect(receiver.results.isEmpty)
 
         // The stream goes away before we could decode. The peer's encoder must be told not to expect an
