@@ -931,7 +931,7 @@ struct HTTP3ConnectionStateMachineTests {
 
     @available(anyAppleOS 27, *)
     @Test func receivedDatagramBeforeStartedWithoutLocalSupport() {
-        let stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine(settings: .init(), type: .server)
         stateMachine.expectReceivingDatagramIsConnectionError(streamID: 0, code: .datagramsNotNegotiated)
     }
 
@@ -1210,7 +1210,7 @@ extension HTTP3ConnectionStateMachine {
         }
     }
 
-    func expectReceivingDatagramIsConnectionError(
+    mutating func expectReceivingDatagramIsConnectionError(
         streamID: QUICStreamID,
         code: HTTP3Error.Code,
         sourceLocation: SourceLocation = #_sourceLocation
@@ -1224,6 +1224,19 @@ extension HTTP3ConnectionStateMachine {
         case .connectionError(let error):
             error.expect(code: code, h3ErrorCode: .generalProtocolError, sourceLocation: sourceLocation)
         }
+    }
+
+    mutating func expectReceivingConflictingSettingsIsConnectionError(
+        _ settings: HTTP3Settings,
+        code: HTTP3Error.Code,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        let action = self.receivedControlFrame(.settings(settings))
+        guard case .emitConnectionError(let error) = action else {
+            Issue.record("Unexpected action \(action)", sourceLocation: sourceLocation)
+            return
+        }
+        error.expect(code: code, h3ErrorCode: .generalProtocolError, sourceLocation: sourceLocation)
     }
 
     /// Returns a state machine which has already exchanged settings with the 'remote' and created the required streams.
