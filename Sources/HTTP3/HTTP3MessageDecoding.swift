@@ -162,7 +162,10 @@ public enum HTTP3MessageDecoding {
 
             // 1. The :scheme and :path pseudo-header fields are omitted
             guard scheme == nil && path == nil else {
-                throw Self.invalidHeadersError(message: "CONNECT request must not contain path or scheme", location: .here())
+                throw Self.invalidHeadersError(
+                    message: "CONNECT request must not contain path or scheme",
+                    location: .here()
+                )
             }
 
             // 2. The :authority pseudo-header field contains the host and port to connect to (equivalent to the
