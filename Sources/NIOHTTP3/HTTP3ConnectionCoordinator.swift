@@ -516,7 +516,12 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         case .addHandlers:
             let qpackCoder = self.forceUnwrapQPACKCoder(sourceLocation: .here())
             // qpack streams do not carry h3 frames
-            let forwarder = QPACKInboundEncoderStreamHandler(delegate: qpackCoder)
+            let forwarder = QPACKInboundEncoderStreamHandler(
+                delegate: QPACKInboundStreamDelegate(
+                    qpackCoder: qpackCoder,
+                    connection: self
+                )
+            )
             try streamChannel.pipeline.syncOperations.addHandler(forwarder)
             self.addStreamClosedCallback(
                 streamChannel: streamChannel,
@@ -549,7 +554,12 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         case .addHandlers:
             let qpackCoder = self.forceUnwrapQPACKCoder(sourceLocation: .here())
             // qpack streams do not carry h3 frames
-            let forwarder = QPACKInboundDecoderStreamHandler(delegate: qpackCoder)
+            let forwarder = QPACKInboundDecoderStreamHandler(
+                delegate: QPACKInboundStreamDelegate(
+                    qpackCoder: qpackCoder,
+                    connection: self
+                )
+            )
             try streamChannel.pipeline.syncOperations.addHandler(forwarder)
             self.addStreamClosedCallback(
                 streamChannel: streamChannel,
