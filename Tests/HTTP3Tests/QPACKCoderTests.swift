@@ -94,7 +94,7 @@ struct QPACKCoderTests {
         // instructions to, and would trap.
         let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
         #expect(
-            headers.fieldSection.lines == [
+            headers.lines == [
                 .literalWithNameReference(
                     requireLiteralRepresentation: false,
                     table: .staticTable,
@@ -173,7 +173,7 @@ struct QPACKCoderTests {
         let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
 
         #expect(
-            headers.fieldSection.lines == [
+            headers.lines == [
                 .literalWithNameReference(
                     requireLiteralRepresentation: false,
                     table: .staticTable,
@@ -196,7 +196,7 @@ struct QPACKCoderTests {
         let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
 
         #expect(
-            headers.fieldSection.lines == [
+            headers.lines == [
                 .literalWithNameReference(
                     requireLiteralRepresentation: false,
                     table: .staticTable,
@@ -222,7 +222,7 @@ struct QPACKCoderTests {
         // The entry was inserted into the dynamic table, so the peer's decoder needs to be told about it.
         #expect(encoderStream.instructions == [.insertWithNameReference(.staticTable, relativeIndex: 5, value: "test")])
         #expect(
-            headers.fieldSection
+            headers
                 == FieldSection(
                     prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 300),
                     lines: [.indexedWithPostBase(index: 0)]
@@ -263,11 +263,9 @@ struct QPACKCoderTests {
         let receiver = TestDecodeReceiver()
         coder.outboundDecoderStreamReady(decoderStream)
 
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
-                lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
-            )
+        let headers = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+            lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
         )
         coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
 
@@ -290,11 +288,9 @@ struct QPACKCoderTests {
         #expect(decoderStream.instructions == [.insertCountIncrement(increment: 1)])
         decoderStream.instructions.removeAll()
 
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
 
@@ -314,11 +310,9 @@ struct QPACKCoderTests {
         coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
 
         // This field section references an entry we haven't been told about yet, so the stream becomes blocked.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
         #expect(receiver.results.isEmpty)
@@ -345,11 +339,9 @@ struct QPACKCoderTests {
         coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
 
         // Three streams all block on the very same missing entry.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let streamIDs: [QUICStreamID] = [0, 4, 8]
         let receivers = streamIDs.map { streamID -> TestDecodeReceiver in
@@ -383,13 +375,11 @@ struct QPACKCoderTests {
         coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
 
         // Stream 4 needs two entries, stream 0 needs only the first.
-        func headers(requiredInsertCount: Int) -> HTTP3PartialFrame.Headers {
-            HTTP3PartialFrame.Headers(
-                fieldSection: FieldSection(
-                    prefix: FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
-                        .encode(maxCapacity: 1024),
-                    lines: [.indexedWithPostBase(index: requiredInsertCount - 1)]
-                )
+        func headers(requiredInsertCount: Int) -> FieldSection {
+            FieldSection(
+                prefix: FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
+                    .encode(maxCapacity: 1024),
+                lines: [.indexedWithPostBase(index: requiredInsertCount - 1)]
             )
         }
         let receiver0 = TestDecodeReceiver()
@@ -417,11 +407,9 @@ struct QPACKCoderTests {
         coder.outboundDecoderStreamReady(decoderStream)
 
         // This decodes fine, but an uppercase field name is a malformed message: a stream level error.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
-                lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
+            lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
         )
         coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
 
@@ -443,11 +431,9 @@ struct QPACKCoderTests {
         coder.outboundDecoderStreamReady(decoderStream)
 
         // A reference to a dynamic table entry which doesn't exist is a connection error.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
 
@@ -473,11 +459,9 @@ struct QPACKCoderTests {
 
         // RFC 9204 § 4.5.1.1: an EncodedInsertCount which no conformant encoder could have produced is a
         // connection error of type QPACK_DECOMPRESSION_FAILED.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
-                lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
-            )
+        let headers = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
+            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
         )
         coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
 
@@ -496,11 +480,9 @@ struct QPACKCoderTests {
         let decoderStream = TestOutboundDecoderStream()
         coder.outboundDecoderStreamReady(decoderStream)
 
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 1024),
-                lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 1024),
+            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
         )
 
         // We promised to support one blocked stream, so the first one is simply queued.
@@ -590,11 +572,9 @@ struct QPACKCoderTests {
         coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
 
         // Block the stream on an entry we haven't received yet.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
         #expect(receiver.results.isEmpty)

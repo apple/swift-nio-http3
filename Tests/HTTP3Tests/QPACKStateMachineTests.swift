@@ -145,11 +145,9 @@ struct QPACKStateMachineTests {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
         let receiver = 5
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
-                lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
-            )
+        let testHeader = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+            lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
         )
         let action = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: receiver)
         guard case .informDecodeResult(let result, let context) = action else {
@@ -182,11 +180,9 @@ struct QPACKStateMachineTests {
         #expect(actions1?.decoderInstructions == .insertCountIncrement(increment: 1))
 
         // Ask the machine to decode a header section containing reference to the new entry
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let receiver = 3
         let actions2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: receiver)
@@ -215,11 +211,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // Ask the machine to decode some nonsense header. This is a connection level failure because the references don't exist
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let action2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
 
@@ -245,11 +239,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // This header will decode fine, but is a malformed message (upper case field names). This is a stream error
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
-                lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
+            lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
         )
         let action2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
         guard case .informDecodeError(let error, let context) = action2 else {
@@ -270,11 +262,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // Ask the machine to decode a header section containing dynamic table references
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let contextID = 12
         let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
@@ -311,15 +301,13 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // Ask the machine to decode a header section containing dynamic table references, plus an invalid literal
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [
-                    .indexedWithPostBase(index: 0),
-                    // Invalid due to uppercase
-                    .literal(requireLiteralRepresentation: false, name: "Test", value: "test"),
-                ]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [
+                .indexedWithPostBase(index: 0),
+                // Invalid due to uppercase
+                .literal(requireLiteralRepresentation: false, name: "Test", value: "test"),
+            ]
         )
         let contextID = 6
         let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
@@ -354,13 +342,11 @@ struct QPACKStateMachineTests {
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
         stateMachine.setupLocalDynamicTable(maxSize: 1024)
         stateMachine.setupOutboundDecoderStream()
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
-                lines: [
-                    .literal(requireLiteralRepresentation: false, name: "test", value: "test")
-                ]
-            )
+        let testHeader = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
+            lines: [
+                .literal(requireLiteralRepresentation: false, name: "test", value: "test")
+            ]
         )
         let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
         // The machine can't decode it, because the prefix is nonsense
@@ -392,11 +378,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // a header which requires an insert count of 1
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 1024),
-                lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 1024),
+            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
         )
 
         // Max blocked streams is 3, so the first 3 are fine, they just get queued
@@ -437,11 +421,9 @@ struct QPACKStateMachineTests {
         #expect(action1?.decoderInstructions == nil)
 
         // Ask the machine to decode a header section containing reference to the new entry
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let streamID = QUICStreamID(0)
         let contextID = 11
@@ -625,11 +607,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // Ask the machine to decode a header section containing reference which doesn't exist.
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let actions1 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
         // The state machine will have queued the decoding, so we don't have an action yet.

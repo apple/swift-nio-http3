@@ -207,7 +207,7 @@ public final class QPACKCoder<
     ///
     /// - Returns: The encoded field section, ready to be framed as a HEADERS frame.
     @_spi(PackageInternal)
-    public func encodeHeaders(_ fields: [HTTPField], streamID: QUICStreamID) -> HTTP3PartialFrame.Headers {
+    public func encodeHeaders(_ fields: [HTTPField], streamID: QUICStreamID) -> FieldSection {
         let result = self.stateMachine.encodeHeaders(fields, forStream: streamID)
 
         if !result.instructions.isEmpty {
@@ -216,7 +216,7 @@ public final class QPACKCoder<
             self.outboundEncoderStream!.sendInstructions(result.instructions)
         }
 
-        return HTTP3PartialFrame.Headers(fieldSection: result.fieldSection)
+        return result.fieldSection
     }
 
     /// Call this method as a response to the ``ConnectionDelegate/makeOutboundEncoderStream()``
@@ -271,16 +271,16 @@ public final class QPACKCoder<
     ///              will invoke the ``QPACKDecodeReceiver/decodeResult(_:)`` method syncronously.
     ///
     /// - Parameters:
-    ///   - headers: The headers to QPACK decode
+    ///   - fieldSection: The field section to QPACK decode
     ///   - streamID: The stream id of the stream, that received the header frame
     ///   - decodeReceiver: The object that needs to be informed about the decode result.
     @_spi(PackageInternal)
     public func decodeHeaders(
-        _ headers: HTTP3PartialFrame.Headers,
+        _ fieldSection: FieldSection,
         streamID: QUICStreamID,
         decodeReceiver: DecodeReceiver
     ) {
-        let action = self.stateMachine.decodeHeaders(headers, forStream: streamID, context: decodeReceiver)
+        let action = self.stateMachine.decodeHeaders(fieldSection, forStream: streamID, context: decodeReceiver)
         self.runDecodeHeaderAction(action)
     }
 

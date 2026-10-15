@@ -389,7 +389,7 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
     }
 
     mutating func decodeHeaders(
-        _ headers: HTTP3PartialFrame.Headers,
+        _ fieldSection: FieldSection,
         forStream streamID: QUICStreamID,
         context: DecodeContext
     ) -> DecodeHeaderAction? {
@@ -403,7 +403,7 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
                 location: location
             )
         }
-        guard let prefix = self.qpackDecoder.decodeFieldSectionPrefix(headers.fieldSection.prefix) else {
+        guard let prefix = self.qpackDecoder.decodeFieldSectionPrefix(fieldSection.prefix) else {
             // The field section prefix can't have been produced by a conformant encoder
             // RFC 9204 4.5.1.1: If the decoder encounters a value of EncodedInsertCount that could not have been produced by a
             // conformant encoder, it MUST treat this as a connection error of type QPACK_DECOMPRESSION_FAILED.
@@ -411,7 +411,7 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
         }
         let result = self.qpackDecoder.decodeFieldSection(
             prefix: prefix,
-            lines: headers.fieldSection.lines,
+            lines: fieldSection.lines,
             streamID: streamID
         )
         switch result {
@@ -434,9 +434,9 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
             do {
                 try self.decoderQueue.add(
                     .init(
-                        headers: headers,
+                        fieldSection: fieldSection,
                         prefix: prefix,
-                        lines: headers.fieldSection.lines,
+                        lines: fieldSection.lines,
                         streamID: streamID,
                         context: context
                     )
