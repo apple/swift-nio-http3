@@ -911,14 +911,20 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             case .initialized(var initializedState):
                 switch initializedState.settingsState.settingsReceived(settings) {
                 case .applied(let negotiatedSettings):
-                    var streamIDsToNotify: [QUICStreamID]? = nil
-                    // If we are a client, we may have opened outbound request streams before we received the server's
-                    // SETTINGS. Now that the server has confirmed they support Extended CONNECT, we need to inform all
-                    // open outbound request streams about it.
-                    if initializedState.type == .client {
-                        streamIDsToNotify = initializedState.streamIDTracker.getOpenStreamIDs { streamID in
-                            streamID.type == .clientInitiatedBidirectional
+                    let extendedConnect: ControlFrameReceivedAction.OnSettings.ExtendedConnectSupport
+                    if negotiatedSettings.extendedConnectSupported {
+                        var streamIDsToNotify: [QUICStreamID] = []
+                        // If we are a client, we may have opened outbound request streams before we received the
+                        // server's SETTINGS. Now that the server has confirmed they support Extended CONNECT, we need
+                        // to inform all open outbound request streams about it.
+                        if initializedState.type == .client {
+                            streamIDsToNotify = initializedState.streamIDTracker.getOpenStreamIDs { streamID in
+                                streamID.type == .clientInitiatedBidirectional
+                            }
                         }
+                        extendedConnect = .supported(streamIDsToNotify: streamIDsToNotify)
+                    } else {
+                        extendedConnect = .unsupported
                     }
 
                     self = .init(state: .initialized(initializedState))
@@ -927,8 +933,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                             datagramsNegotiated: negotiatedSettings.datagramsSupported,
                             qpackMaximumTableCapacity: payload.settings.qpackMaximumTableCapacity,
                             qpackBlockedStreams: payload.settings.qpackBlockedStreams,
-                            extendedConnectSupported: negotiatedSettings.extendedConnectSupported,
-                            streamIDsToNotify: streamIDsToNotify
+                            extendedConnect: extendedConnect
                         )
                     )
 
