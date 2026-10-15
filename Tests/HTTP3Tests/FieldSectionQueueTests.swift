@@ -26,7 +26,7 @@ struct FieldSectionQueueTests {
     ) -> FieldSectionQueue<Int>.Entry {
         let prefix = FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
         return FieldSectionQueue.Entry(
-            headers: .init(fieldSection: .init(prefix: prefix.encode(maxCapacity: 100), lines: [])),
+            fieldSection: .init(prefix: prefix.encode(maxCapacity: 100), lines: []),
             prefix: prefix,
             lines: [],
             streamID: streamID,

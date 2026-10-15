@@ -216,7 +216,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
                 didFireChannelRead = true
             case .decodeHeader(let partialHeader):
                 self.logger.trace("HTTP3StreamHandler waiting for QPACK decode")
-                self.qpackCoder.decodeHeaders(partialHeader, streamID: self.streamID, decodeReceiver: self)
+                self.qpackCoder.decodeHeaders(partialHeader.fieldSection, streamID: self.streamID, decodeReceiver: self)
             case .emitStreamError(let error):
                 context.triggerUserOutboundEvent(
                     QUICStopSendingEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
@@ -267,7 +267,9 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
             context.fireErrorCaught(error)
             promise?.fail(error)
         case .encodeHeaders(let fields):
-            let encoded = self.qpackCoder.encodeHeaders(fields, streamID: self.streamID)
+            let encoded = HTTP3PartialFrame.Headers(
+                fieldSection: self.qpackCoder.encodeHeaders(fields, streamID: self.streamID)
+            )
             let action = self.stateMachine.gotHeaderEncodeResult(encoded, into: &self.pendingBytes!)
 
             switch action {
