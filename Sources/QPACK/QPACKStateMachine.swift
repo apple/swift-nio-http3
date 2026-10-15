@@ -15,7 +15,6 @@
 import DequeModule
 import HTTPTypes
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 
 /// A state machine which holds qpack encoder and decoder.
 /// You can ask it to encode/decode things, and inform it of incoming instructions.

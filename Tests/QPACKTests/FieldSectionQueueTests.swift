@@ -13,10 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 import Testing
 
-@_spi(PackageInternal) @testable import HTTP3
+@_spi(PackageInternal) @testable import QPACK
 
 struct FieldSectionQueueTests {
     private func makeTestEntry(

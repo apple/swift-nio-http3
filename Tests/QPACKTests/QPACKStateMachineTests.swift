@@ -13,10 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 import Testing
 
-@_spi(PackageInternal) @testable import HTTP3
+@_spi(PackageInternal) @testable import QPACK
 
 struct QPACKStateMachineTests {
     /// ``QPACKStateMachine/GotRemoteSettingsAction`` carries an error, so it isn't `Equatable`.
