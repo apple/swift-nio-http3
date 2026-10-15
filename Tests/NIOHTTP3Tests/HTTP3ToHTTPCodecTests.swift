@@ -31,6 +31,20 @@ struct HTTP3ToHTTPCodecTests {
         .init(name: .path, value: "/"),
     ])
 
+    private let extendedConnectRequestHead: HTTP3Frame = .headers([
+        .init(name: .method, value: "CONNECT"),
+        .init(name: .protocol, value: "websocket"),
+        .init(name: .scheme, value: "https"),
+        .init(name: .authority, value: "test"),
+        .init(name: .path, value: "/"),
+    ])
+
+    private var extendedConnectRequest: HTTPRequest {
+        var request = HTTPRequest(method: .connect, scheme: "https", authority: "test", path: "/")
+        request.extendedConnectProtocol = "websocket"
+        return request
+    }
+
     private let validFinalResponseHead: HTTP3Frame = .headers([
         .init(name: .status, value: "200")
     ])
@@ -106,6 +120,77 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[2] == .body(.init(bytes: [1, 2, 3])))
     }
 
+    @Test func clientCodecRefusesExtendedConnectRequestWhenSettingNotEnabled() throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
+
+        // Sending an Extended CONNECT request is only allowed once the server has sent SETTINGS_ENABLE_CONNECT_PROTOCOL.
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeOutbound(HTTPRequestPart.head(self.extendedConnectRequest))
+        }
+        #expect(error.code == .extendedConnectNotEnabled)
+
+        // Nothing should be written.
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @Test func clientCodecSendsExtendedConnectRequestWhenSettingEnabled() throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
+
+        // Simulate the server's SETTINGS arriving.
+        channel.pipeline.fireUserInboundEventTriggered(
+            ReceivedSettings(datagramsSupported: false, extendedConnectSupported: true)
+        )
+        try channel.writeOutbound(HTTPRequestPart.head(self.extendedConnectRequest))
+        guard case .headers(let headers) = try channel.readOutbound(as: HTTP3Frame.self) else {
+            Issue.record("Expected a headers frame")
+            return
+        }
+        #expect(headers.fields.contains(HTTPField(name: .protocol, value: "websocket")))
+    }
+
+    @Test(arguments: [true, false])
+    func clientCodecCanSendConnectRequestIndependentOfExtendedConnectSetting(settingValue: Bool) throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: settingValue))
+
+        // This is just a normal CONNECT request, not an Extended CONNECT request.
+        try channel.writeOutbound(
+            HTTPRequestPart.head(HTTPRequest(method: .connect, scheme: nil, authority: "test:443", path: nil))
+        )
+        guard case .headers = try channel.readOutbound(as: HTTP3Frame.self) else {
+            Issue.record("Expected a headers frame")
+            return
+        }
+    }
+
+    @Test func clientCodecRefusesExtendedConnectRequestWhenServerDoesNotSupport() throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec())
+
+        // Simulate the server's SETTINGS arriving.
+        channel.pipeline.fireUserInboundEventTriggered(
+            // The server does *not* support Extended CONNECT.
+            ReceivedSettings(datagramsSupported: false, extendedConnectSupported: false)
+        )
+        // As such, the client should see an error when attempting to write an Extended CONNECT request head.
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeOutbound(HTTPRequestPart.head(self.extendedConnectRequest))
+        }
+        #expect(error.code == .extendedConnectNotEnabled)
+    }
+
+    @Test func clientCodecForwardsReceivedSettings() throws {
+        let events = NIOLockedValueBox<[ReceivedSettings]>([])
+        let recorder = DebugInboundEventsHandler { event, _ in
+            if case .userInboundEventTriggered(let event) = event, let settings = event as? ReceivedSettings {
+                events.withLockedValue { $0.append(settings) }
+            }
+        }
+        let channel = EmbeddedChannel(handlers: [HTTP3ToHTTPClientCodec(), recorder])
+
+        let settings = ReceivedSettings(datagramsSupported: false, extendedConnectSupported: true)
+        channel.pipeline.fireUserInboundEventTriggered(settings)
+        #expect(events.withLockedValue { $0 } == [settings])
+    }
+
     @Test
     func testServerCodecWrite() throws {
         let handler = HTTP3ToHTTPServerCodec()
@@ -165,6 +250,54 @@ struct HTTP3ToHTTPCodecTests {
         // Next 2 frames should be data
         #expect(parts[1] == .body(.init(bytes: [1, 2, 3])))
         #expect(parts[2] == .body(.init(bytes: [1, 2, 3])))
+    }
+
+    @Test func serverCodecRejectsExtendedConnectRequestWhenSettingNotEnabled() throws {
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: false)
+        let channel = EmbeddedChannel(handler: handler)
+
+        // Receiving an Extended CONNECT request without having sent SETTINGS_ENABLE_CONNECT_PROTOCOL = 1 should result
+        // in a malformed message error.
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeInbound(self.extendedConnectRequestHead)
+        }
+        #expect(error.code == .extendedConnectNotEnabled)
+        #expect(error.h3ErrorCode == .messageError)
+
+        // No part of the rejected request should reach the user.
+        try channel.writeInbound(HTTP3Frame.data(.init(bytes: [1, 2, 3])))
+        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+        #expect(try channel.readInbound(as: HTTPRequestPart.self) == nil)
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @Test func serverCodecAcceptsExtendedConnectRequestWhenSettingEnabled() throws {
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: true)
+        let channel = EmbeddedChannel(handler: handler)
+
+        try channel.writeInbound(self.extendedConnectRequestHead)
+
+        var expectedRequest = HTTPRequest(method: .connect, scheme: "https", authority: "test", path: "/")
+        expectedRequest.extendedConnectProtocol = "websocket"
+        #expect(try channel.readInbound(as: HTTPRequestPart.self) == .head(expectedRequest))
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @Test func serverCodecAcceptsConnectWhenExtendedConnectSettingNotEnabled() throws {
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: false)
+        let channel = EmbeddedChannel(handler: handler)
+
+        // This is just a normal CONNECT request, not an Extended CONNECT request.
+        try channel.writeInbound(
+            HTTP3Frame.headers([
+                .init(name: .method, value: "CONNECT"),
+                .init(name: .authority, value: "test:443"),
+            ])
+        )
+
+        let expectedRequest = HTTPRequest(method: .connect, scheme: nil, authority: "test:443", path: nil)
+        #expect(try channel.readInbound(as: HTTPRequestPart.self) == .head(expectedRequest))
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
     }
 
     @Test

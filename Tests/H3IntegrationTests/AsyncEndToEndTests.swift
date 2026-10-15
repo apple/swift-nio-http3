@@ -71,7 +71,7 @@ struct AsyncEndToEndTests {
                         try await inboundStream.executeThenClose { inboundParts, outbound in
                             var inboundPartIterator = inboundParts.makeAsyncIterator()
                             try await #expect(inboundPartIterator.next() == .head(testRequest))
-                            try await #expect(inboundPartIterator.next() == .end())
+                            try await #expect(inboundPartIterator.next() == .end(nil))
                             try await #expect(inboundPartIterator.next() == nil)
 
                             try await outbound.write(.head(testResponse))
@@ -110,7 +110,7 @@ struct AsyncEndToEndTests {
                     var inboundPartIterator = inboundParts.makeAsyncIterator()
                     try await #expect(inboundPartIterator.next() == .head(testResponse))
                     try await #expect(inboundPartIterator.next() == .body(.init(string: "Hello World")))
-                    try await #expect(inboundPartIterator.next() == .end())
+                    try await #expect(inboundPartIterator.next() == .end(nil))
                     try await #expect(inboundPartIterator.next() == nil)
                 }
 
@@ -166,7 +166,7 @@ struct AsyncEndToEndTests {
                     try await inboundStream.executeThenClose { inboundParts, outbound in
                         var inboundPartIterator = inboundParts.makeAsyncIterator()
                         try await #expect(inboundPartIterator.next() == .head(testRequest))
-                        try await #expect(inboundPartIterator.next() == .end())
+                        try await #expect(inboundPartIterator.next() == .end(nil))
                         try await #expect(inboundPartIterator.next() == nil)
 
                         // Tell the client to goaway, but with an id that won't affect this request
@@ -209,7 +209,7 @@ struct AsyncEndToEndTests {
                     var inboundPartIterator = inboundParts.makeAsyncIterator()
                     try await #expect(inboundPartIterator.next() == .head(testResponse))
                     try await #expect(inboundPartIterator.next() == .body(.init(string: "Hello World")))
-                    try await #expect(inboundPartIterator.next() == .end())
+                    try await #expect(inboundPartIterator.next() == .end(nil))
                     try await #expect(inboundPartIterator.next() == nil)
                 }
 
@@ -270,7 +270,7 @@ struct AsyncEndToEndTests {
                     try await inboundStream.executeThenClose { inboundParts, outbound in
                         var inboundPartIterator = inboundParts.makeAsyncIterator()
                         try await #expect(inboundPartIterator.next() == .head(testRequest))
-                        try await #expect(inboundPartIterator.next() == .end())
+                        try await #expect(inboundPartIterator.next() == .end(nil))
                         try await #expect(inboundPartIterator.next() == nil)
 
                         // Tell the client to goaway, with an id will affect this current request

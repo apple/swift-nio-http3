@@ -390,6 +390,11 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         }
     }
 
+    /// Fires a ``ReceivedSettings`` event down the pipeline.
+    func peerSettingsReceived(_ settings: ReceivedSettings) {
+        self.context?.fireUserInboundEventTriggered(settings)
+    }
+
     /// A GOAWAY frame was sent with an ID lower than or equal to that of this stream.
     /// I.e., we will NOT process this stream, and we should just close it.
     func cancelStreamDueToSendingGoaway() {
