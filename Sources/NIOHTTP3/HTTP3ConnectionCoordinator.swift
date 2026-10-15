@@ -17,6 +17,7 @@ import HTTPTypes
 import Logging
 import NIOCore
 import NIOQUICHelpers
+@_spi(PackageInternal) import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
@@ -880,7 +881,7 @@ extension HTTP3ConnectionCoordinator: QPACKConnectionDelegate {
         self.createQPACKEncoderInstructionStream()
     }
 
-    func connectionError(_ error: HTTP3Error) {
-        self.emitConnectionErrorFromStream(error)
+    func connectionError(_ error: QPACKError) {
+        self.emitConnectionErrorFromStream(HTTP3Error(error, location: .here()))
     }
 }
