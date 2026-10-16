@@ -882,6 +882,7 @@ extension HTTP3ConnectionCoordinator: QPACKConnectionDelegate {
     }
 
     func connectionError(_ error: QPACKError) {
+        assert(error.isConnectionError)
         self.emitConnectionErrorFromStream(HTTP3Error(error, location: .here()))
     }
 }

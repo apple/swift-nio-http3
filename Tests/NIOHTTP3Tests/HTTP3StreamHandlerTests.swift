@@ -60,8 +60,8 @@ final class TestDelegate: HTTP3StreamDelegate {
     }
 }
 
-/// A mock ``HTTP3/QPACKConnectionDelegate`` for tests which exercise ``HTTP3StreamHandler`` in isolation.
-final class TestQPACKConnectionDelegate: HTTP3.QPACKConnectionDelegate {
+/// A mock ``QPACKConnectionDelegate`` for tests which exercise ``HTTP3StreamHandler`` in isolation.
+final class TestQPACKConnectionDelegate: QPACK.QPACKConnectionDelegate {
 
     static func makeUnexpectedQPACKConnectionErrorHandler() -> (HTTP3Error) -> Void {
         { error in

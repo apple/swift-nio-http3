@@ -14,10 +14,9 @@
 
 import HTTPTypes
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 import Testing
 
-@_spi(PackageInternal) @testable import HTTP3
+@_spi(PackageInternal) @testable import QPACK
 
 /// Tests for ``QPACKCoder``.
 ///
@@ -587,7 +586,7 @@ private final class TestOutboundDecoderStream: QPACKOutboundDecoderStream {
 }
 
 /// Records the connection level side effects: errors and requests to open an encoder stream.
-private final class TestConnection: HTTP3.QPACKConnectionDelegate {
+private final class TestConnection: QPACKConnectionDelegate {
     var errors: [QPACKError] = []
     var madeOutboundEncoderStreamCount = 0
 

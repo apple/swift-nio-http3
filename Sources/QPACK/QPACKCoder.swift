@@ -14,7 +14,6 @@
 
 public import HTTPTypes
 public import NIOQUICHelpers
-@_spi(PackageInternal) public import QPACK
 
 /// A stream to send encoder instructions on, which the peer can then use in its QPACKDecoder
 ///
@@ -49,7 +48,7 @@ public protocol QPACKConnectionDelegate {
     /// fatal to the connection: it goes to the stream's ``QPACKDecodeReceiver``, which escalates it.
     func connectionError(_ error: QPACKError)
 
-    /// Open a unidirectional ``HTTP3StreamType/Unidirectional/qpackEncoder`` stream and pass it to
+    /// Open a unidirectional `HTTP3StreamType.Unidirectional.qpackEncoder` stream and pass it to
     /// ``QPACKCoder/outboundEncoderStreamReady(_:)``.
     ///
     /// Called at most once per connection, and only if the peer permits the dynamic table. Until the stream is
@@ -105,7 +104,7 @@ public protocol QPACKDecodeReceiver {
 public final class QPACKCoder<
     OutboundEncoderStream: QPACKOutboundEncoderStream & ~Copyable,
     OutboundDecoderStream: QPACKOutboundDecoderStream & ~Copyable,
-    ConnectionDelegate: HTTP3.QPACKConnectionDelegate,
+    ConnectionDelegate: QPACKConnectionDelegate,
     DecodeReceiver: QPACKDecodeReceiver
 > {
 

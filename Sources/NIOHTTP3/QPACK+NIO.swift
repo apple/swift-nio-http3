@@ -23,9 +23,9 @@ extension QPACKEncoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 
 @available(anyAppleOS 26.0, *)
 typealias NIOQPACKCoder<
-    ConnectionDelegate: HTTP3.QPACKConnectionDelegate,
+    ConnectionDelegate: QPACK.QPACKConnectionDelegate,
     StreamDelegate: HTTP3StreamDelegate
-> = HTTP3.QPACKCoder<
+> = QPACK.QPACKCoder<
     QPACKOutboundEncoderStream,
     QPACKOutboundDecoderStream,
     ConnectionDelegate,
@@ -36,7 +36,7 @@ typealias NIOQPACKCoder<
 /// them to the connection.
 @available(anyAppleOS 26.0, *)
 struct QPACKInboundStreamDelegate<
-    ConnectionDelegate: HTTP3.QPACKConnectionDelegate,
+    ConnectionDelegate: QPACK.QPACKConnectionDelegate,
     StreamDelegate: HTTP3StreamDelegate
 >: QPACKInboundEncoderStreamDelegate, QPACKInboundDecoderStreamDelegate {
     let qpackCoder: NIOQPACKCoder<ConnectionDelegate, StreamDelegate>
