@@ -42,8 +42,12 @@ public protocol QPACKOutboundDecoderStream: ~Copyable {
 /// An object representing an HTTP3Connection to forward connection level errors to.
 @_spi(PackageInternal)
 public protocol QPACKConnectionDelegate {
-    /// Tear the connection down. The error's ``HTTP3Error/h3ErrorCode`` is the code to close it with.
-    func connectionError(_ error: HTTP3Error)
+    /// Tear the connection down.
+    ///
+    /// Called only for failures which don't belong to a stream: the peer's settings, and instructions on the
+    /// peer's QPACK encoder and decoder streams. The failure of a decode is never reported here, even if it is
+    /// fatal to the connection: it goes to the stream's ``QPACKDecodeReceiver``, which escalates it.
+    func connectionError(_ error: QPACKError)
 
     /// Open a unidirectional ``HTTP3StreamType/Unidirectional/qpackEncoder`` stream and pass it to
     /// ``QPACKCoder/outboundEncoderStreamReady(_:)``.
@@ -63,13 +67,13 @@ public protocol QPACKDecodeReceiver {
     /// ``QPACKCoder/requestStreamClosed(streamID:seenEOF:)`` with `seenEOF: false` while the decode is still
     /// blocked, in which case the pending decode is dropped and this is never called.
     ///
-    /// A failure isn't necessarily confined to this stream: some QPACK failures are fatal to the connection, and
-    /// the ``ConnectionDelegate`` is given the same error.
+    /// A failure isn't necessarily confined to this stream: if ``QPACKError/isConnectionError`` is true, the
+    /// receiver must tear the connection down. ``QPACKConnectionDelegate/connectionError(_:)`` is not called for it.
     ///
     /// - Important: If the decoder has all the necessary QPACK decode information available the decoder
     ///              will invoke this method syncronously from
     ///              ``QPACKCoder/decodeFields(_:streamID:decodeReceiver:)``.
-    func decodeResult(_ result: Result<[HTTPField], HTTP3Error>)
+    func decodeResult(_ result: Result<[HTTPField], QPACKError>)
 }
 
 /// An object encapsulating all the QPACK encoding and decoding. It implements the QPACK procedures while being
@@ -314,8 +318,8 @@ public final class QPACKCoder<
         case .sendDecoderInstruction(let qPACKDecoderInstruction):
             // Safe to unwrap: see `outboundDecoderStream`.
             self.outboundDecoderStream!.sendInstruction(qPACKDecoderInstruction)
-        case .emitConnectionError(let http3Error):
-            self.connection.connectionError(http3Error)
+        case .emitConnectionError(let error):
+            self.connection.connectionError(error)
         case .none:
             break
         }
@@ -338,9 +342,9 @@ public final class QPACKCoder<
         case .informDecodeError(let informDecodeError, let receiver):
             receiver.decodeResult(.failure(informDecodeError.error))
 
-        case .emitConnectionError(let http3Error, let receiver):
-            self.connection.connectionError(http3Error)
-            receiver.decodeResult(.failure(http3Error))
+        case .emitConnectionError(let error, let receiver):
+            // The receiver escalates this to the connection, as it does for its other connection errors.
+            receiver.decodeResult(.failure(error))
 
         case .none:
             // the required encoder dynamic table update hasn't arrived yet.

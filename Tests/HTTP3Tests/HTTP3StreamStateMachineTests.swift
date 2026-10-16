@@ -239,7 +239,7 @@ struct HTTP3StreamStateMachineTests {
             errorCode: .internalError,
             location: .here()
         )
-        machine.gotHeaderDecodeError(testError)
+        machine.gotHeaderDecodeError(testError, isConnectionError: false)
 
         // Let's put in some more bytes. They should get ignored because they come after an error
         machine.buffer(.init(bytes: self.testDataFrameBytes))
@@ -263,6 +263,44 @@ struct HTTP3StreamStateMachineTests {
     }
 
     @available(anyAppleOS 26.0, *)
+    @Test func qpackConnectionError() {
+        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
+        machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
+        let action1 = machine.decodeNext()
+        guard case .decodeHeader = action1 else {
+            Issue.record("Unexpected action \(action1)")
+            return
+        }
+        machine.assertNoNext()
+        let testError = HTTP3Error(
+            code: .qpackDecoderError,
+            message: "test",
+            cause: nil,
+            errorCode: .qpackDecompressionFailed,
+            location: .here()
+        )
+        machine.gotHeaderDecodeError(testError, isConnectionError: true)
+
+        // A decode error which is fatal to the connection is emitted as a connection error, not a stream error.
+        let action2 = machine.decodeNext()
+        guard case .emitConnectionError(let error) = action2 else {
+            Issue.record("Unexpected action \(action2)")
+            return
+        }
+        expectH3ErrorEqual(
+            error: error,
+            expectedCode: .qpackDecoderError,
+            expectedH3ErrorCode: .qpackDecompressionFailed,
+            expectedMessage: "test"
+        )
+        machine.assertNoNext()
+
+        // Bytes which come after the error are ignored.
+        machine.buffer(.init(bytes: self.testDataFrameBytes))
+        machine.assertNoNext()
+    }
+
+    @available(anyAppleOS 26.0, *)
     @Test func writeAfterQPACKErrorBeforeRead() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: true, preferHuffmanEncoding: false)
         machine.buffer(.init(bytes: self.testRequestHeaderFrameBytes))
@@ -282,7 +320,7 @@ struct HTTP3StreamStateMachineTests {
             errorCode: .internalError,
             location: .here()
         )
-        machine.gotHeaderDecodeError(testError)
+        machine.gotHeaderDecodeError(testError, isConnectionError: false)
 
         // Writes are now dropped
         let writeAction = machine.writeFrame(frame: .headers(self.testResponseHeaderFields))
@@ -853,7 +891,7 @@ extension HTTP3StreamStateMachine {
                 errorCode: .qpackDecompressionFailed,
                 location: .here()
             )
-            self.gotHeaderDecodeError(error)
+            self.gotHeaderDecodeError(error, isConnectionError: false)
         }
     }
 

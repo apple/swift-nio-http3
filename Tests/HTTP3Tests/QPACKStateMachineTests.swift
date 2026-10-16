@@ -58,8 +58,7 @@ struct QPACKStateMachineTests {
             Issue.record("Expected a connection error, got \(String(describing: action2))")
             return
         }
-        #expect(error.code == .unexpectedFrame)
-        #expect(error.h3ErrorCode == .frameUnexpected)
+        #expect(error == .duplicateSettings)
 
         // The first settings still stand: the encoder uses the table size they asked for.
         let action3 = stateMachine.outboundEncoderStreamReady()
@@ -76,8 +75,7 @@ struct QPACKStateMachineTests {
             Issue.record("Expected a connection error, got \(String(describing: action))")
             return
         }
-        #expect(error.code == .unexpectedFrame)
-        #expect(error.h3ErrorCode == .frameUnexpected)
+        #expect(error == .duplicateSettings)
 
         stateMachine.assertEncodesWithoutUsingDynamicTable()
     }
@@ -221,11 +219,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected actions \(String(describing: action2))")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed
-        )
+        #expect(error == .decodeError(.invalidReference))
         #expect(context == contextID)
     }
 
@@ -249,7 +243,7 @@ struct QPACKStateMachineTests {
             return
         }
         #expect(error.streamID == streamID)
-        expectH3ErrorEqual(error: error.error, expectedCode: .qpackDecoderError, expectedH3ErrorCode: .messageError)
+        #expect(error.error == .decodeError(.invalidHeaderName))
         #expect(context == contextID)
     }
 
@@ -327,11 +321,7 @@ struct QPACKStateMachineTests {
             return
         }
         #expect(decodeError.streamID == streamID)
-        expectH3ErrorEqual(
-            error: decodeError.error,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .messageError
-        )
+        #expect(decodeError.error == .decodeError(.invalidHeaderName))
         #expect(context == contextID)
     }
 
@@ -354,13 +344,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action \(String(describing: actions3))")
             return
         }
-        expectH3ErrorEqual(
-            error:
-                error,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed,
-            expectedMessage: "Invalid field section prefix"
-        )
+        #expect(error == .invalidFieldSectionPrefix)
         #expect(context == contextID)
     }
 
@@ -398,12 +382,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action \(String(describing: action4))")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed,
-            expectedMessage: "Too many streams blocked on QPACK"
-        )
+        #expect(error == .tooManyBlockedStreams)
         #expect(context == contextID)
     }
 
@@ -478,11 +457,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
     @Test func testGotDecoderInstructionWhenExplicitlyNoDynamicTable() {
@@ -494,11 +469,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
     @Test func testGotDecoderInstructionWhenAwaitingStream() {
@@ -510,11 +481,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
     @Test func testGotInvalidIncomingDecoderInstruction() {
@@ -526,11 +493,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(error == .invalidDecoderInstruction)
     }
 
     // MARK: Encoder instructions
@@ -544,11 +507,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackEncoderStreamError,
-            expectedH3ErrorCode: .qpackEncoderStreamError
-        )
+        #expect(error == .invalidEncoderInstruction)
     }
 
     @Test func testInsertTooLargeEntry() {
@@ -566,11 +525,7 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackEncoderStreamError,
-            expectedH3ErrorCode: .qpackEncoderStreamError
-        )
+        #expect(error == .invalidEncoderInstruction)
     }
 
     // MARK: Request stream closing

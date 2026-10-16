@@ -17,6 +17,7 @@ import HTTPTypes
 import Logging
 import NIOCore
 import NIOQUICHelpers
+@_spi(PackageInternal) import QPACK
 
 /// This is an internal protocol that shall only be implemented by HTTP3ConnectionCoordinator
 /// It exists to enable testing of `HTTP3StreamHandler` in isolation.
@@ -369,14 +370,14 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
     }
 
     /// Call this if an error is encountered whilst trying to decode `header`.
-    func onQPACKDecodeError(_ error: HTTP3Error) {
+    func onQPACKDecodeError(_ error: HTTP3Error, isConnectionError: Bool) {
         guard let context = self.context else {
             // The stream must have been created an registered to get QPACK events and thus already have
             // the context available. Since pending decodes are dropped when the stream closes it must
             // still be open and active.
             fatalError("Tried to deliver QPACK error before handler was set")
         }
-        self.stateMachine.gotHeaderDecodeError(error)
+        self.stateMachine.gotHeaderDecodeError(error, isConnectionError: isConnectionError)
         // Call self.channelReadComplete which will decode and fire reads as much as possible before firing a read complete
         self.channelReadComplete(context: context)
     }
@@ -476,12 +477,15 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
 
 @available(anyAppleOS 26.0, *)
 extension HTTP3StreamHandler: QPACKDecodeReceiver {
-    func decodeResult(_ result: Result<[HTTPField], HTTP3Error>) {
+    func decodeResult(_ result: Result<[HTTPField], QPACKError>) {
         switch result {
         case .success(let fields):
             self.onQPACKDecodeResult(fields: fields)
         case .failure(let error):
-            self.onQPACKDecodeError(error)
+            self.onQPACKDecodeError(
+                HTTP3Error(error, streamID: self.streamID, location: .here()),
+                isConnectionError: error.isConnectionError
+            )
         }
     }
 }

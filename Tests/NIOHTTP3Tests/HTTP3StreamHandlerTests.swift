@@ -84,8 +84,8 @@ final class TestQPACKConnectionDelegate: HTTP3.QPACKConnectionDelegate {
         self._makeOutboundEncoderStream = onMakeOutboundEncoderStream
     }
 
-    func connectionError(_ error: HTTP3Error) {
-        self._connectionError(error)
+    func connectionError(_ error: QPACKError) {
+        self._connectionError(HTTP3Error(error, location: .here()))
     }
 
     func makeOutboundEncoderStream() {
@@ -203,36 +203,33 @@ struct NIOHTTP3StreamHandlerTests {
 
     @available(anyAppleOS 26.0, *)
     @Test func receiveInvalidHeaders() throws {
-        var errorReceived = false
-        let qpackDelegate = TestQPACKConnectionDelegate(onConnectionError: { error in
-            errorReceived = true
-            #expect(error.code == .qpackDecoderError)
-            #expect(error.h3ErrorCode == .qpackDecompressionFailed)
-        })
+        // The QPACK coder must not report the failure to the connection itself: the stream does, like it does for
+        // every other connection error it finds. The default QPACK connection delegate records an issue if called.
+        var connectionErrors: [HTTP3Error] = []
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(connectionDelegate: qpackDelegate),
-            delegate: TestDelegate(),
+            qpackCoder: makeTestQPACKCoder(),
+            delegate: TestDelegate(onConnectionError: { connectionErrors.append($0) }),
             logger: self.logger
         )
-        let eventLoop = EmbeddedEventLoop()
-        let recorderPromise = eventLoop.makePromise(of: [HTTP3Frame].self)
-        let recorder = InboundDataRecorder(promise: recorderPromise, targetCount: 1)
-        let channel = EmbeddedChannel(handlers: [handler, recorder], loop: eventLoop)
+        let channel = EmbeddedChannel(handlers: [handler])
 
         // Read in a test header which the QPACK decoder will reject.
         try channel.writeInbound(self.testUndecodableRequestPartialHeaderBytes)
 
-        expectH3Error(
-            code: .qpackDecoderError,
-            h3ErrorCode: .qpackDecompressionFailed,
-            message: "Could not decode QPACK headers for stream 5"
-        ) {
-            _ = try recorderPromise.futureResult.wait()
+        #expect(connectionErrors.count == 1)
+        if let error = connectionErrors.first {
+            expectH3ErrorEqual(
+                error: error,
+                expectedCode: .qpackDecoderError,
+                expectedH3ErrorCode: .qpackDecompressionFailed,
+                expectedMessage: "Could not decode QPACK headers for stream 5"
+            )
         }
-        #expect(errorReceived)
+        // The connection error tears the stream down, nothing is forwarded on it.
+        #expect(try channel.readInbound(as: HTTP3Frame.self) == nil)
     }
 
     /// Receive headers which can't yet be decoded, but can be later.
