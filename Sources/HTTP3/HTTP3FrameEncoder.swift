@@ -67,6 +67,32 @@ extension ByteBuffer {
 }
 
 extension ByteBuffer {
+    /// Write a HEADERS frame, whose payload `encodePayload` appends.
+    ///
+    /// - Parameters:
+    ///   - maxPayloadLength: The largest number of bytes `encodePayload` appends. The frame's length takes as many
+    ///     bytes as this needs, so that the payload never has to be moved once it's written.
+    ///   - encodePayload: Appends the QPACK encoded field section to the span, which has room for
+    ///     `maxPayloadLength` bytes.
+    @available(anyAppleOS 27, *)
+    mutating func writeHeadersFrame(maxPayloadLength: Int, encodePayload: (inout OutputRawSpan) -> Void) {
+        self.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
+        // Safe to unwrap: `bytesNeededForInteger` only returns 1, 2, 4 or 8.
+        let lengthLength = ByteBuffer.QUICBinaryEncodingStrategy.IntegerLength(
+            rawValue: ByteBuffer.QUICBinaryEncodingStrategy.bytesNeededForInteger(maxPayloadLength)
+        )!
+        self.writeLengthPrefixed(strategy: .quic(requiredBytesHint: lengthLength)) { buffer in
+            let start = buffer.writerIndex
+            buffer.writeWithOutputRawSpan(minimumWritableBytes: maxPayloadLength, initializingWith: encodePayload)
+            let payloadLength = buffer.writerIndex &- start
+            // A longer payload would need a longer length, and be moved to make room for it.
+            assert(payloadLength <= maxPayloadLength, "The payload is longer than its maximum length")
+            return payloadLength
+        }
+    }
+}
+
+extension ByteBuffer {
     /// Write `value` as a quic encoded integer, prefixed with the number of bytes needed to write `value`, also as a quic-encoded integer.
     ///
     /// E.g. if value is 100:
