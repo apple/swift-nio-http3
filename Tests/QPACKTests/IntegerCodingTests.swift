@@ -22,12 +22,11 @@ struct IntegerCodingTests {
 
     // MARK: - Array-based helpers
 
-    private mutating func encodeIntegerToArray(_ value: UInt64, prefix: Int) -> [UInt8] {
-        var data = [UInt8]()
-        self.scratchBuffer.clear()
-        let len = self.scratchBuffer.writeQPACKPrefixedInteger(value, prefix: prefix)
-        data.append(contentsOf: self.scratchBuffer.viewBytes(at: 0, length: len)!)
-        return data
+    private func encodeIntegerToArray(_ value: UInt64, prefix: Int) -> [UInt8] {
+        let buffer = ByteBuffer(initialCapacity: QPACKEncodedLength.maxPrefixedInteger(UInt64.self)) { output in
+            output.appendQPACKPrefixedInteger(value, prefix: prefix)
+        }
+        return Array(buffer.readableBytesView)
     }
 
     private mutating func decodeInteger(from array: [UInt8], prefix: Int) throws -> Int? {
@@ -39,7 +38,7 @@ struct IntegerCodingTests {
     // MARK: - Tests
 
     @Test
-    mutating func testIntegerEncoding() throws {
+    func testIntegerEncoding() throws {
         // values from the standard: http://httpwg.org/specs/rfc7541.html#integer.representation.examples
         var data = self.encodeIntegerToArray(10, prefix: 5)  // 0000 1010
         #expect(data == [0b00001010])
@@ -126,6 +125,19 @@ struct IntegerCodingTests {
         //  set the top bit of all but the last part to get our remaining output bytes:
         //      10000000 10000000 10000000 10000000 10000000 10000000 10000000 10000000 10000000 00000001
         #expect(data == [255, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1])
+    }
+
+    @Test(arguments: 1...8)
+    func testEncodedLength(prefix: Int) {
+        let values: [UInt64] = [0, 1, 30, 31, 32, 126, 127, 128, 254, 255, 256, 1337, 1 << 14, 1 << 32, .max - 1, .max]
+        for value in values {
+            let length = QPACKEncodedLength.prefixedInteger(value, prefix: prefix)
+            let encoded = ByteBuffer(initialCapacity: QPACKEncodedLength.maxPrefixedInteger(UInt64.self)) { output in
+                output.appendQPACKPrefixedInteger(value, prefix: prefix)
+            }
+            #expect(encoded.readableBytes == length, "\(value) with prefix \(prefix)")
+            #expect(length <= QPACKEncodedLength.maxPrefixedInteger(UInt64.self))
+        }
     }
 
     @Test
