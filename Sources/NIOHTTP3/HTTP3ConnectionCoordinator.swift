@@ -602,10 +602,15 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             self.connection?.emitConnectionError(error)
         case .onSettings(let onSettings):
             let qpackCoder = self.forceUnwrapQPACKCoder(sourceLocation: .here())
-            qpackCoder.receivedRemoteSettings(
-                maxQueueSize: Int(clamping: onSettings.qpackBlockedStreams),
-                peersDynamicTableSize: Int(clamping: onSettings.qpackMaximumTableCapacity)
-            )
+            do {
+                try qpackCoder.receivedRemoteSettings(
+                    maxQueueSize: Int(clamping: onSettings.qpackBlockedStreams),
+                    peersDynamicTableSize: Int(clamping: onSettings.qpackMaximumTableCapacity)
+                )
+            } catch {
+                assert(error.isConnectionError)
+                self.emitConnectionErrorFromStream(HTTP3Error(error, location: .here()))
+            }
             self.connection?.fireReceivedSettingsEvent(
                 ReceivedSettings(datagramsSupported: onSettings.datagramsNegotiated)
             )
@@ -879,10 +884,5 @@ extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
 extension HTTP3ConnectionCoordinator: QPACKConnectionDelegate {
     func makeOutboundEncoderStream() {
         self.createQPACKEncoderInstructionStream()
-    }
-
-    func connectionError(_ error: QPACKError) {
-        assert(error.isConnectionError)
-        self.emitConnectionErrorFromStream(HTTP3Error(error, location: .here()))
     }
 }

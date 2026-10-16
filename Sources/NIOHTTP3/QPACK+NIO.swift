@@ -33,7 +33,7 @@ typealias NIOQPACKCoder<
 >
 
 /// Gives the instructions read from the peer's QPACK streams to the ``QPACKCoder``, and reports any failure to read
-/// them to the connection.
+/// or apply them to the connection.
 @available(anyAppleOS 26.0, *)
 struct QPACKInboundStreamDelegate<
     ConnectionDelegate: QPACK.QPACKConnectionDelegate,
@@ -42,12 +42,12 @@ struct QPACKInboundStreamDelegate<
     let qpackCoder: NIOQPACKCoder<ConnectionDelegate, StreamDelegate>
     let connection: StreamDelegate
 
-    func onReceivedInstruction(_ instruction: QPACKEncoderInstruction) {
-        self.qpackCoder.receivedIncomingEncoderInstruction(instruction)
+    func onReceivedInstruction(_ instruction: QPACKEncoderInstruction) throws(QPACKError) {
+        try self.qpackCoder.receivedIncomingEncoderInstruction(instruction)
     }
 
-    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction) {
-        self.qpackCoder.receivedIncomingDecoderInstruction(instruction)
+    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction) throws(QPACKError) {
+        try self.qpackCoder.receivedIncomingDecoderInstruction(instruction)
     }
 
     func onError(_ error: HTTP3Error) {
