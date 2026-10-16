@@ -60,7 +60,7 @@ public protocol QPACKDecodeReceiver {
     /// blocked, in which case the pending decode is dropped and this is never called.
     ///
     /// A failure isn't necessarily confined to this stream: if ``QPACKError/isConnectionError`` is true, the
-    /// receiver must tear the connection down. The coder doesn't report it anywhere else.
+    /// receiver must tear the connection down.
     ///
     /// - Important: If the decoder has all the necessary QPACK decode information available the decoder
     ///              will invoke this method syncronously from
