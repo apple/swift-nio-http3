@@ -66,36 +66,6 @@ extension ByteBuffer {
             return Decoded<String>(value: string, bytesRead: lengthInt.bytesRead + lengthInt.value)
         }
     }
-
-    /// Write a string to this buffer, encoded for QPACK.
-    /// The prefix must be between 2 and 8
-    /// Parameters:
-    /// - preferHuffmanEncoding: If true, huffman encoding will be used only if it will save space. If false, huffman encoding will not be used.
-    /// - prefix: The number of bits in the first byte leave before starting the string
-    /// - prefixBits: The bits to use in the first byte before the string begins.
-    @available(anyAppleOS 27, *)
-    @discardableResult
-    mutating func writeQPACKEncodedString(
-        _ string: String,
-        preferHuffmanEncoding: Bool,
-        prefix: Int,
-        prefixBits: UInt8 = 0
-    ) -> Int {
-        let start = self.writerIndex
-        self.writeWithOutputRawSpan(
-            minimumWritableBytes: QPACKEncodedLength.maxString(byteCount: string.utf8.count, prefix: prefix)
-        ) { output in
-            string.withContiguousUTF8 {
-                output.appendQPACKEncodedString(
-                    $0,
-                    preferHuffmanEncoding: preferHuffmanEncoding,
-                    prefix: prefix,
-                    prefixBits: prefixBits
-                )
-            }
-        }
-        return self.writerIndex &- start
-    }
 }
 
 extension QPACKEncodedLength {
@@ -149,6 +119,26 @@ extension OutputRawSpan {
         // So the prefix is reduced by one
         self.appendQPACKPrefixedInteger(bytes.count, prefix: prefix - 1, prefixBits: prefixBits)
         self.appendBytes(bytes)
+    }
+
+    /// Appends a string literal, encoded as in RFC 9204 § 4.1.2.
+    ///
+    /// - Precondition: The span has room for ``QPACKEncodedLength/maxString(byteCount:prefix:)`` more bytes.
+    @available(anyAppleOS 27, *)
+    mutating func appendQPACKEncodedString(
+        _ string: String,
+        preferHuffmanEncoding: Bool,
+        prefix: Int,
+        prefixBits: UInt8 = 0
+    ) {
+        string.withContiguousUTF8 {
+            self.appendQPACKEncodedString(
+                $0,
+                preferHuffmanEncoding: preferHuffmanEncoding,
+                prefix: prefix,
+                prefixBits: prefixBits
+            )
+        }
     }
 
     /// Appends `bytes` as they are.

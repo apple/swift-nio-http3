@@ -484,24 +484,6 @@ extension OutputRawSpan {
             initializedCount = prefixStart &+ prefixLength &+ linesLength
         }
     }
-
-    /// Appends a string literal, encoded as in RFC 9204 § 4.1.2.
-    @available(anyAppleOS 27, *)
-    private mutating func appendQPACKEncodedString(
-        _ string: String,
-        preferHuffmanEncoding: Bool,
-        prefix: Int,
-        prefixBits: UInt8 = 0
-    ) {
-        string.withContiguousUTF8 {
-            self.appendQPACKEncodedString(
-                $0,
-                preferHuffmanEncoding: preferHuffmanEncoding,
-                prefix: prefix,
-                prefixBits: prefixBits
-            )
-        }
-    }
 }
 
 extension QPACKEncodedLength {
