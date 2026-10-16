@@ -131,12 +131,19 @@ extension ByteBuffer {
             guard let streamID = try self.readQPACKPrefixedInteger(as: UInt64.self, withPrefix: 6) else {
                 return nil
             }
+            // A prefixed integer can exceed the largest QUIC stream ID, which would trap in QUICStreamID.
+            guard streamID <= (1 << 62) - 1 else {
+                throw IntegerReadingError.unrepresentable
+            }
             return .streamCancellation(streamID: .init(rawValue: streamID))
         default:
             // Starts with 1
             // Remaining 7 bits are the streamID
             guard let streamID = try self.readQPACKPrefixedInteger(as: UInt64.self, withPrefix: 7) else {
                 return nil
+            }
+            guard streamID <= (1 << 62) - 1 else {
+                throw IntegerReadingError.unrepresentable
             }
             return .sectionAcknowledgement(streamID: .init(rawValue: streamID))
         }

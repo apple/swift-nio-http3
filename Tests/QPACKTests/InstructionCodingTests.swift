@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
+import NIOQUICHelpers
 import Testing
 
 @_spi(PackageInternal) @testable import QPACK
@@ -184,5 +185,27 @@ struct InstructionCodingTests {
 
         let decoded = try buffer.readQPACKDecoderInstruction()
         #expect(decoded == .insertCountIncrement(increment: 55))
+    }
+
+    @available(anyAppleOS 26.0, *)
+    @Test(arguments: [(prefix: 7, prefixBits: UInt8(0x80)), (prefix: 6, prefixBits: UInt8(0x40))])
+    func streamIDAboveQUICLimitIsUnrepresentable(prefix: Int, prefixBits: UInt8) throws {
+        // A QPACK prefixed integer isn't bounded by the QUIC limit of 2^62 - 1 that stream IDs have.
+        var buffer = ByteBuffer()
+        buffer.writeQPACKPrefixedInteger(UInt64(1) << 62, prefix: prefix, prefixBits: prefixBits)
+
+        #expect(throws: IntegerReadingError.unrepresentable) {
+            try buffer.readQPACKDecoderInstruction()
+        }
+    }
+
+    @available(anyAppleOS 26.0, *)
+    @Test func largestStreamIDDecodes() throws {
+        let streamID = QUICStreamID(rawValue: (UInt64(1) << 62) - 1)
+        var buffer = ByteBuffer()
+        buffer.writeQPACKDecoderInstruction(.streamCancellation(streamID: streamID))
+
+        let decoded = try buffer.readQPACKDecoderInstruction()
+        #expect(decoded == .streamCancellation(streamID: streamID))
     }
 }
