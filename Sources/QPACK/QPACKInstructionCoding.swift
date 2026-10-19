@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOQUICHelpers
+
 public import struct NIOCore.ByteBuffer
 
 extension ByteBuffer {
@@ -133,7 +135,7 @@ extension ByteBuffer {
                 return nil
             }
             // A prefixed integer can exceed the largest QUIC stream ID, which would trap in QUICStreamID.
-            guard streamID <= (1 << 62) - 1 else {
+            guard streamID <= QUICEncodableInteger.maxValue else {
                 throw IntegerReadingError.unrepresentable
             }
             return .streamCancellation(streamID: .init(rawValue: streamID))
@@ -143,7 +145,7 @@ extension ByteBuffer {
             guard let streamID = try self.readQPACKPrefixedInteger(as: UInt64.self, withPrefix: 7) else {
                 return nil
             }
-            guard streamID <= (1 << 62) - 1 else {
+            guard streamID <= QUICEncodableInteger.maxValue else {
                 throw IntegerReadingError.unrepresentable
             }
             return .sectionAcknowledgement(streamID: .init(rawValue: streamID))
