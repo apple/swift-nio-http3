@@ -140,7 +140,6 @@ struct EndToEndTests {
 
 @available(anyAppleOS 27, *)
 extension QPACKDecoder {
-    @available(anyAppleOS 27, *)
     fileprivate mutating func decodeFieldSection(
         streamBytes: inout ByteBuffer,
         streamID: QUICStreamID

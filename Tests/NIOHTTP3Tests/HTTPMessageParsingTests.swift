@@ -532,9 +532,8 @@ struct HTTPMessageParsingTests {
 
     private static let protocolName = HTTPField.Name(parsed: ":protocol")!
 
-    @Test
     @available(anyAppleOS 27, *)
-    func pathAndSchemeForbiddenInConnectButRequiredInExtendedConnect() {
+    @Test func pathAndSchemeForbiddenInConnectButRequiredInExtendedConnect() {
         // :scheme and :path: pseudo-headers must not be present for CONNECT.
         self.assertRequestHeadersNotValid(
             fields: [

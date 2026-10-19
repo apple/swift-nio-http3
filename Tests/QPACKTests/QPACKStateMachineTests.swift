@@ -27,16 +27,14 @@ struct QPACKStateMachineTests {
         return true
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testBeginUsingDynamicTable() {
+    @Test func testBeginUsingDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testSettingsWithoutDynamicTable() {
+    @Test func testSettingsWithoutDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action = stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0)
         switch action {
@@ -51,9 +49,8 @@ struct QPACKStateMachineTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func secondSettingsIsAConnectionError() {
+    @Test func secondSettingsIsAConnectionError() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
         #expect(isMakeEncoderInstructionStream(action1))
@@ -71,9 +68,8 @@ struct QPACKStateMachineTests {
         #expect(action3 == .sendEncoderInstruction(.setDynamicTableCapacity(300)))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func secondSettingsWithoutDynamicTableIsAConnectionError() {
+    @Test func secondSettingsWithoutDynamicTableIsAConnectionError() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         #expect(stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0) == nil)
 
@@ -90,9 +86,8 @@ struct QPACKStateMachineTests {
 
     // MARK: Encoding headers
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testEncodeHeadersInInitialState() {
+    @Test func testEncodeHeadersInInitialState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let result = stateMachine.encodeHeaders([.init(name: .cookie, value: "test")], forStream: 1)
         #expect(
@@ -108,9 +103,8 @@ struct QPACKStateMachineTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testEncodeHeadersInWaitingForStreamState() {
+    @Test func testEncodeHeadersInWaitingForStreamState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 100)
         #expect(isMakeEncoderInstructionStream(action))
@@ -119,9 +113,8 @@ struct QPACKStateMachineTests {
         stateMachine.assertEncodesWithoutUsingDynamicTable()
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testEncodeHeadersInWithoutDynamicState() {
+    @Test func testEncodeHeadersInWithoutDynamicState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 0)
         #expect(action == nil)  // No outbound stream because 0 size
@@ -129,9 +122,8 @@ struct QPACKStateMachineTests {
         stateMachine.assertEncodesWithoutUsingDynamicTable()
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testEncodeHeadersInWithDynamicState() {
+    @Test func testEncodeHeadersInWithDynamicState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
         #expect(isMakeEncoderInstructionStream(action1))
@@ -155,9 +147,8 @@ struct QPACKStateMachineTests {
 
     // MARK: Decoding headers
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testDecodeHeadersWithoutDynamicTable() {
+    @Test func testDecodeHeadersWithoutDynamicTable() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
         let receiver = 5
@@ -181,9 +172,8 @@ struct QPACKStateMachineTests {
         #expect(receiver == context)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testDecodeHeadersWithDynamicTable() {
+    @Test func testDecodeHeadersWithDynamicTable() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
 
@@ -219,9 +209,8 @@ struct QPACKStateMachineTests {
         #expect(context == receiver)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testDecodeHeadersConnectionError() {
+    @Test func testDecodeHeadersConnectionError() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
         let contextID = 123
@@ -245,9 +234,8 @@ struct QPACKStateMachineTests {
         #expect(context == contextID)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testDecodeHeadersStreamError() {
+    @Test func testDecodeHeadersStreamError() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
         let contextID = 42
@@ -271,9 +259,8 @@ struct QPACKStateMachineTests {
         #expect(context == contextID)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testDecodeHeadersWithDynamicTableDelayed() throws {
+    @Test func testDecodeHeadersWithDynamicTableDelayed() throws {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
 
@@ -312,9 +299,8 @@ struct QPACKStateMachineTests {
         #expect(stateMachine.checkPendingDecodes() == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testDecodeHeadersStreamErrorDelayed() throws {
+    @Test func testDecodeHeadersStreamErrorDelayed() throws {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
 
@@ -353,9 +339,8 @@ struct QPACKStateMachineTests {
         #expect(context == contextID)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testInvalidFieldPrefix() {
+    @Test func testInvalidFieldPrefix() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
         let contextID = 7
@@ -378,9 +363,8 @@ struct QPACKStateMachineTests {
         #expect(context == contextID)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testMaxBlockedStreams() {
+    @Test func testMaxBlockedStreams() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 3)
 
         let streamID1 = QUICStreamID(1)
@@ -418,9 +402,8 @@ struct QPACKStateMachineTests {
         #expect(context == contextID)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testDecodeInstructionsBufferedWhenStreamNotReady() {
+    @Test func testDecodeInstructionsBufferedWhenStreamNotReady() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
 
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
@@ -472,9 +455,8 @@ struct QPACKStateMachineTests {
 
     // MARK: Decoder instructions
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testGotIncomingDecoderInstruction() {
+    @Test func testGotIncomingDecoderInstruction() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
         let streamID = QUICStreamID(4)
@@ -485,9 +467,8 @@ struct QPACKStateMachineTests {
         #expect(actions == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testGotDecoderInstructionWhenImplicitlyNoDynamicTable() {
+    @Test func testGotDecoderInstructionWhenImplicitlyNoDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         // This instruction is invalid because there is no dynamic table initially and no stream with id 1
         let action = stateMachine.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: 1))
@@ -498,9 +479,8 @@ struct QPACKStateMachineTests {
         #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testGotDecoderInstructionWhenExplicitlyNoDynamicTable() {
+    @Test func testGotDecoderInstructionWhenExplicitlyNoDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         _ = stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0)
         // This instruction is invalid because remote explicitly told us no dynamic table capacity
@@ -512,9 +492,8 @@ struct QPACKStateMachineTests {
         #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testGotDecoderInstructionWhenAwaitingStream() {
+    @Test func testGotDecoderInstructionWhenAwaitingStream() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         _ = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 100)
         // We can't receive instructions from the remote decoder until we ourselves have sent an instruction to indicate support of the dynamic table
@@ -526,9 +505,8 @@ struct QPACKStateMachineTests {
         #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testGotInvalidIncomingDecoderInstruction() {
+    @Test func testGotInvalidIncomingDecoderInstruction() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         stateMachine.setupRemoteDynamicTable(maxSize: 1)
         // This instruction is invalid because we can't ack an insert which hasn't happened
@@ -542,9 +520,8 @@ struct QPACKStateMachineTests {
 
     // MARK: Encoder instructions
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testGotInvalidIncomingEncoderInstruction() {
+    @Test func testGotInvalidIncomingEncoderInstruction() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
 
         // Invalid because 1025 is higher than allowed max capacity
@@ -556,9 +533,8 @@ struct QPACKStateMachineTests {
         #expect(error == .invalidEncoderInstruction)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testInsertTooLargeEntry() {
+    @Test func testInsertTooLargeEntry() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1, decoderMaxBlockedStreams: 100)
 
         let action1 = stateMachine.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1))
@@ -578,9 +554,8 @@ struct QPACKStateMachineTests {
 
     // MARK: Request stream closing
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testClosedRequestStreamAfterEOF() {
+    @Test func testClosedRequestStreamAfterEOF() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(1)
 
@@ -593,9 +568,8 @@ struct QPACKStateMachineTests {
         #expect(actions == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testClosedRequestStreamBeforeEOFWithoutDynamicTable() {
+    @Test func testClosedRequestStreamBeforeEOFWithoutDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(1)
 
@@ -604,9 +578,8 @@ struct QPACKStateMachineTests {
         #expect(actions == nil)  // No instruction to send, because no dynamic table
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testClosedRequestStreamWhilstDecodingQPACK() {
+    @Test func testClosedRequestStreamWhilstDecodingQPACK() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(1)
         let contextID = 3
@@ -639,9 +612,8 @@ struct QPACKStateMachineTests {
 
     /// This tests the scenario where a request is fully completed, the stream is closed, and then an ack comes in on the QPACK decoder stream for that request.
     /// This test is for a potential bug where we accidentally treat it as an error to receive an ack for a 'nonexistent' stream.
-    @Test
     @available(anyAppleOS 27, *)
-    func testClosedRequestStreamThenReceiveSectionAck() throws {
+    @Test func testClosedRequestStreamThenReceiveSectionAck() throws {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
 
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
