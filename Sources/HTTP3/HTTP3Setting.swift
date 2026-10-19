@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOQUICHelpers
+
 /// A type representing a single HTTP/3 setting.
 @available(anyAppleOS 27, *)
 public struct HTTP3Setting: Hashable, Sendable {

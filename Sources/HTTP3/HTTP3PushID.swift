@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOQUICHelpers
+
 /// A struct representing an HTTP3 push ID.
 @available(anyAppleOS 27, *)
 public struct HTTP3PushID: Sendable, Hashable {
