@@ -99,8 +99,8 @@ public struct ReceivedSettings: Hashable, Sendable {
     }
 }
 
-@available(anyAppleOS 27, *)
 extension ByteBuffer {
+    @available(anyAppleOS 27, *)
     mutating func parseDatagram() throws(HTTP3Error) -> HTTP3Datagram {
         guard let quarterStreamID = self.readEncodedInteger(as: UInt64.self, strategy: .quic) else {
             // From RFC 9297 § 2.1:
@@ -144,6 +144,7 @@ extension ByteBuffer {
         return HTTP3Datagram(streamID: streamID, payload: payload)
     }
 
+    @available(anyAppleOS 27, *)
     @discardableResult
     mutating func writeDatagram(_ datagram: HTTP3Datagram) -> Int {
         // Assume largest sized integer for stream ID. Capacity is rounded up to the nearest power

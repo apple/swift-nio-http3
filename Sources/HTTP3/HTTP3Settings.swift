@@ -236,12 +236,12 @@ public struct HTTP3Settings: Hashable, Sendable {
     }
 }
 
-@available(anyAppleOS 27, *)
 extension ByteBuffer {
     /// Reads the entire ByteBuffer and returns as many settings as it finds.
     ///
     /// - Warning: There must not be any extra readable bytes beyond a valid set of settings.
     /// - Throws: If there are any extra readable bytes beyond a valid set of settings, or any of the integers are unparseable.
+    @available(anyAppleOS 27, *)
     mutating func readHTTP3Settings() throws(HTTP3Error) -> HTTP3Settings {
         var settings = HTTP3Settings()
 
@@ -285,6 +285,7 @@ extension ByteBuffer {
     ///
     /// - Parameter settings: The settings to write.
     /// - Returns: The number of bytes written.
+    @available(anyAppleOS 27, *)
     mutating func writeHTTP3Settings(_ settings: HTTP3Settings) -> Int {
         var bytesWritten = 0
         if settings.qpackBlockedStreams != 0 {
@@ -318,6 +319,7 @@ extension ByteBuffer {
     ///
     /// - Parameter setting: The setting to write.
     /// - Returns: The number of bytes written.
+    @available(anyAppleOS 27, *)
     private mutating func writeHTTP3Setting(_ setting: HTTP3Setting) -> Int {
         self.writeEncodedInteger(setting.identifier.rawValue, strategy: .quic)
             + self.writeEncodedInteger(setting.value, strategy: .quic)

@@ -859,8 +859,8 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 @available(*, unavailable)
 extension HTTP3ConnectionCoordinator: Sendable {}
 
-@available(anyAppleOS 27, *)
 extension Channel {
+    @available(anyAppleOS 27, *)
     fileprivate func writeStreamType(_ streamType: HTTP3StreamType.Unidirectional) {
         var buffer = ByteBuffer()
         buffer.writeEncodedInteger(streamType.rawValue, strategy: .quic)

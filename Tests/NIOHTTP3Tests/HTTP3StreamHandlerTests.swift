@@ -102,10 +102,10 @@ func makeTestQPACKCoder(
     return coder
 }
 
-@available(anyAppleOS 27, *)
 extension EmbeddedChannel {
     /// Drain everything a ``QPACKOutboundDecoderStream`` has written to this channel, decoded back into
     /// instructions.
+    @available(anyAppleOS 27, *)
     fileprivate func readAllDecoderInstructions() throws -> [QPACKDecoderInstruction] {
         let processor = NIOSingleStepByteToMessageProcessor(QPACKDecoderInstructionDecoder())
         var instructions = [QPACKDecoderInstruction]()
@@ -728,8 +728,8 @@ struct NIOHTTP3StreamHandlerTests {
     }
 }
 
-@available(anyAppleOS 27, *)
 extension DebugInboundEventsHandler.Event {
+    @available(anyAppleOS 27, *)
     var isInputClosedEvent: Bool {
         switch self {
         case .userInboundEventTriggered(let event as ChannelEvent):
@@ -740,6 +740,7 @@ extension DebugInboundEventsHandler.Event {
         }
     }
 
+    @available(anyAppleOS 27, *)
     var isHTTP3Error: HTTP3Error? {
         switch self {
         case .errorCaught(let error as HTTP3Error):

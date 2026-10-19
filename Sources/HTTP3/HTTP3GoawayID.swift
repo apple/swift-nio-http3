@@ -69,9 +69,9 @@ extension HTTP3GoawayID {
     public static let maxServerValue = HTTP3GoawayID(rawValue: (1 << 62) - 4)
 }
 
-@available(anyAppleOS 27, *)
 extension QUICStreamID {
     /// A goaway ID sent from a server to a client represents a ``QUICStreamID``.
+    @available(anyAppleOS 27, *)
     init(goawayID: HTTP3GoawayID) {
         self.init(rawValue: goawayID.rawValue)
     }

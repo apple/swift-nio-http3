@@ -17,7 +17,6 @@ public import struct NIOCore.ByteBuffer
 private let valueMask: UInt8 = 127
 private let continuationMask: UInt8 = 128
 
-@available(anyAppleOS 27, *)
 extension ByteBuffer {
     /// Encodes an integer value into a provided memory location, using the format defined in RFC 9204 § 4.1.1.
     ///
@@ -26,6 +25,7 @@ extension ByteBuffer {
     ///   - prefix: The number of bits available for use in the first byte at `buffer`.
     ///   - prefixBits: Existing bits to place in that first byte of `buffer` before encoding `value`.
     /// - Returns: Returns the number of bytes used to encode the integer.
+    @available(anyAppleOS 27, *)
     @discardableResult
     @inlinable
     mutating func writeQPACKPrefixedInteger<Integer: FixedWidthInteger>(
@@ -75,6 +75,7 @@ extension ByteBuffer {
     /// If no integer can be read, returns nil and leaves the index as it was.
     /// - Precondition: The prefix MUST be between 1 and 8 inclusive.
     /// - Throws: IntegerReadingError if the result doesn't fit in the requested type.
+    @available(anyAppleOS 27, *)
     mutating func readQPACKPrefixedInteger<Integer: FixedWidthInteger & Sendable>(
         as: Integer.Type = Integer.self,
         withPrefix prefix: Int
@@ -91,6 +92,7 @@ extension ByteBuffer {
     /// Does not affect the reader index.
     /// - Precondition: The prefix MUST be between 1 and 8 inclusive.
     /// - Throws: IntegerReadingError if the result doesn't fit in the requested type.
+    @available(anyAppleOS 27, *)
     func getQPACKPrefixedInteger<Integer: FixedWidthInteger>(
         as: Integer.Type = Integer.self,
         at startIndex: Int,
