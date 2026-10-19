@@ -21,6 +21,7 @@ import struct NIOCore.ByteBuffer
 
 struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
     @Test
+    @available(anyAppleOS 27, *)
     func getsStreamType() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
@@ -36,6 +37,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func getsMultiByteStreamType() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
@@ -60,6 +62,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func queuesBytesAfterStreamType() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
@@ -80,6 +83,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func queuesBytesAfterStreamTypeMultiByte() {
         // This test specifically is for the scenario where it takes multiple bytes to get the stream type, and each of those bytes comes
         // separately and thus needs to be buffered, but the final incoming bytebuffer, the one which contains the last byte needed for the
@@ -105,6 +109,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func bufferNewBytesWhilstUnbuffering() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
@@ -139,6 +144,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func dropsBytesAfterAbort() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 

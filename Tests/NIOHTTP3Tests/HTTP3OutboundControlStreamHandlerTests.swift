@@ -19,9 +19,13 @@ import Testing
 @testable import NIOHTTP3
 
 struct HTTP3OutboundControlStreamHandlerTests {
-    let testSettings = HTTP3Settings(qpackMaximumTableCapacity: 100)
+    @available(anyAppleOS 27, *)
+    var testSettings: HTTP3Settings {
+        HTTP3Settings(qpackMaximumTableCapacity: 100)
+    }
 
     @Test
+    @available(anyAppleOS 27, *)
     func writesSettings_handlerAddedThenActive() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP3OutboundControlStreamHandler(settings: self.testSettings)
@@ -35,6 +39,7 @@ struct HTTP3OutboundControlStreamHandlerTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func writesSettings_activeThenHandlerAdded() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP3OutboundControlStreamHandler(settings: self.testSettings)
@@ -50,6 +55,7 @@ struct HTTP3OutboundControlStreamHandlerTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func writeGoawayBeforeActiveOrAdded() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP3OutboundControlStreamHandler(settings: self.testSettings)
@@ -66,6 +72,7 @@ struct HTTP3OutboundControlStreamHandlerTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func writeGoawayAfterActiveAndAdded() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP3OutboundControlStreamHandler(settings: self.testSettings)

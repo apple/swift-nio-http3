@@ -13,15 +13,18 @@ jobs:
     uses: swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.11
     with:
       license_header_check_project_name: "SwiftNIO"
-      docs_check_container_image: "swift:6.3"
+      docs_check_container_image: "swift:6.4"
       api_breakage_check_enabled: false
-      format_check_container_image: "swift:6.3"
+      format_check_container_image: "swift:6.4"
 
   unit-tests:
     name: Unit tests
     uses: apple/swift-nio/.github/workflows/unit_tests.yml@main
     with:
-      linux_6_3_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
+      linux_6_1_enabled: false
+      linux_6_2_enabled: false
+      linux_6_3_enabled: false
+      linux_6_4_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
       linux_nightly_next_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
       linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error"
       linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1"}'
@@ -31,6 +34,9 @@ jobs:
     # Workaround https://github.com/nektos/act/issues/1875
     uses: apple/swift-nio/.github/workflows/cxx_interop.yml@main
     with:
+      linux_6_1_enabled: false
+      linux_6_2_enabled: false
+      linux_6_3_enabled: false
       linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1"}'
 
   macos-tests:
@@ -42,6 +48,7 @@ jobs:
       build_scheme: swift-nio-http3
       swift_6_1_enabled: false
       swift_6_2_enabled: false
+      swift_6_3_enabled: false
       env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1"}'
 
   static-sdk:
@@ -55,6 +62,9 @@ jobs:
     name: Release builds
     uses: apple/swift-nio/.github/workflows/release_builds.yml@main
     with:
+      linux_6_1_enabled: false
+      linux_6_2_enabled: false
+      linux_6_3_enabled: false
       linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1"}'
 
   api-breakage-checks:

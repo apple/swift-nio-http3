@@ -17,6 +17,7 @@ import HTTPTypes
 public import NIOCore
 public import NIOQUICHelpers
 
+@available(anyAppleOS 27, *)
 public struct HTTP3Datagram: @unchecked Sendable {
     // Unchecked because this struct is backed by a class. Safe because it uses uniqueness checks.
 
@@ -79,6 +80,7 @@ public struct HTTP3Datagram: @unchecked Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Datagram {
     // RFC 9297 § 2.1: "the largest legal value of the Quarter Stream ID field is 2^60-1"
     static var largestValidQuarterStreamID: UInt64 {
@@ -87,6 +89,7 @@ extension HTTP3Datagram {
 }
 
 /// Fired on the connection channel once the peer's SETTINGS have been received.
+@available(anyAppleOS 27, *)
 public struct ReceivedSettings: Hashable, Sendable {
     /// Whether both peers advertised support for HTTP datagrams.
     public var datagramsSupported: Bool
@@ -96,6 +99,7 @@ public struct ReceivedSettings: Hashable, Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension ByteBuffer {
     mutating func parseDatagram() throws(HTTP3Error) -> HTTP3Datagram {
         guard let quarterStreamID = self.readEncodedInteger(as: UInt64.self, strategy: .quic) else {

@@ -15,7 +15,7 @@ The following snippet contains a Swift Package manifest to use SwiftNIO HTTP/3
 with SwiftNIO QUIC.
 
 ```swift
-// swift-tools-version: 6.3
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(
@@ -42,9 +42,9 @@ let package = Package(
 
 ### Prerequisites
 
-- [Swift 6.3 and up](https://swift.org/install)
-- macOS 26.0 and up or Linux (Ubuntu 22.04+)
-- Xcode 26.0 and up (Apple platforms only)
+- [Swift 6.4 and up](https://swift.org/install)
+- macOS 27.0 and up or Linux (Ubuntu 22.04+)
+- Xcode 27.0 and up (Apple platforms only)
 
 ### Building and testing
 

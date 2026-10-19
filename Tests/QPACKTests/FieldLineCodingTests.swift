@@ -19,6 +19,7 @@ import Testing
 
 struct FieldLineCodingTests {
     @Test
+    @available(anyAppleOS 27, *)
     func fieldSectionPrefixWithoutSign() throws {
         var buffer = ByteBuffer()
         let maxCapacity = 100
@@ -45,6 +46,7 @@ struct FieldLineCodingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testFieldSectionPrefixWithSign() throws {
         var buffer = ByteBuffer()
         let maxCapacity = 100
@@ -71,6 +73,7 @@ struct FieldLineCodingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testFieldSectionPrefixWithNoDelta() throws {
         var buffer = ByteBuffer()
         let maxCapacity = 100
@@ -97,6 +100,7 @@ struct FieldLineCodingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testFieldSectionPrefixNegativeBase() throws {
         // An endpoint MUST treat a field block with a Sign bit of 1 as invalid if the value of Required Insert Count is less than or equal to the value of Delta Base.
         var buffer = ByteBuffer()
@@ -125,6 +129,7 @@ struct FieldLineCodingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testEncodeRequiredInsertCount() {
         func expectEncoding(original: Int, expect: Int, sourceLocation: SourceLocation = #_sourceLocation) {
             let prefix = FieldSectionPrefix(requiredInsertCount: original, base: 0)
@@ -156,6 +161,7 @@ struct FieldLineCodingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testDecodeRequiredInsertCountZero() {
         for maxCapacity in 0...100 {
             for totalInserts in 0...100 {
@@ -169,6 +175,7 @@ struct FieldLineCodingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testDecodeRequiredInsertCount() {
         let maxCapacity = 100
 
@@ -268,7 +275,7 @@ struct FieldLineCodingTests {
         assertCanDecode(encodedRequiredInsertCount: 6, totalInserts: 2, expectDecoded: 5)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeFieldSectionPrefixRoundtrips() {
         for maxCapacity in 200...400 {
             for requiredInsertCount in 1...20 {
@@ -285,7 +292,7 @@ struct FieldLineCodingTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func index() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(.indexed(.staticTable, index: 6), preferHuffmanEncoding: false)
@@ -299,7 +306,7 @@ struct FieldLineCodingTests {
         #expect(decoded == .indexed(.staticTable, index: 6))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func indexWithPostBase() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(.indexedWithPostBase(index: 6), preferHuffmanEncoding: false)
@@ -313,7 +320,7 @@ struct FieldLineCodingTests {
         #expect(decoded == .indexedWithPostBase(index: 6))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func literalWithNameReference() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(
@@ -348,7 +355,7 @@ struct FieldLineCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func literalWithNameReferencePostBase() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(
@@ -373,7 +380,7 @@ struct FieldLineCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func literal() throws {
         var buffer = ByteBuffer()
         buffer.writeFieldLine(

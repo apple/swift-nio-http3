@@ -16,6 +16,7 @@ import HTTP3
 import HTTPTypes
 import Testing
 
+@available(anyAppleOS 27, *)
 func expectH3Error(
     code: HTTP3Error.Code,
     h3ErrorCode: HTTP3ErrorCode,
@@ -34,6 +35,7 @@ func expectH3Error(
     )
 }
 
+@available(anyAppleOS 27, *)
 func expectH3ErrorEqual(
     error: (any Error)?,
     expectedCode: HTTP3Error.Code,
@@ -58,6 +60,7 @@ func expectH3ErrorEqual(
     )
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Error {
     func expect(
         code expectedCode: HTTP3Error.Code,

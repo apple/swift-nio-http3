@@ -18,6 +18,7 @@ import Testing
 
 struct HTTP3GoawayIDTests {
     @Test
+    @available(anyAppleOS 27, *)
     func goawayComparable() {
         #expect(HTTP3GoawayID(rawValue: 0) < HTTP3GoawayID(rawValue: 1))
         #expect(HTTP3GoawayID(rawValue: 1) < HTTP3GoawayID(rawValue: 2))

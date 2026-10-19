@@ -22,6 +22,7 @@ import NIOQUICHelpers
 /// Buffers all data after the stream type until told to release the queue.
 /// This is only used for unidirectional streams. Bidirectional streams do not send a stream header. Their type is always request.
 /// See RFC 9114 § 6.2 for more information.
+@available(anyAppleOS 27, *)
 final class HTTP3UnidirectionalStreamTypeDecoderHandler: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = ByteBuffer
     typealias InboundOut = ByteBuffer

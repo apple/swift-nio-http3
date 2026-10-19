@@ -18,6 +18,7 @@ import Testing
 
 struct HTTP3ErrorTests {
     @Test
+    @available(anyAppleOS 27, *)
     func testHTTP3ErrorCustomStringConvertible() throws {
         var error = HTTP3Error(
             code: .malformedMessage,
@@ -38,6 +39,7 @@ struct HTTP3ErrorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testHTTP3ErrorCustomDebugStringConvertible() throws {
         var error = HTTP3Error(
             code: .malformedMessage,
@@ -69,6 +71,7 @@ struct HTTP3ErrorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testHTTP3ErrorDetailedDescription() throws {
         var error = HTTP3Error(
             code: .malformedMessage,
@@ -102,6 +105,7 @@ struct HTTP3ErrorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testHTTP3ErrorCustomDebugStringConvertibleWithNestedCause() throws {
         let location = HTTP3Error.SourceLocation(
             function: "fn(_:)",
@@ -151,6 +155,7 @@ struct HTTP3ErrorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testSourceLocationDescription() {
         let location = HTTP3Error.SourceLocation(function: "fn(_:)", file: "file.swift", line: 42)
         #expect("\(location)" == "fn(_:) (file.swift:42)")

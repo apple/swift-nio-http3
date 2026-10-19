@@ -24,22 +24,32 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3ToHTTPCodecTests {
-    private let validRequestHead: HTTP3Frame = .headers([
-        .init(name: .method, value: "GET"),
-        .init(name: .scheme, value: "https"),
-        .init(name: .authority, value: "test"),
-        .init(name: .path, value: "/"),
-    ])
+    @available(anyAppleOS 27, *)
+    private var validRequestHead: HTTP3Frame {
+        .headers([
+            .init(name: .method, value: "GET"),
+            .init(name: .scheme, value: "https"),
+            .init(name: .authority, value: "test"),
+            .init(name: .path, value: "/"),
+        ])
+    }
 
-    private let validFinalResponseHead: HTTP3Frame = .headers([
-        .init(name: .status, value: "200")
-    ])
+    @available(anyAppleOS 27, *)
+    private var validFinalResponseHead: HTTP3Frame {
+        .headers([
+            .init(name: .status, value: "200")
+        ])
+    }
 
-    private let validInterimResponseHead: HTTP3Frame = .headers([
-        .init(name: .status, value: "103")
-    ])
+    @available(anyAppleOS 27, *)
+    private var validInterimResponseHead: HTTP3Frame {
+        .headers([
+            .init(name: .status, value: "103")
+        ])
+    }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testClientCodecWrite() throws {
         let handler = HTTP3ToHTTPClientCodec()
         let eventLoop = EmbeddedEventLoop()
@@ -86,6 +96,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testClientCodecRead() throws {
         let handler = HTTP3ToHTTPClientCodec()
         let eventLoop = EmbeddedEventLoop()
@@ -107,6 +118,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testServerCodecWrite() throws {
         let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
@@ -147,6 +159,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testServerCodecRead() throws {
         let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
@@ -168,6 +181,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func serverCodecGeneratesEndPartForCompleteRequestUponInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
@@ -188,6 +202,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func clientCodecGeneratesEndPartForCompleteResponseUponInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
@@ -208,6 +223,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func serverCodecDoesNotFireChannelReadWhenNoRequest() throws {
         let eventLoop = EmbeddedEventLoop()
         let promise = eventLoop.makePromise(of: [Void].self)
@@ -235,6 +251,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test(arguments: [true, false])
+    @available(anyAppleOS 27, *)
     func clientCodecDoesNotEmitEndWhenResponseIncomplete(includeInterimResponses: Bool) throws {
         let eventLoop = EmbeddedEventLoop()
         let promise = eventLoop.makePromise(of: [HTTPResponsePart].self)

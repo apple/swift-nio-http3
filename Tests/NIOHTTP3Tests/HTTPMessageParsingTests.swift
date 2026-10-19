@@ -22,22 +22,32 @@ import Testing
 @testable import NIOHTTP3
 
 struct HTTPMessageParsingTests {
-    let validRequestHead: HTTP3Frame = .headers([
-        .init(name: .method, value: "GET"),
-        .init(name: .scheme, value: "https"),
-        .init(name: .authority, value: "test"),
-        .init(name: .path, value: "/"),
-    ])
+    @available(anyAppleOS 27, *)
+    var validRequestHead: HTTP3Frame {
+        .headers([
+            .init(name: .method, value: "GET"),
+            .init(name: .scheme, value: "https"),
+            .init(name: .authority, value: "test"),
+            .init(name: .path, value: "/"),
+        ])
+    }
 
-    let validResponseHead: HTTP3Frame = .headers([
-        .init(name: .status, value: "200")
-    ])
+    @available(anyAppleOS 27, *)
+    var validResponseHead: HTTP3Frame {
+        .headers([
+            .init(name: .status, value: "200")
+        ])
+    }
 
-    let validTrailers: HTTP3Frame = .headers([
-        .init(name: .init("test")!, value: "hello")
-    ])
+    @available(anyAppleOS 27, *)
+    var validTrailers: HTTP3Frame {
+        .headers([
+            .init(name: .init("test")!, value: "hello")
+        ])
+    }
 
     @Test(arguments: 0...10)
+    @available(anyAppleOS 27, *)
     func testProcessRequestFramesWithTrailers(numDataFrames: Int) throws {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         // Headers
@@ -59,6 +69,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test(arguments: 1...10)
+    @available(anyAppleOS 27, *)
     func testProcessResponseFramesWithTrailers(numDataFrames: Int) throws {
         var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
         // Headers
@@ -80,6 +91,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testProcessInvalidHeaders() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         // Headers
@@ -100,6 +112,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testProcessInvalidTrailers() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         // Valid headers
@@ -126,6 +139,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testEmitsEndOnClose() {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         let action1 = machine.processFrame(frame: self.validRequestHead)
@@ -141,6 +155,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testNoActionOnCloseAfterTrailers() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         let action1 = machine.processFrame(frame: self.validRequestHead)
@@ -154,9 +169,13 @@ struct HTTPMessageParsingTests {
         #expect(action3 == nil)
     }
 
-    let informationalEarlyHintsHead = HTTP3Frame.headers([.init(name: .status, value: "103")])
+    @available(anyAppleOS 27, *)
+    var informationalEarlyHintsHead: HTTP3Frame {
+        HTTP3Frame.headers([.init(name: .status, value: "103")])
+    }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testSingleInterimThenFinal() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
 
@@ -174,6 +193,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testMultipleInterimThenFinal() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
 
@@ -194,6 +214,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testInvalidInterimHeaders() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
 
@@ -221,6 +242,7 @@ struct HTTPMessageParsingTests {
     // MARK: General request and response header validation
 
     @Test
+    @available(anyAppleOS 27, *)
     func testProcessPseudoNotFirst() {
         self.assertRequestHeadersNotValid(
             fields: [
@@ -244,6 +266,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testProcessDuplicatePseudoHeaders() {
         self.assertRequestHeadersNotValid(
             fields: [
@@ -265,6 +288,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testTeHeader() {
         /// The only exception to this is the TE header field, which MAY be present in an HTTP/3 request header; when it is, it MUST NOT contain any value other than "trailers".
         self.assertRequestHeadersValid(
@@ -297,6 +321,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testTransferEncoding() {
         self.assertRequestHeadersNotValid(
             fields: [
@@ -318,6 +343,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testUnknownHeaders() {
         self.assertRequestHeadersValid(fields: [
             .init(name: .method, value: "GET"),
@@ -352,6 +378,7 @@ struct HTTPMessageParsingTests {
     // MARK: Request-specific header validation
 
     @Test
+    @available(anyAppleOS 27, *)
     func testRequestWithResponsePseudo() {
         self.assertRequestHeadersNotValid(
             fields: [
@@ -366,6 +393,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testHTTPMustHaveAuthorityHost() {
         // Missing authority and host
         self.assertRequestHeadersNotValid(
@@ -441,6 +469,7 @@ struct HTTPMessageParsingTests {
         (scheme: "http", path: ""),
         (scheme: "https", path: ""),
     ])
+    @available(anyAppleOS 27, *)
     func testMustHaveNonEmptyPathIfHTTP(failingTestCase: (scheme: String, path: String)) {
         self.assertRequestHeadersNotValid(
             fields: [
@@ -460,6 +489,7 @@ struct HTTPMessageParsingTests {
         // For non-http schemes, path can be blank
         (scheme: "something", path: ""),
     ])
+    @available(anyAppleOS 27, *)
     func testMustHaveNonEmptyPathIfHTTP(passingTestCase: (scheme: String, path: String)) {
         self.assertRequestHeadersValid(fields: [
             .init(name: .method, value: "GET"),
@@ -470,6 +500,7 @@ struct HTTPMessageParsingTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testConnect() {
         self.assertRequestHeadersNotValid(
             fields: [
@@ -501,7 +532,9 @@ struct HTTPMessageParsingTests {
 
     private static let protocolName = HTTPField.Name(parsed: ":protocol")!
 
-    @Test func pathAndSchemeForbiddenInConnectButRequiredInExtendedConnect() {
+    @Test
+    @available(anyAppleOS 27, *)
+    func pathAndSchemeForbiddenInConnectButRequiredInExtendedConnect() {
         // :scheme and :path: pseudo-headers must not be present for CONNECT.
         self.assertRequestHeadersNotValid(
             fields: [
@@ -541,6 +574,7 @@ struct HTTPMessageParsingTests {
         "[::1]:443",
         "a:1",
     ])
+    @available(anyAppleOS 27, *)
     func connectValidAuthority(authority: String) {
         self.assertRequestHeadersValid(fields: [
             .init(name: .method, value: "CONNECT"),
@@ -580,6 +614,7 @@ struct HTTPMessageParsingTests {
         // IPv6 zone ID.
         "[fe80::1%1]:443",
     ])
+    @available(anyAppleOS 27, *)
     func connectInvalidAuthority(authority: String) {
         self.assertRequestHeadersNotValid(
             fields: [
@@ -593,6 +628,7 @@ struct HTTPMessageParsingTests {
     // MARK: Response-specific header validation
 
     @Test
+    @available(anyAppleOS 27, *)
     func testResponseWithRequestPseudo() {
         self.assertResponseHeadersNotValid(
             fields: [
@@ -636,6 +672,7 @@ struct HTTPMessageParsingTests {
         HTTPField(name: .path, value: "/"),
         HTTPField(name: .status, value: "200"),
     ])
+    @available(anyAppleOS 27, *)
     func testTrailersNoPseudo(testHeader: HTTPField) throws {
         // Requests
         var machine1 = HTTPMessageParsingStateMachine<HTTPRequestPart>()
@@ -668,6 +705,7 @@ struct HTTPMessageParsingTests {
 
     // MARK: Assertions
 
+    @available(anyAppleOS 27, *)
     private func assertRequestHeadersNotValid(
         fields: [HTTPField],
         expectedError: String,
@@ -687,6 +725,7 @@ struct HTTPMessageParsingTests {
         }
     }
 
+    @available(anyAppleOS 27, *)
     private func assertResponseHeadersNotValid(
         fields: [HTTPField],
         expectedError: String,
@@ -706,6 +745,7 @@ struct HTTPMessageParsingTests {
         }
     }
 
+    @available(anyAppleOS 27, *)
     private func assertRequestHeadersValid(
         fields: [HTTPField],
         sourceLocation: SourceLocation = #_sourceLocation
@@ -722,6 +762,7 @@ struct HTTPMessageParsingTests {
         }
     }
 
+    @available(anyAppleOS 27, *)
     private func assertResponseHeadersValid(
         fields: [HTTPField],
         sourceLocation: SourceLocation = #_sourceLocation
@@ -739,6 +780,7 @@ struct HTTPMessageParsingTests {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTPMessageParsingStateMachine.ProcessFrameAction {
     fileprivate var returnPart: Part? {
         switch self {
@@ -759,6 +801,7 @@ extension HTTPMessageParsingStateMachine.ProcessFrameAction {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTPMessageParsingStateMachine<HTTPRequestPart>.ProcessFrameAction? {
     fileprivate func assertError(
         sourceLocation: SourceLocation = #_sourceLocation,
@@ -771,6 +814,7 @@ extension HTTPMessageParsingStateMachine<HTTPRequestPart>.ProcessFrameAction? {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTPMessageParsingStateMachine<HTTPResponsePart>.ProcessFrameAction? {
     fileprivate func assertError(
         sourceLocation: SourceLocation = #_sourceLocation,

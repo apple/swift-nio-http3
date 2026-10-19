@@ -17,6 +17,7 @@ public import struct NIOCore.ByteBuffer
 private let valueMask: UInt8 = 127
 private let continuationMask: UInt8 = 128
 
+@available(anyAppleOS 27, *)
 extension ByteBuffer {
     /// Encodes an integer value into a provided memory location, using the format defined in RFC 9204 § 4.1.1.
     ///

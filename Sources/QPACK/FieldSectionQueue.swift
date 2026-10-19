@@ -20,6 +20,7 @@ enum FieldSectionQueueError: Error, Hashable, Sendable {
 }
 
 /// A queue of FieldSections which cannot yet be decoded.
+@available(anyAppleOS 27, *)
 struct FieldSectionQueue<Context> {
     /// An entry in the queue.
     /// `Comparable` and `Equatable` are implemented based on the ``FieldSectionPrefix/requiredInsertCount`` only.
@@ -101,4 +102,5 @@ struct FieldSectionQueue<Context> {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension FieldSectionQueue.Entry: Sendable where Context: Sendable {}

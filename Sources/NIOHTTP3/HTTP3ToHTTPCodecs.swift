@@ -17,6 +17,7 @@ import HTTPTypes
 public import NIOCore
 public import NIOHTTPTypes
 
+@available(anyAppleOS 27, *)
 protocol HTTPMessagePart {
     static func head(fields: [HTTPField]) throws(HTTP3Error) -> Self
     static func body(buffer: ByteBuffer) -> Self
@@ -24,6 +25,7 @@ protocol HTTPMessagePart {
     static func end() -> Self
 }
 
+@available(anyAppleOS 27, *)
 extension HTTPRequestPart: HTTPMessagePart {
     static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
         .head(try HTTP3MessageDecoding.request(fields: fields))
@@ -42,6 +44,7 @@ extension HTTPRequestPart: HTTPMessagePart {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTPResponsePart: HTTPMessagePart {
     static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         .head(try HTTP3MessageDecoding.response(fields: fields))
@@ -62,6 +65,7 @@ extension HTTPResponsePart: HTTPMessagePart {
 
 /// Process HTTP3Frames into HTTPMessageParts.
 /// Use this to convert incoming frames into message parts.
+@available(anyAppleOS 27, *)
 struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
     enum State {
         case awaitingHeaders
@@ -154,6 +158,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
 }
 
 /// Use this on clients to write `HTTPRequestPart` and receive `HTTPResponsePart`.
+@available(anyAppleOS 27, *)
 public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     public typealias InboundIn = HTTP3Frame
     public typealias InboundOut = HTTPResponsePart
@@ -245,6 +250,7 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
 extension HTTP3ToHTTPClientCodec: Sendable {}
 
 /// Use this on servers to receive `HTTPRequestPart` and write `HTTPResponsePart`.
+@available(anyAppleOS 27, *)
 public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
     public typealias InboundIn = HTTP3Frame
     public typealias InboundOut = HTTPRequestPart

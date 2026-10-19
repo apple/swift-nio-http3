@@ -29,6 +29,7 @@ import X509
 @_spi(PackageInternal) @testable import QPACK
 
 /// Buffers incoming body data until end. Then echoes it all back with a 200 status header.
+@available(anyAppleOS 27, *)
 final class EchoHTTPServerHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPRequestPart
     typealias OutboundOut = HTTPResponsePart
@@ -68,6 +69,7 @@ final class InboundSlowingHandler: ChannelInboundHandler {
 }
 
 /// Records the ``ReceivedSettings`` events fired on a connection channel.
+@available(anyAppleOS 27, *)
 final class ReceivedSettingsRecorder: ChannelInboundHandler, Sendable {
     typealias InboundIn = HTTP3Datagram
 
@@ -125,6 +127,7 @@ final class InboundDataRecorder<DataType: Sendable>: ChannelInboundHandler {
 /// Uses two promises for control: one signals when request is received,
 /// another controls when response is sent.
 /// Request number `immediateResponseCount + 1` waits for signal; all others respond immediately.
+@available(anyAppleOS 27, *)
 private final class ControllableEchoResponseHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPRequestPart
     typealias OutboundOut = HTTPResponsePart
@@ -238,7 +241,7 @@ struct EndToEndTests {
     }()
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testSettingsFrame(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -325,7 +328,7 @@ struct EndToEndTests {
         .disabled("See DynamicTable document in NIOHTTP3 module"),
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testRoundtripWithSlowDynamicTable(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -546,7 +549,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testRoundtripWithoutDynamicTable(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -652,7 +655,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testConnectionError(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -711,7 +714,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testServerClosesConnection(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -759,7 +762,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testClosingConnectionAlsoClosesStreams(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -815,7 +818,7 @@ struct EndToEndTests {
         .timeLimit(.minutes(1)),
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testServerClosesConnectionWithActiveStream(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -889,7 +892,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testStreamError(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -963,7 +966,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testUnknownIncomingStream(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1021,7 +1024,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testIncomingPushStreamOnServer(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1079,7 +1082,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testIncomingPushStreamOnClient(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1166,7 +1169,7 @@ struct EndToEndTests {
         .disabled("See DynamicTable document in NIOHTTP3 module"),
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testBadQPACKInstruction(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1239,7 +1242,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testForwardShouldQuiesce(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1298,7 +1301,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testNoOutboundRequestsAfterGoawayReceived(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -1442,7 +1445,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testControlStreamClosed(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1530,7 +1533,7 @@ struct EndToEndTests {
     /// Sets up a client and server, waits until each has received the other's SETTINGS frame, then calls `execute` with
     /// the two connection channels and the ID of a request stream which the client has opened and the server has
     /// accepted.
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func withDatagramConnection(
         authenticationConfiguration: AuthenticationConfiguration,
         clientSettings: HTTP3Settings = HTTP3Settings(h3Datagram: true),
@@ -1667,7 +1670,7 @@ struct EndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testClientSendsDatagramToServer(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let serverDatagrams = self.eventLoopGroup.any().makePromise(of: [HTTP3Datagram].self)
 
@@ -1689,7 +1692,7 @@ struct EndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testServerSendsDatagramToClient(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let clientDatagrams = self.eventLoopGroup.any().makePromise(of: [HTTP3Datagram].self)
 
@@ -1716,7 +1719,7 @@ struct EndToEndTests {
             (client: false, server: false),
         ]
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testDatagramsNegotiated(
         authenticationConfiguration: AuthenticationConfiguration,
         support: (client: Bool, server: Bool)
@@ -1738,7 +1741,7 @@ struct EndToEndTests {
 
     // The remote hasn't advertised 'SETTINGS_H3_DATAGRAM', so we must not send it datagrams.
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testSendingDatagramWithoutRemoteSupportFails(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -1761,7 +1764,7 @@ struct EndToEndTests {
 
     // MARK: - Helper Functions
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func makeServer(
         credentials: Credentials,
         host: String,
@@ -1792,7 +1795,7 @@ struct EndToEndTests {
         )
     }
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func makeClient(
         credentials: Credentials,
         host: String,
@@ -1817,7 +1820,7 @@ struct EndToEndTests {
         )
     }
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private static func createHTTP3ClientChannel(
         eventLoopGroup: any EventLoopGroup,
         host: String,
@@ -1865,7 +1868,7 @@ struct EndToEndTests {
         return try await httpChannelFuture.get()
     }
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private static func createHTTP3ServerChannel(
         eventLoopGroup: any EventLoopGroup,
         host: String,
@@ -1919,11 +1922,11 @@ struct EndToEndTests {
     }
 }
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 extension Channel {
     /// Call this on a HTTP3 connection channel to make an outbound request stream.
     /// - Returns: The request stream channel.
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     fileprivate func makeHTTP3RequestChannel(
         initializer: (@Sendable (HTTP3StreamInitializerParameters) throws -> Void)? = nil
     ) -> EventLoopFuture<any Channel> {
@@ -1942,7 +1945,7 @@ extension Channel {
 
     /// Call this on a HTTP3 connection channel to make an outbound unidirectional stream.
     /// - Returns: The stream channel.
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     fileprivate func makeHTTP3UnidirectionalStreamChannel(
         streamType: HTTP3StreamType.Unidirectional,
         initializer: (@Sendable (HTTP3StreamInitializerParameters) throws -> Void)? = nil

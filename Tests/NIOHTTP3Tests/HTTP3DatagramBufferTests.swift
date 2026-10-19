@@ -20,6 +20,7 @@ import Testing
 
 struct HTTP3DatagramBufferTests {
     @Test
+    @available(anyAppleOS 27, *)
     func emptyBuffer() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         #expect(buffer.totalSize == 0)
@@ -27,6 +28,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func appendWithSpace() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(512, streamID: 1))
@@ -37,6 +39,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func appendDropsOversizedDatagram() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(2048, streamID: 1))
@@ -45,6 +48,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func appendDropsOldDatagrams() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(256, streamID: 1))
@@ -59,6 +63,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func discardDatagramsForStreamsAtOrAboveID() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(10, streamID: 0))
@@ -74,6 +79,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func discardAllDatagrams() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(10, streamID: 1))
@@ -87,6 +93,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func unbufferDatagrams() throws {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(10, streamID: 1))
@@ -107,6 +114,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func appendDropsInInsertionOrderAcrossStreams() throws {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 60)
         buffer.append(.zeros(10, streamID: 1))
@@ -130,6 +138,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func appendDropsPartOfARun() throws {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 100)
         buffer.append(.zeros(10, streamID: 1))
@@ -147,6 +156,7 @@ struct HTTP3DatagramBufferTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func appendSkipsAlreadyUnbufferedStreamsWhenDropping() throws {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(10, streamID: 1))
@@ -166,6 +176,7 @@ struct HTTP3DatagramBufferTests {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Datagram {
     static func zeros(_ count: Int, streamID: QUICStreamID) -> HTTP3Datagram {
         HTTP3Datagram(streamID: streamID, payload: ByteBuffer(repeating: 0, count: count))

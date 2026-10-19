@@ -26,6 +26,7 @@ import Testing
 struct QPACKCoderTests {
 
     /// Make a coder with limits that are large enough not to matter. Override only what a test is about.
+    @available(anyAppleOS 27, *)
     private static func makeTestCoder(
         encoderMaxTableSize: Int = 1024,
         decoderMaxTableSize: Int = 1024,
@@ -42,7 +43,9 @@ struct QPACKCoderTests {
 
     // MARK: Remote settings
 
-    @Test func remoteSettingsWithDynamicTableAsksForEncoderStream() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func remoteSettingsWithDynamicTableAsksForEncoderStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -51,7 +54,9 @@ struct QPACKCoderTests {
         #expect(connection.madeOutboundEncoderStreamCount == 1)
     }
 
-    @Test func remoteSettingsWithoutDynamicTableDoesNotAskForEncoderStream() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func remoteSettingsWithoutDynamicTableDoesNotAskForEncoderStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -61,7 +66,9 @@ struct QPACKCoderTests {
         #expect(connection.madeOutboundEncoderStreamCount == 0)
     }
 
-    @Test func remoteSettingsAreCappedByTheLocalEncoderTableSize() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func remoteSettingsAreCappedByTheLocalEncoderTableSize() throws {
         let connection = TestConnection()
         // The peer offers a bigger table than this endpoint is willing to keep for its own encoder.
         let coder = Self.makeTestCoder(encoderMaxTableSize: 300, errorDelegate: connection)
@@ -76,7 +83,9 @@ struct QPACKCoderTests {
         #expect(encoderStream.instructions == [.setDynamicTableCapacity(300)])
     }
 
-    @Test func remoteSettingsWithoutALocalEncoderTableDoesNotAskForEncoderStream() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func remoteSettingsWithoutALocalEncoderTableDoesNotAskForEncoderStream() throws {
         let connection = TestConnection()
         // This endpoint refuses the dynamic table for its own encoder, whatever the peer offers.
         let coder = Self.makeTestCoder(encoderMaxTableSize: 0, errorDelegate: connection)
@@ -100,7 +109,9 @@ struct QPACKCoderTests {
         )
     }
 
-    @Test func secondRemoteSettingsIsAConnectionError() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func secondRemoteSettingsIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -119,7 +130,9 @@ struct QPACKCoderTests {
         #expect(encoderStream.instructions == [.setDynamicTableCapacity(300)])
     }
 
-    @Test func secondRemoteSettingsWithoutDynamicTableIsAConnectionError() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func secondRemoteSettingsWithoutDynamicTableIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -136,7 +149,9 @@ struct QPACKCoderTests {
 
     // MARK: Encoder stream
 
-    @Test func outboundEncoderStreamReadySendsTableCapacity() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func outboundEncoderStreamReadySendsTableCapacity() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -151,7 +166,9 @@ struct QPACKCoderTests {
 
     // MARK: Encode
 
-    @Test func encodeHeadersWithoutDynamicTableSendsNoInstructions() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func encodeHeadersWithoutDynamicTableSendsNoInstructions() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -171,7 +188,9 @@ struct QPACKCoderTests {
         )
     }
 
-    @Test func encodeHeadersWhileAwaitingEncoderStreamSendsNoInstructions() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func encodeHeadersWhileAwaitingEncoderStreamSendsNoInstructions() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -194,7 +213,9 @@ struct QPACKCoderTests {
         )
     }
 
-    @Test func encodeHeadersWithDynamicTableForwardsInstructions() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func encodeHeadersWithDynamicTableForwardsInstructions() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let encoderStream = TestOutboundEncoderStream()
@@ -219,7 +240,9 @@ struct QPACKCoderTests {
 
     // MARK: Decoder stream
 
-    @Test func outboundDecoderStreamReadyFlushesBufferedInstructions() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func outboundDecoderStreamReadyFlushesBufferedInstructions() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -232,7 +255,9 @@ struct QPACKCoderTests {
         #expect(decoderStream.instructions == [.insertCountIncrement(increment: 1)])
     }
 
-    @Test func outboundDecoderStreamReadyWithNothingBuffered() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func outboundDecoderStreamReadyWithNothingBuffered() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -243,7 +268,9 @@ struct QPACKCoderTests {
 
     // MARK: Decode
 
-    @Test func decodeHeadersDeliversResultSynchronously() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func decodeHeadersDeliversResultSynchronously() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -261,7 +288,9 @@ struct QPACKCoderTests {
         #expect(decoderStream.instructions.isEmpty)
     }
 
-    @Test func decodeHeadersSendsSectionAcknowledgement() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func decodeHeadersSendsSectionAcknowledgement() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -285,7 +314,9 @@ struct QPACKCoderTests {
         #expect(decoderStream.instructions == [.sectionAcknowledgement(streamID: streamID)])
     }
 
-    @Test func blockedDecodeIsDeliveredOnceUnblocked() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func blockedDecodeIsDeliveredOnceUnblocked() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -315,7 +346,9 @@ struct QPACKCoderTests {
         )
     }
 
-    @Test func oneInstructionUnblocksAllWaitingStreams() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func oneInstructionUnblocksAllWaitingStreams() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -350,7 +383,9 @@ struct QPACKCoderTests {
         )
     }
 
-    @Test func streamsBlockedOnDifferentInsertCountsUnblockInOrder() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func streamsBlockedOnDifferentInsertCountsUnblockInOrder() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -382,7 +417,9 @@ struct QPACKCoderTests {
         #expect(receiver0.results.count == 1)
     }
 
-    @Test func decodeStreamErrorOnlyFailsTheStream() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func decodeStreamErrorOnlyFailsTheStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -402,7 +439,9 @@ struct QPACKCoderTests {
         #expect(receiver.errors.first?.isConnectionError == false)
     }
 
-    @Test func decodeConnectionErrorIsGivenToTheStream() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func decodeConnectionErrorIsGivenToTheStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -421,7 +460,9 @@ struct QPACKCoderTests {
         #expect(receiver.errors.first?.isConnectionError == true)
     }
 
-    @Test func invalidFieldSectionPrefixIsAConnectionError() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func invalidFieldSectionPrefixIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -439,7 +480,9 @@ struct QPACKCoderTests {
         #expect(receiver.errors == [.invalidFieldSectionPrefix])
     }
 
-    @Test func tooManyBlockedStreamsIsAConnectionError() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func tooManyBlockedStreamsIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(decoderMaxBlockedStreams: 1, errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -464,7 +507,9 @@ struct QPACKCoderTests {
 
     // MARK: Incoming instructions
 
-    @Test func invalidIncomingEncoderInstructionIsAConnectionError() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func invalidIncomingEncoderInstructionIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -474,7 +519,9 @@ struct QPACKCoderTests {
         }
     }
 
-    @Test func incomingDecoderInstructionIsForwardedToTheEncoder() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func incomingDecoderInstructionIsForwardedToTheEncoder() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let encoderStream = TestOutboundEncoderStream()
@@ -488,7 +535,9 @@ struct QPACKCoderTests {
 
     }
 
-    @Test func incomingDecoderInstructionWithoutDynamicTableIsAConnectionError() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func incomingDecoderInstructionWithoutDynamicTableIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -500,7 +549,9 @@ struct QPACKCoderTests {
 
     // MARK: Stream management
 
-    @Test func requestStreamClosedCleanlySendsNothing() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func requestStreamClosedCleanlySendsNothing() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -511,7 +562,9 @@ struct QPACKCoderTests {
         #expect(decoderStream.instructions.isEmpty)
     }
 
-    @Test func requestStreamClosedWhileBlockedCancelsTheStream() throws {
+    @Test
+    @available(anyAppleOS 27, *)
+    func requestStreamClosedWhileBlockedCancelsTheStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -544,6 +597,7 @@ struct QPACKCoderTests {
 
 // MARK: - Test doubles
 
+@available(anyAppleOS 27, *)
 private typealias TestCoder = QPACKCoder<
     TestOutboundEncoderStream,
     TestOutboundDecoderStream,
@@ -552,6 +606,7 @@ private typealias TestCoder = QPACKCoder<
 >
 
 /// Records the encoder instructions the coder wants to send to the peer's decoder.
+@available(anyAppleOS 27, *)
 private final class TestOutboundEncoderStream: QPACKOutboundEncoderStream {
     var instructions: [QPACKEncoderInstruction] = []
 
@@ -561,6 +616,7 @@ private final class TestOutboundEncoderStream: QPACKOutboundEncoderStream {
 }
 
 /// Records the decoder instructions the coder wants to send to the peer's encoder.
+@available(anyAppleOS 27, *)
 private final class TestOutboundDecoderStream: QPACKOutboundDecoderStream {
     var instructions: [QPACKDecoderInstruction] = []
 
@@ -583,6 +639,7 @@ private final class TestConnection: QPACKConnectionDelegate {
 }
 
 /// Records the decode results delivered to a single stream.
+@available(anyAppleOS 27, *)
 private final class TestDecodeReceiver: QPACKDecodeReceiver {
     var results: [Result<[HTTPField], QPACKError>] = []
 

@@ -25,11 +25,11 @@ import struct NIOQUIC.QUICStreamCreator
 
 @_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator>
 
 // MARK: Configure with async interface
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 extension ChannelPipeline.SynchronousOperations {
     /// Setup a HTTP/3 server pipeline on a UDP channel.
     ///
@@ -197,7 +197,7 @@ extension ChannelPipeline.SynchronousOperations {
 
 // MARK: Configure without async interface
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 extension ChannelPipeline.SynchronousOperations {
     /// Setup a HTTP/3 server pipeline on a UDP channel.
     ///

@@ -16,6 +16,7 @@ import struct NIOCore.ByteBuffer
 
 /// Represents connection-wide settings for a HTTP/3 connection.
 /// - Warning: Each setting must only be specified once.
+@available(anyAppleOS 27, *)
 public struct HTTP3Settings: Hashable, Sendable {
     private var _qpackMaximumTableCapacity: UInt64?
     private var _qpackBlockedStreams: UInt64?
@@ -235,6 +236,7 @@ public struct HTTP3Settings: Hashable, Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension ByteBuffer {
     /// Reads the entire ByteBuffer and returns as many settings as it finds.
     ///

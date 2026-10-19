@@ -19,6 +19,7 @@ import Testing
 
 struct HTTP3OutboundControlStreamStateMachineTests {
     @Test
+    @available(anyAppleOS 27, *)
     func channelActive() {
         let testSettings = HTTP3Settings()
         var stateMachine = HTTP3OutboundControlStreamStateMachine(settings: testSettings)
@@ -27,6 +28,7 @@ struct HTTP3OutboundControlStreamStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func goawayAfterChannelActive() {
         let testSettings = HTTP3Settings()
         var stateMachine = HTTP3OutboundControlStreamStateMachine(settings: testSettings)
@@ -39,6 +41,7 @@ struct HTTP3OutboundControlStreamStateMachineTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func goawayBeforeChannelActive() {
         let testSettings = HTTP3Settings()
         var stateMachine = HTTP3OutboundControlStreamStateMachine(settings: testSettings)

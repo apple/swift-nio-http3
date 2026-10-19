@@ -20,6 +20,7 @@ import Testing
 
 struct DynamicHeaderTableTests {
     @Test
+    @available(anyAppleOS 27, *)
     func findByName() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
@@ -42,6 +43,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func findByNameAndValue() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
@@ -64,6 +66,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func findByNameAndValueDoesntExist() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
@@ -87,6 +90,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func findByNameDoesntExist() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
@@ -100,6 +104,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func absoluteIndex() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
@@ -123,6 +128,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func getOutOfBounds() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
@@ -140,6 +146,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func getOutOfBoundsAfterEviction() throws {
         // Set the capacity to only fit 4
         let lengthOfEntry = "name1".count + "value1".count + 32
@@ -168,6 +175,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func maximumCapacity() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 70,
@@ -206,6 +214,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func maxCapacityOfZero() {
         var table = DynamicHeaderTable(
             maximumCapacity: 0,
@@ -221,6 +230,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func tooLargeKeepOld() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 35,
@@ -241,6 +251,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func insertCountIncrement() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 100,
@@ -267,6 +278,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func insertCountIncrementOverflow() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 100,
@@ -287,6 +299,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func acknowledgeInsertCount() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 100,
@@ -313,6 +326,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func nearingEviction() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 330,
@@ -342,6 +356,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func unevictableDueToReference() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 165,
@@ -376,6 +391,7 @@ struct DynamicHeaderTableTests {
 
     /// We must not evict entries which haven't been received, even if there are no references.
     @Test
+    @available(anyAppleOS 27, *)
     func unevictableDueToReceiveCount() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 165,
@@ -401,6 +417,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func setCurrentCapacity() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 100,
@@ -419,6 +436,7 @@ struct DynamicHeaderTableTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func cantReduceCapacityDueToReferences() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 40,
@@ -448,6 +466,7 @@ struct DynamicHeaderTableTests {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension DynamicHeaderTable {
     fileprivate func findExistingHeader(
         named name: String,

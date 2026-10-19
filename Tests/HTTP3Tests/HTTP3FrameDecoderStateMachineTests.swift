@@ -23,13 +23,14 @@ struct HTTP3FrameDecoderStateMachineTests {
     // Type is 0, length is 4, data is 1,2,3,4
     private let testDataFrameBytes: [UInt8] = [0, 4, 1, 2, 3, 4]
 
+    @available(anyAppleOS 27, *)
     private var testHeader: HTTP3PartialFrame.Headers {
         let fieldSectionPrefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
         let line = FieldLine.literal(requireLiteralRepresentation: false, name: "test", value: "hello")
         return .init(fieldSection: .init(prefix: fieldSectionPrefix, lines: [line]))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     private var testHeaderFrameBytes: [UInt8] {
         let header = self.testHeader
         var buffer = ByteBuffer()
@@ -42,7 +43,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         return prefix + fieldSectionBytes
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func fullFrame() {
         var decoder = HTTP3FrameDecoderStateMachine()
         // send in a full data frame
@@ -51,7 +52,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(action.returnFrame == .data(.init(bytes: self.testDataFrameContent)))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func partialFrame() {
         let testFrame = HTTP3PartialFrame.settings(
             .init(qpackMaximumTableCapacity: 1024, h3Datagram: false, enableConnectProtocol: false)
@@ -72,7 +73,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(action.returnFrame == testFrame)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func partialDataFrame() {
         var decoder = HTTP3FrameDecoderStateMachine()
 
@@ -95,7 +96,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(decoder.decodeNext().needsMoreBytes)  // Again nothing is ready yet
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func unknownFrameType() {
         let bytes: [UInt8] = [12, 0]  // 12 is not a known type
         var decoder = HTTP3FrameDecoderStateMachine()
@@ -110,7 +111,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(action3.returnFrame == .data(.init(bytes: self.testDataFrameContent)))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func forbiddenFrameType() {
         let forbiddenTypes: [UInt8] = [2, 6, 8, 9]
         for type in forbiddenTypes {
@@ -141,7 +142,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func partialHeader() {
         var decoder = HTTP3FrameDecoderStateMachine()
         decoder.buffer(.init(bytes: self.testHeaderFrameBytes))
@@ -149,14 +150,14 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(action1.returnFrame == .headers(self.testHeader))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func decodeNoBytes() {
         var decoder = HTTP3FrameDecoderStateMachine()
         let action1 = decoder.decodeNext()
         #expect(action1.needsMoreBytes)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func inputCloseImmediately() {
         let decoder = HTTP3FrameDecoderStateMachine()
         let leftoverBytes = decoder.inputClosed()
@@ -164,7 +165,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(!leftoverBytes)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func inputCloseCleanly() {
         var decoder = HTTP3FrameDecoderStateMachine()
 
@@ -177,7 +178,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(!leftoverBytes)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: [
         [0],  // Frame type 0, no length
         [64],  // Partial frame type (64 implies a multi-byte integer)
@@ -197,7 +198,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(leftoverBytes)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func byteReclaimAfterLargeFrame() {
         // Buffer a data frame containing 2048 bytes of payload. The initial buffer capacity is 4096 bytes. After
         // decoding, the `readerIndex` will be 2051 (1 byte frame type + 2 byte length + 2048 byte payload), which is
@@ -224,7 +225,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(decoder._testOnlyBufferReaderIndex == 0)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func byteReclaimAfterManySmallFrames() {
         // Feed many small data frames. This will result in the buffer's capacity being 4096 bytes. Then decode all
         // frames to make `readerIndex` cross the 2048 bytes threshold. Each frame is 6 bytes:
@@ -256,7 +257,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         #expect(decoder._testOnlyBufferReaderIndex == 0)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func byteReclaimWithPartiallyDecodedFrame() {
         // Verify that reclamation preserves unread bytes when a partial frame remains in the buffer.
         var decoder = HTTP3FrameDecoderStateMachine()
@@ -298,7 +299,7 @@ struct HTTP3FrameDecoderStateMachineTests {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 extension HTTP3FrameDecoderStateMachine.DecodeAction {
     fileprivate var returnFrame: HTTP3PartialFrame? {
         switch self {

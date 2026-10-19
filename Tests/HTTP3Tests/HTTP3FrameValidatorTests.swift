@@ -17,6 +17,7 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3FrameValidatorTests {
+    @available(anyAppleOS 27, *)
     static func validRequestHeaders() -> HTTP3Frame {
         .headers([
             .init(name: .method, value: "GET"),
@@ -26,18 +27,21 @@ struct HTTP3FrameValidatorTests {
         ])
     }
 
+    @available(anyAppleOS 27, *)
     static func validResponseHeaders() -> HTTP3Frame {
         .headers([
             .init(name: .status, value: "200")
         ])
     }
 
+    @available(anyAppleOS 27, *)
     static func validTrailers() -> HTTP3Frame {
         .headers([
             .init(name: .init("test")!, value: "something")
         ])
     }
 
+    @available(anyAppleOS 27, *)
     static func makeTestDataFrame() -> HTTP3Frame {
         .data(.init())
     }
@@ -45,6 +49,7 @@ struct HTTP3FrameValidatorTests {
     // MARK: Request stream
 
     @Test
+    @available(anyAppleOS 27, *)
     func testValidRequestWithNoData() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
         let testHeaders = Self.validRequestHeaders()
@@ -53,6 +58,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testValidRequestWithManyData() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
 
@@ -65,6 +71,7 @@ struct HTTP3FrameValidatorTests {
 
     // Any number of data frames, including 0, is ok between headers and trailers
     @Test(arguments: 0...50)
+    @available(anyAppleOS 27, *)
     func testValidRequestWithTrailers(numberOfDataFrames: Int) {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
 
@@ -85,6 +92,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .pushPromise(.init(pushID: 12, httpFields: [:])),
     ])
+    @available(anyAppleOS 27, *)
     func testInvalidRequest_anythingBeforeHeaders(testFrame: HTTP3Frame) {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
         let action = validator.processInboundFrame(testFrame)
@@ -99,6 +107,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testValidRequestWithUnknownFrames() {
         // 4.1: Frames of unknown types (Section 9), including reserved frames (Section 7.2.8) MAY be sent on a request or push stream before, after, or interleaved with other frames described in this section.
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
@@ -114,6 +123,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testValidResponseWithUnknownFrames() {
         // 4.1: Frames of unknown types (Section 9), including reserved frames (Section 7.2.8) MAY be sent on a request or push stream before, after, or interleaved with other frames described in this section.
         var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
@@ -138,6 +148,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .pushPromise(.init(pushID: 1, httpFields: [:])),
     ])
+    @available(anyAppleOS 27, *)
     func testInvalidRequest_invalidAfterHeaders(testFrame: HTTP3Frame) {
         // After headers, must be body or trailers
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
@@ -164,6 +175,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .pushPromise(.init(pushID: 12, httpFields: [:])),
     ])
+    @available(anyAppleOS 27, *)
     func testInvalidRequest_anythingAfterTrailers(testFrame: HTTP3Frame) {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
 
@@ -180,6 +192,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testInvalidRequest_doubleTrailers() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
 
@@ -195,6 +208,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testResponseBeforeRequest() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
         let action = validator.processOutboundFrame(Self.validResponseHeaders())
@@ -207,6 +221,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testResponseAfterRequestHeaders() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
         validator.assertOutboundFramePassesThrough(Self.validRequestHeaders())  // write req headers
@@ -214,6 +229,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test(arguments: 1...10)
+    @available(anyAppleOS 27, *)
     func testResponseWithTrailers(dataCount: Int) {
         // Any number of data frames, including 0, is valid before the trailers
         var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
@@ -238,6 +254,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .pushPromise(.init(pushID: 12, httpFields: [:])),
     ])
+    @available(anyAppleOS 27, *)
     func testInvalidResponse_anythingAfterTrailers(testFrame: HTTP3Frame) {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
 
@@ -266,6 +283,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .pushPromise(.init(pushID: 1, httpFields: [:])),
     ])
+    @available(anyAppleOS 27, *)
     func testResponseInvalidAfterHeaders(testFrame: HTTP3Frame) {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
         validator.assertInboundFramePassesThrough(Self.validRequestHeaders())  // request headers
@@ -291,6 +309,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .pushPromise(.init(pushID: 12, httpFields: [:])),
     ])
+    @available(anyAppleOS 27, *)
     func testInvalidResponse_anythingBeforeHead(testFrame: HTTP3Frame) {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
         // we need to send a request first
@@ -307,6 +326,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testInboundInterimResponse() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
         validator.assertOutboundFramePassesThrough(Self.validRequestHeaders())
@@ -318,6 +338,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testInboundMultipleInterimResponse() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
         validator.assertOutboundFramePassesThrough(Self.validRequestHeaders())  // write req headers
@@ -334,6 +355,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testOutboundInterimResponse() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
         validator.assertInboundFramePassesThrough(Self.validRequestHeaders())
@@ -344,6 +366,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testOutboundMultipleInterimResponses() {
         var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
         validator.assertInboundFramePassesThrough(Self.validRequestHeaders())
@@ -370,6 +393,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .cancelPush(1),
     ])
+    @available(anyAppleOS 27, *)
     func testControlStreamNoSettings(testFrame: HTTP3Frame) {
         var validator = HTTP3FrameValidator(streamType: .control, incoming: true)
         let action = validator.processInboundFrame(testFrame)
@@ -386,6 +410,7 @@ struct HTTP3FrameValidatorTests {
 
     /// Unknown frames are also invalid to be the first frame
     @Test
+    @available(anyAppleOS 27, *)
     func testControlStreamUnknownFrameBeforeSettings() {
         var validator = HTTP3FrameValidator(streamType: .control, incoming: true)
         let action = validator.processInboundUnknownFrame()
@@ -406,6 +431,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .cancelPush(1),
     ])
+    @available(anyAppleOS 27, *)
     func testControlStreamValidAfterSettings(testFrame: HTTP3Frame) {
         let testSettings = HTTP3Frame.settings(.init(qpackBlockedStreams: 10))
         var validator = HTTP3FrameValidator(streamType: .control, incoming: true)
@@ -415,6 +441,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testControlStreamUnknownFrameAfterSettings() {
         let testSettings = HTTP3Frame.settings(.init(qpackBlockedStreams: 10))
         var validator = HTTP3FrameValidator(streamType: .control, incoming: true)
@@ -429,6 +456,7 @@ struct HTTP3FrameValidatorTests {
         .pushPromise(.init(pushID: 12, httpFields: [:])),
         Self.validRequestHeaders(),
     ])
+    @available(anyAppleOS 27, *)
     func testControlStreamInvalidAfterSettings(testFrame: HTTP3Frame) {
         let testSettings = HTTP3Frame.settings(HTTP3Settings(qpackBlockedStreams: 10))
         var validator = HTTP3FrameValidator(streamType: .control, incoming: true)
@@ -447,6 +475,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testControlStreamDoubleSettings() {
         let testSettings = HTTP3Frame.settings(HTTP3Settings(qpackBlockedStreams: 10))
 
@@ -464,6 +493,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testControlStreamWrongWay() {
         var incomingValidator = HTTP3FrameValidator(streamType: .control, incoming: true)
         expectH3ErrorEqual(
@@ -489,6 +519,7 @@ struct HTTP3FrameValidatorTests {
         Self.validRequestHeaders(),
         .data(.init()),
     ])
+    @available(anyAppleOS 27, *)
     func testPushStreamValid(testFrame: HTTP3Frame) {
         var validator = HTTP3FrameValidator(streamType: .push, incoming: true)
         let action = validator.processInboundFrame(testFrame)
@@ -496,6 +527,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testPushStreamUnknown() {
         var validator = HTTP3FrameValidator(streamType: .push, incoming: true)
         validator.assertInboundUnknownFrameDropped()
@@ -509,6 +541,7 @@ struct HTTP3FrameValidatorTests {
         .maxPushID(1),
         .cancelPush(1),
     ])
+    @available(anyAppleOS 27, *)
     func testPushStreamInvalid(testFrame: HTTP3Frame) {
         var validator = HTTP3FrameValidator(streamType: .push, incoming: true)
         let action = validator.processInboundFrame(testFrame)
@@ -521,6 +554,7 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testPushStreamWrongWay() {
         var incomingValidator = HTTP3FrameValidator(streamType: .push, incoming: true)
         expectH3ErrorEqual(
@@ -542,11 +576,13 @@ struct HTTP3FrameValidatorTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func testFrameDoesntAllocateWhenBoxed() {
         #expect(MemoryLayout<HTTP3Frame>.size <= 24)
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3FrameValidator {
     // Assert that when an outbound frame is given to the validator, it comes back out exactly as it was, without errors
     fileprivate mutating func assertOutboundFramePassesThrough(
@@ -575,6 +611,7 @@ extension HTTP3FrameValidator {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3FrameValidator.ProcessFrameAction: Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
@@ -614,6 +651,7 @@ extension HTTP3FrameValidator.ProcessFrameAction: Equatable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3FrameValidator.UnknownFrameAction: Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {

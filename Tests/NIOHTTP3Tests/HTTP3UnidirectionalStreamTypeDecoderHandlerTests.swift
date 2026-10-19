@@ -56,6 +56,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
     private let logger = Logger(label: "HTTP3UnidirectionalStreamTypeDecoderHandlerTests")
 
     @Test
+    @available(anyAppleOS 27, *)
     func getsStreamType() throws {
         let eventLoop = EmbeddedEventLoop()
         var callbackWasCalled = false
@@ -76,6 +77,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func getsMultiByteStreamType() throws {
         let eventLoop = EmbeddedEventLoop()
         let recorderHandler = RecorderHandler()
@@ -106,6 +108,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func queuesBytesAfterStreamType() throws {
         let eventLoop = EmbeddedEventLoop()
         let releasePromise = eventLoop.makePromise(of: HTTP3UnidirectionalStreamTypeDecoderHandler.DecodeResult.self)
@@ -142,6 +145,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func queuesBytesAfterStreamTypeMultiByte() throws {
         // This test specifically is for the scenario where it takes multiple bytes to get the stream type, and each of those bytes comes
         // separately and thus needs to be buffered, but the final incoming bytebuffer, the one which contains the last byte needed for the
@@ -185,6 +189,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func dequeuesBytes() throws {
         let eventLoop = EmbeddedEventLoop()
         let releasePromise = eventLoop.makePromise(of: HTTP3UnidirectionalStreamTypeDecoderHandler.DecodeResult.self)
@@ -230,6 +235,7 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
     }
 
     @Test
+    @available(anyAppleOS 27, *)
     func initializationError() throws {
         let eventLoop = EmbeddedEventLoop()
         let releasePromise = eventLoop.makePromise(of: HTTP3UnidirectionalStreamTypeDecoderHandler.DecodeResult.self)
