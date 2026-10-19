@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
+import NIOCore
 import NIOQUICHelpers
 import Testing
 
@@ -92,7 +93,7 @@ struct QPACKCoderTests {
 
         // With no encoder stream the coder must stay on the static encoder: it holds no stream to write
         // instructions to, and would trap.
-        let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
+        let headers = coder.encodeFieldSection([.init(name: .cookie, value: "test")], streamID: 1)
         #expect(
             headers.lines == [
                 .literalWithNameReference(
@@ -166,7 +167,7 @@ struct QPACKCoderTests {
 
         // No remote settings yet, so the static encoder must be used. Note there is no encoder stream set on the
         // coder at all here: if it tried to send an instruction it would trap.
-        let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
+        let headers = coder.encodeFieldSection([.init(name: .cookie, value: "test")], streamID: 1)
 
         #expect(
             headers.lines == [
@@ -190,7 +191,7 @@ struct QPACKCoderTests {
         try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 300)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
-        let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
+        let headers = coder.encodeFieldSection([.init(name: .cookie, value: "test")], streamID: 1)
 
         #expect(
             headers.lines == [
@@ -215,12 +216,21 @@ struct QPACKCoderTests {
         #expect(encoderStream.instructions == [.setDynamicTableCapacity(300)])
         encoderStream.instructions.removeAll()
 
-        let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
+        let fields: [HTTPField] = [.init(name: .cookie, value: "test")]
+        var instructions: [QPACKEncoderInstruction] = []
+        var buffer = ByteBuffer(initialCapacity: coder.maxEncodedLength(of: fields)) { output in
+            instructions = coder.encodeHeaders(fields, streamID: 1, into: &output, preferHuffmanEncoding: false)
+        }
 
-        // The entry was inserted into the dynamic table, so the peer's decoder needs to be told about it.
-        #expect(encoderStream.instructions == [.insertWithNameReference(.staticTable, relativeIndex: 5, value: "test")])
+        // The entry was inserted into the dynamic table, so the peer's decoder needs to be told about it. The coder
+        // leaves that to the caller, so that the encoder stream isn't written to while the caller writes the span.
+        let insert = QPACKEncoderInstruction.insertWithNameReference(.staticTable, relativeIndex: 5, value: "test")
+        #expect(instructions == [insert])
+        #expect(encoderStream.instructions.isEmpty)
+        coder.sendEncoderInstructions(instructions)
+        #expect(encoderStream.instructions == [insert])
         #expect(
-            headers
+            try buffer.readFieldSection()
                 == FieldSection(
                     prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 300),
                     lines: [.indexedWithPostBase(index: 0)]
@@ -506,7 +516,7 @@ struct QPACKCoderTests {
 
         try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 1024)
         coder.outboundEncoderStreamReady(encoderStream)
-        _ = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: streamID)
+        _ = coder.encodeFieldSection([.init(name: .cookie, value: "test")], streamID: streamID)
 
         try coder.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: streamID))
 
@@ -570,6 +580,24 @@ struct QPACKCoderTests {
 }
 
 // MARK: - Test doubles
+
+@available(anyAppleOS 27, *)
+extension QPACKCoder {
+    /// Encodes `fields` into as much room as the coder asks for, sends the encoder instructions, and reads the field
+    /// section back.
+    fileprivate func encodeFieldSection(_ fields: [HTTPField], streamID: QUICStreamID) -> FieldSection {
+        let bound = self.maxEncodedLength(of: fields)
+        var instructions: [QPACKEncoderInstruction] = []
+        var buffer = ByteBuffer(initialCapacity: bound) { output in
+            instructions = self.encodeHeaders(fields, streamID: streamID, into: &output, preferHuffmanEncoding: false)
+        }
+        self.sendEncoderInstructions(instructions)
+        #expect(buffer.readableBytes <= bound)
+        let fieldSection = try! buffer.readFieldSection()!
+        #expect(buffer.readableBytes == 0)
+        return fieldSection
+    }
+}
 
 @available(anyAppleOS 27, *)
 private typealias TestCoder = QPACKCoder<
