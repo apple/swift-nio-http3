@@ -39,7 +39,7 @@ extension QUICConfiguration {
         config.initialMaxStreamDataBidiRemote = 1_000_000
         config.initialMaxStreamDataUni = 1_000_000
         config.initialMaxStreamsBidi = 100
-        config.initialMaxStreamsUni = 10
+        config.initialMaxStreamsUni = 100
         return config
     }
 
@@ -60,7 +60,7 @@ extension QUICConfiguration {
         config.initialMaxStreamDataBidiRemote = 1_000_000
         config.initialMaxStreamDataUni = 1_000_000
         config.initialMaxStreamsBidi = 100
-        config.initialMaxStreamsUni = 10
+        config.initialMaxStreamsUni = 100
         return config
     }
 
@@ -79,7 +79,7 @@ extension QUICConfiguration {
         config.initialMaxStreamDataBidiRemote = 1_000_000
         config.initialMaxStreamDataUni = 1_000_000
         config.initialMaxStreamsBidi = 100
-        config.initialMaxStreamsUni = 10
+        config.initialMaxStreamsUni = 100
         return config
     }
 
@@ -98,7 +98,7 @@ extension QUICConfiguration {
         config.initialMaxStreamDataBidiRemote = 1_000_000
         config.initialMaxStreamDataUni = 1_000_000
         config.initialMaxStreamsBidi = 100
-        config.initialMaxStreamsUni = 10
+        config.initialMaxStreamsUni = 100
         return config
     }
 }
