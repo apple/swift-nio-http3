@@ -19,7 +19,7 @@ import struct NIOCore.ByteBuffer
 /// Call readBytes to give the decoder some bytes.
 /// Call decodeNext to get back one HTTP3PartialFrame at a time.
 /// This does not handle QPACK at all, hence returning partial frames.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 struct HTTP3FrameDecoderStateMachine: ~Copyable {
     enum State: ~Copyable {
         /// We have no unprocessed bytes.
@@ -164,7 +164,7 @@ struct HTTP3FrameDecoderStateMachine: ~Copyable {
 }
 
 // Test accessors.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 extension HTTP3FrameDecoderStateMachine {
     /// The buffer used in the decoding state, or `nil` if not in the decoding state.
     private var _testOnlyBuffer: ByteBuffer? {

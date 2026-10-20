@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum QPACKConstants {
     /// Rough estimate of bytes per header for initial capacity calculation.

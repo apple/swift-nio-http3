@@ -21,6 +21,7 @@ import NIOQUICHelpers
 
 /// This is an internal protocol that shall only be implemented by HTTP3ConnectionCoordinator
 /// It exists to enable testing of `HTTP3StreamHandler` in isolation.
+@available(anyAppleOS 27, *)
 protocol HTTP3StreamDelegate {
     /// Tell the connection state when this stream becomes inactive.
     ///
@@ -37,7 +38,7 @@ protocol HTTP3StreamDelegate {
 /// This handler should be added to every incoming and outgoing HTTP/3 stream which carries HTTP frames.
 /// It handles encoding and decoding of these frames.
 /// It will only pass through valid frames, and handles things such as QPACK header decoding.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate: QPACK.QPACKConnectionDelegate>:
     ChannelDuplexHandler
 {
@@ -475,7 +476,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 extension HTTP3StreamHandler: QPACKDecodeReceiver {
     func decodeResult(_ result: Result<[HTTPField], QPACKError>) {
         switch result {

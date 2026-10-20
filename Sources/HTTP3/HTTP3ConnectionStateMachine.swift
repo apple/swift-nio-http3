@@ -15,6 +15,7 @@
 public import Logging
 public import NIOQUICHelpers
 
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum HTTP3ConnectionType: Sendable {
     case client
@@ -22,7 +23,7 @@ public enum HTTP3ConnectionType: Sendable {
 }
 
 @_spi(PackageInternal)
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 public struct HTTP3ConnectionStateMachine: ~Copyable {
     struct InboundStreamCreationState: ~Copyable {
         private enum State: ~Copyable {
@@ -1045,6 +1046,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Error {
     fileprivate static func rejectIncomingStreamDueToShuttingDown(location: SourceLocation) -> Self {
         .init(

@@ -15,7 +15,7 @@ The following snippet contains a Swift Package manifest to use SwiftNIO HTTP/3
 with SwiftNIO QUIC.
 
 ```swift
-// swift-tools-version: 6.3
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(
@@ -42,39 +42,31 @@ let package = Package(
 
 ### Prerequisites
 
-- [Swift 6.3 and up](https://swift.org/install)
-- macOS 26.0 and up or Linux (Ubuntu 22.04+)
-- Xcode 26.0 and up (Apple platforms only)
+- [Swift 6.4 and up](https://swift.org/install)
+- macOS 27.0 and up or Linux (Ubuntu 22.04+)
+- Xcode 27.0 and up (Apple platforms only)
 
 ### Building and testing
-
-Packages in the dependency tree depend on a beta release of swift-crypto.
-Set the environment variable
-`SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA` to allow swift-certificates
-(in the dependency tree) to adopt swift-crypto beta releases as well.
 
 To build via the command line (for all platforms), run at the root of the
 package:
 
 ```
-SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift build
+swift build
 ```
 
 To run all unit tests, run
 
 ```
-SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift test
+swift test
 ```
 
 Unit tests can also be run by filtering a specific class or function:
 
 ```
-SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift test --filter EncoderTests
-SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift test --filter EncoderTests.maxBlockedStreams
+swift test --filter EncoderTests
+swift test --filter EncoderTests.maxBlockedStreams
 ```
-
-Use `SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 xed Package.swift` to open
-the project in Xcode with the environment variable set.
 
 ### Versioning
 

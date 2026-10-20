@@ -20,7 +20,7 @@ import Testing
 @testable import NIOHTTP3
 
 struct QPACKOutboundStreamTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func sendEncoderInstruction() throws {
         let channel = EmbeddedChannel()
         var wrapper = QPACKOutboundEncoderStream(channel: channel, preferHuffmanEncoding: true)
@@ -43,7 +43,7 @@ struct QPACKOutboundStreamTests {
         #expect(dynamicTableReceived)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func sendDecoderInstruction() throws {
         let channel = EmbeddedChannel()
         var wrapper = QPACKOutboundDecoderStream(channel: channel)

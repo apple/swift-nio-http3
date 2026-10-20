@@ -17,11 +17,12 @@ public import NIOCore
 import NIOQUICHelpers
 @_spi(PackageInternal) public import QPACK
 
+@available(anyAppleOS 27, *)
 extension QPACKDecoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 extension QPACKEncoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 typealias NIOQPACKCoder<
     ConnectionDelegate: QPACK.QPACKConnectionDelegate,
     StreamDelegate: HTTP3StreamDelegate
@@ -34,7 +35,7 @@ typealias NIOQPACKCoder<
 
 /// Gives the instructions read from the peer's QPACK streams to the ``QPACKCoder``, and reports any failure to read
 /// or apply them to the connection.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 struct QPACKInboundStreamDelegate<
     ConnectionDelegate: QPACK.QPACKConnectionDelegate,
     StreamDelegate: HTTP3StreamDelegate

@@ -25,11 +25,10 @@ import struct NIOQUIC.QUICStreamCreator
 
 @_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator>
 
 // MARK: Configure with async interface
-@available(anyAppleOS 26, *)
 extension ChannelPipeline.SynchronousOperations {
     /// Setup a HTTP/3 server pipeline on a UDP channel.
     ///
@@ -42,6 +41,7 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - inboundRequestStreamInitializer: Closure to run for each incoming stream. Must be synchronous.
     /// - Returns: A ``HTTP3ServerConnectionMultiplexer``. Use this to iterate incoming connections.
     /// - Throws: If adding the relevant handlers fails.
+    @available(anyAppleOS 27, *)
     func configureHTTP3Server<Output: Sendable>(
         channel: any Channel,
         configuration: HTTP3ServerConfiguration = .defaults,
@@ -116,6 +116,7 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-push stream.
     /// - Returns: A ``HTTP3ClientConnectionMultiplexer``. Use this to create outgoing connections.
     /// - Throws: If adding the relevant handlers fails.
+    @available(anyAppleOS 27, *)
     func configureHTTP3Client(
         channel: any Channel,
         configuration: HTTP3ClientConfiguration = .defaults,
@@ -197,7 +198,6 @@ extension ChannelPipeline.SynchronousOperations {
 
 // MARK: Configure without async interface
 
-@available(anyAppleOS 26, *)
 extension ChannelPipeline.SynchronousOperations {
     /// Setup a HTTP/3 server pipeline on a UDP channel.
     ///
@@ -211,6 +211,7 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - inboundRequestStreamInitializer: Closure to run for each incoming request stream.
     ///   - internalInboundStreamInitializer: Closure to run for each incoming non-request stream.
     /// - Throws: If adding the relevant handlers fails.
+    @available(anyAppleOS 27, *)
     func configureHTTP3Server(
         channel: any Channel,
         configuration: HTTP3ServerConfiguration = .defaults,

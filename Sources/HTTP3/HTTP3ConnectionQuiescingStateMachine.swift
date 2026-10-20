@@ -14,6 +14,7 @@
 
 import NIOQUICHelpers
 
+@available(anyAppleOS 27, *)
 struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
     private enum State: ~Copyable {
         /// Neither side has started quiescing yet.
@@ -411,6 +412,7 @@ struct HTTP3ConnectionQuiescingStateMachine: ~Copyable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Error {
     fileprivate static func goawayIDIncreased(location: SourceLocation) -> HTTP3Error {
         // RFC 9114 § 5.2: Receiving a GOAWAY containing a larger identifier than previously received MUST be treated as a connection error of type H3_ID_ERROR.

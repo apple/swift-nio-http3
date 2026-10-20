@@ -30,7 +30,7 @@ struct HuffmanEncodeEntry {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 struct HuffmanEncoderTable {
     static subscript(byte: UInt8) -> HuffmanEncodeEntry {
         HuffmanEncodeEntry(packed: self.rawTable[Int(byte)])
@@ -185,7 +185,7 @@ struct HuffmanDecoderFlags: OptionSet {
 /// This approach has relatively little indirection, and therefore performs
 /// relatively well. The total number of loop
 /// iterations is 4x the number of bytes passed to the decoder.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 struct HuffmanDecoderTable {
     static subscript(state state: UInt8, nybble nybble: UInt8) -> HuffmanDecodeEntry {
         assert(nybble < 16)

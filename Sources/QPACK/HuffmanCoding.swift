@@ -22,7 +22,7 @@ extension ByteBuffer {
     }
 
     /// Returns the number of *bits* required to encode a given string.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     fileprivate static func huffmanEncodedBitLength(of bytes: some Collection<UInt8>) -> Int {
         let numberOfBits = bytes.reduce(0) { $0 + HuffmanEncoderTable[$1].nbits }
         // round up to nearest multiple of 8 for EOS prefix
@@ -30,7 +30,7 @@ extension ByteBuffer {
     }
 
     /// Returns the number of bytes required to encode a given string.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     static func huffmanEncodedByteLength(of bytes: some Collection<UInt8>) -> Int {
         self.huffmanEncodedBitLength(of: bytes) / 8
     }
@@ -43,7 +43,7 @@ extension ByteBuffer {
     ///     by ``huffmanEncodedByteLength(of:)``. Passing anything else is a
     ///     programmer error; too small a value would overrun the buffer.
     /// - Returns: The number of bytes used while encoding the string.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @discardableResult
     mutating func setHuffmanEncoded(
         bytes stringBytes: some Collection<UInt8>,
@@ -70,7 +70,7 @@ extension ByteBuffer {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @discardableResult
     mutating func writeHuffmanEncoded(
         bytes stringBytes: some Collection<UInt8>,
@@ -191,7 +191,7 @@ extension ByteBuffer {
     ///   - length: The number of huffman-encoded octets to read.
     /// - Returns: The decoded `String`, or nil if it can't be read.
     @discardableResult
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     func getHuffmanEncodedString(at index: Int, length: Int) -> String? {
         let start = index - self.readerIndex
         guard start >= 0, start <= self.readableBytes, length >= 0, length <= self.readableBytes - start
@@ -241,7 +241,7 @@ extension ByteBuffer {
     ///   ``maxHuffmanDecodedLength(ofEncodedLength:)`` bytes; the writes below are unchecked.
     /// - Returns: `true` if the input was a valid Huffman encoding, in which case `destination`
     ///   holds the decoded bytes. On `false` the contents of `destination` are unspecified.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     private func _getHuffmanEncodedString(
         at index: Int,
         length: Int,
