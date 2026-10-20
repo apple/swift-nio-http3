@@ -16,14 +16,16 @@ import HTTP3
 import NIOCore
 import NIOQUICHelpers
 
+@available(anyAppleOS 27, *)
 protocol ControlFrameProcessor {
     func receivedControlFrame(_ frame: HTTP3Frame, streamID: QUICStreamID)
 }
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 extension HTTP3ConnectionCoordinator: ControlFrameProcessor {}
 
 /// Handler to be used on the incoming control stream only.
+@available(anyAppleOS 27, *)
 final class HTTP3InboundControlStreamHandler<Processor: ControlFrameProcessor>: ChannelInboundHandler,
     RemovableChannelHandler
 {

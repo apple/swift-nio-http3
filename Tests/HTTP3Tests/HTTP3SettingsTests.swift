@@ -18,8 +18,8 @@ import Testing
 @testable import HTTP3
 
 struct HTTP3SettingsTests {
-    @Test
-    func makeSettings() throws {
+    @available(anyAppleOS 27, *)
+    @Test func makeSettings() throws {
         let settings = HTTP3Settings(
             qpackMaximumTableCapacity: 100,
             qpackBlockedStreams: 200,
@@ -35,8 +35,8 @@ struct HTTP3SettingsTests {
         #expect(settings.other == [])
     }
 
-    @Test
-    func unparsedSettings() throws {
+    @available(anyAppleOS 27, *)
+    @Test func unparsedSettings() throws {
         let settings = try HTTP3Settings(parsing: [
             HTTP3Setting(identifier: .init(extensionSetting: 100)!, value: 30),
             HTTP3Setting(identifier: .init(extensionSetting: 200)!, value: 30),
@@ -62,6 +62,7 @@ struct HTTP3SettingsTests {
     }
 
     @Test(arguments: [0, 2, 3, 4, 5])
+    @available(anyAppleOS 27, *)
     func forbiddenSettingsIdentifier(identifier: UInt64) {
         #expect(HTTP3Setting.Identifier(extensionSetting: identifier) == nil)
     }
@@ -75,6 +76,7 @@ struct HTTP3SettingsTests {
             .enableConnectProtocol,
         ]
     )
+    @available(anyAppleOS 27, *)
     func duplicateKnownSetting(identifier: HTTP3Setting.Identifier) {
         expectH3Error(code: .invalidFramePayload, h3ErrorCode: .settingsError) {
             // A value of one is valid for every known setting.
@@ -85,8 +87,8 @@ struct HTTP3SettingsTests {
         }
     }
 
-    @Test
-    func duplicateUnknownSetting() {
+    @available(anyAppleOS 27, *)
+    @Test func duplicateUnknownSetting() {
         expectH3Error(code: .invalidFramePayload, h3ErrorCode: .settingsError) {
             _ = try HTTP3Settings(parsing: [
                 .init(identifier: .init(extensionSetting: 100)!, value: 30),
@@ -95,8 +97,8 @@ struct HTTP3SettingsTests {
         }
     }
 
-    @Test
-    func settingsCoding() throws {
+    @available(anyAppleOS 27, *)
+    @Test func settingsCoding() throws {
         var buffer = ByteBuffer()
         let settings = try HTTP3Settings(parsing: [
             HTTP3Setting(identifier: .qpackBlockedStreams, value: 1),
@@ -127,8 +129,8 @@ struct HTTP3SettingsTests {
         #expect(decoded == settings)
     }
 
-    @Test
-    func forbiddenSettingsIdentifierWhenDecoding() {
+    @available(anyAppleOS 27, *)
+    @Test func forbiddenSettingsIdentifierWhenDecoding() {
         let badIdentifiers: [UInt8] = [0, 2, 3, 4, 5]
         for identifier in badIdentifiers {
             // The format is the identifier followed by the value (we're using 1 as the value here)
@@ -144,8 +146,8 @@ struct HTTP3SettingsTests {
         }
     }
 
-    @Test
-    func settingsCodingIgnoresDefault() {
+    @available(anyAppleOS 27, *)
+    @Test func settingsCodingIgnoresDefault() {
         let settings = HTTP3Settings(qpackBlockedStreams: 0, h3Datagram: false, enableConnectProtocol: false)
         var buffer = ByteBuffer()
         let writtenBytes = buffer.writeHTTP3Settings(settings)
@@ -154,8 +156,8 @@ struct HTTP3SettingsTests {
         #expect(buffer.readableBytes == 0)
     }
 
-    @Test
-    func defaultSettings() throws {
+    @available(anyAppleOS 27, *)
+    @Test func defaultSettings() throws {
         let empty = try HTTP3Settings(parsing: [])
         #expect(empty.qpackMaximumTableCapacity == 0)
         #expect(empty.qpackBlockedStreams == 0)
@@ -165,8 +167,8 @@ struct HTTP3SettingsTests {
         #expect(empty.other == [])
     }
 
-    @Test
-    func h3DatagramIsEnabledByDefault() {
+    @available(anyAppleOS 27, *)
+    @Test func h3DatagramIsEnabledByDefault() {
         let settings = HTTP3Settings(qpackMaximumTableCapacity: 1024)
         #expect(settings.h3Datagram)
     }
@@ -181,6 +183,7 @@ struct HTTP3SettingsTests {
             (.enableConnectProtocol, 42),
         ]
     )
+    @available(anyAppleOS 27, *)
     func settingWithInvalidValue(identifier: HTTP3Setting.Identifier, value: UInt64) {
         expectH3Error(
             code: .invalidFramePayload,
@@ -191,8 +194,8 @@ struct HTTP3SettingsTests {
         }
     }
 
-    @Test
-    func connectProtocolSettingIsDisabledByDefault() {
+    @available(anyAppleOS 27, *)
+    @Test func connectProtocolSettingIsDisabledByDefault() {
         let settings = HTTP3Settings(qpackMaximumTableCapacity: 1024)
         #expect(settings.enableConnectProtocol == false)
     }

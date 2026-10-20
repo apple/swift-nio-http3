@@ -16,6 +16,7 @@ public import NIOCore
 public import NIOQUICHelpers
 
 /// Parameters passed to stream initializer closures provided by users for new incoming or outgoing streams. Gives user access to the channel and stream ID so they can add any custom handlers.
+@available(anyAppleOS 27, *)
 public struct HTTP3StreamInitializerParameters: Sendable {
     /// The stream channel.
     public var channel: any Channel
@@ -33,6 +34,7 @@ public struct HTTP3StreamInitializerParameters: Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3StreamInitializerParameters {
     init(_ quicParameters: QUICStreamInitializerParameters) {
         self.init(channel: quicParameters.channel, streamID: quicParameters.streamID)

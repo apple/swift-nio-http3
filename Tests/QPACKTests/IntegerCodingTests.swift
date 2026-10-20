@@ -22,6 +22,7 @@ struct IntegerCodingTests {
 
     // MARK: - Array-based helpers
 
+    @available(anyAppleOS 27, *)
     private mutating func encodeIntegerToArray(_ value: UInt64, prefix: Int) -> [UInt8] {
         var data = [UInt8]()
         self.scratchBuffer.clear()
@@ -30,6 +31,7 @@ struct IntegerCodingTests {
         return data
     }
 
+    @available(anyAppleOS 27, *)
     private mutating func decodeInteger(from array: [UInt8], prefix: Int) throws -> Int? {
         self.scratchBuffer.clear()
         self.scratchBuffer.writeBytes(array)
@@ -38,8 +40,8 @@ struct IntegerCodingTests {
 
     // MARK: - Tests
 
-    @Test
-    mutating func testIntegerEncoding() throws {
+    @available(anyAppleOS 27, *)
+    @Test mutating func testIntegerEncoding() throws {
         // values from the standard: http://httpwg.org/specs/rfc7541.html#integer.representation.examples
         var data = self.encodeIntegerToArray(10, prefix: 5)  // 0000 1010
         #expect(data == [0b00001010])
@@ -128,8 +130,8 @@ struct IntegerCodingTests {
         #expect(data == [255, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1])
     }
 
-    @Test
-    mutating func testIntegerDecoding() throws {
+    @available(anyAppleOS 27, *)
+    @Test mutating func testIntegerDecoding() throws {
         // any bits above the prefix amount shouldn't affect the outcome.
         try #expect(self.decodeInteger(from: [0b00001010], prefix: 5) == 10)
         try #expect(self.decodeInteger(from: [0b11101010], prefix: 5) == 10)
@@ -169,6 +171,7 @@ struct IntegerCodingTests {
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingMultiplicationDoesNotOverflow(prefix: Int) {
         // Zeros with continuation bits (e.g. 128) to increase the shift value (to 9 * 7 = 63), and then multiply by 127.
         #expect(throws: IntegerReadingError.unrepresentable) {
@@ -177,6 +180,7 @@ struct IntegerCodingTests {
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingAdditionDoesNotOverflow(prefix: Int) {
         // Zeros with continuation bits (e.g. 128) to increase the shift value (to 9 * 7 = 63), and then multiply by 127.
         #expect(throws: IntegerReadingError.unrepresentable) {
@@ -185,6 +189,7 @@ struct IntegerCodingTests {
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingShiftDoesNotOverflow(prefix: Int) {
         // With enough iterations we expect the shift to become greater >= 64.
         #expect(throws: IntegerReadingError.unrepresentable) {
@@ -193,11 +198,13 @@ struct IntegerCodingTests {
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingEmptyInput(prefix: Int) throws {
         try #expect(self.decodeInteger(from: [], prefix: prefix) == nil)
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingNotEnoughBytes(prefix: Int) throws {
         try #expect(self.decodeInteger(from: [255, 128], prefix: prefix) == nil)
     }

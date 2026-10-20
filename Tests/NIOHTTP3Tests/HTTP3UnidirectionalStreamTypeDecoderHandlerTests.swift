@@ -55,8 +55,8 @@ private final class StreamCloseTriggerRecorder: ChannelOutboundHandler {
 struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
     private let logger = Logger(label: "HTTP3UnidirectionalStreamTypeDecoderHandlerTests")
 
-    @Test
-    func getsStreamType() throws {
+    @available(anyAppleOS 27, *)
+    @Test func getsStreamType() throws {
         let eventLoop = EmbeddedEventLoop()
         var callbackWasCalled = false
         let handler = HTTP3UnidirectionalStreamTypeDecoderHandler(logger: logger) { type in
@@ -75,8 +75,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
         #expect(callbackWasCalled == true)
     }
 
-    @Test
-    func getsMultiByteStreamType() throws {
+    @available(anyAppleOS 27, *)
+    @Test func getsMultiByteStreamType() throws {
         let eventLoop = EmbeddedEventLoop()
         let recorderHandler = RecorderHandler()
         var callbackWasCalled = false
@@ -105,8 +105,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
         #expect(callbackWasCalled == true)
     }
 
-    @Test
-    func queuesBytesAfterStreamType() throws {
+    @available(anyAppleOS 27, *)
+    @Test func queuesBytesAfterStreamType() throws {
         let eventLoop = EmbeddedEventLoop()
         let releasePromise = eventLoop.makePromise(of: HTTP3UnidirectionalStreamTypeDecoderHandler.DecodeResult.self)
         let typeHandler = HTTP3UnidirectionalStreamTypeDecoderHandler(logger: logger) { _ in releasePromise.futureResult
@@ -141,8 +141,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
         }
     }
 
-    @Test
-    func queuesBytesAfterStreamTypeMultiByte() throws {
+    @available(anyAppleOS 27, *)
+    @Test func queuesBytesAfterStreamTypeMultiByte() throws {
         // This test specifically is for the scenario where it takes multiple bytes to get the stream type, and each of those bytes comes
         // separately and thus needs to be buffered, but the final incoming bytebuffer, the one which contains the last byte needed for the
         // stream type, also contains extra bytes. We need to make sure those extra bytes make it to the next handler
@@ -184,8 +184,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
         }
     }
 
-    @Test
-    func dequeuesBytes() throws {
+    @available(anyAppleOS 27, *)
+    @Test func dequeuesBytes() throws {
         let eventLoop = EmbeddedEventLoop()
         let releasePromise = eventLoop.makePromise(of: HTTP3UnidirectionalStreamTypeDecoderHandler.DecodeResult.self)
         let typeHandler = HTTP3UnidirectionalStreamTypeDecoderHandler(logger: logger) { _ in releasePromise.futureResult
@@ -229,8 +229,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderHandlerTests {
         }
     }
 
-    @Test
-    func initializationError() throws {
+    @available(anyAppleOS 27, *)
+    @Test func initializationError() throws {
         let eventLoop = EmbeddedEventLoop()
         let releasePromise = eventLoop.makePromise(of: HTTP3UnidirectionalStreamTypeDecoderHandler.DecodeResult.self)
         let typeHandler = HTTP3UnidirectionalStreamTypeDecoderHandler(logger: logger) { _ in releasePromise.futureResult

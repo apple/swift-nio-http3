@@ -18,16 +18,16 @@ import Testing
 @testable import NIOHTTP3
 
 struct HTTP3OutboundControlStreamStateMachineTests {
-    @Test
-    func channelActive() {
+    @available(anyAppleOS 27, *)
+    @Test func channelActive() {
         let testSettings = HTTP3Settings()
         var stateMachine = HTTP3OutboundControlStreamStateMachine(settings: testSettings)
         let action = stateMachine.channelActive()
         #expect(action == .sendFrames([.settings(testSettings)]))
     }
 
-    @Test
-    func goawayAfterChannelActive() {
+    @available(anyAppleOS 27, *)
+    @Test func goawayAfterChannelActive() {
         let testSettings = HTTP3Settings()
         var stateMachine = HTTP3OutboundControlStreamStateMachine(settings: testSettings)
 
@@ -38,8 +38,8 @@ struct HTTP3OutboundControlStreamStateMachineTests {
         #expect(action2 == .send)
     }
 
-    @Test
-    func goawayBeforeChannelActive() {
+    @available(anyAppleOS 27, *)
+    @Test func goawayBeforeChannelActive() {
         let testSettings = HTTP3Settings()
         var stateMachine = HTTP3OutboundControlStreamStateMachine(settings: testSettings)
 

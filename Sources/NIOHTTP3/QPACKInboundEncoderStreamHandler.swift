@@ -16,8 +16,10 @@
 import NIOCore
 @_spi(PackageInternal) import QPACK
 
+@available(anyAppleOS 27, *)
 protocol QPACKInboundEncoderStreamDelegate: ~Copyable {
-    func onReceivedInstruction(_ instruction: QPACKEncoderInstruction)
+    /// - Throws: A connection error, if the instruction can't be applied.
+    func onReceivedInstruction(_ instruction: QPACKEncoderInstruction) throws(QPACKError)
 
     func onError(_ error: HTTP3Error)
 }
@@ -25,7 +27,7 @@ protocol QPACKInboundEncoderStreamDelegate: ~Copyable {
 /// Read encoder instructions from a channel and give them to a callback.
 /// This belongs on the incoming encoder stream.
 /// The encoder instructions come from the remote encoder and should be fed into the local decoder.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 final class QPACKInboundEncoderStreamHandler<Delegate: QPACKInboundEncoderStreamDelegate>: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
 
@@ -53,8 +55,12 @@ final class QPACKInboundEncoderStreamHandler<Delegate: QPACKInboundEncoderStream
         let byteBuffer = Self.unwrapInboundIn(data)
         do {
             try self.decoder.process(buffer: byteBuffer) { instruction in
-                self.delegate.onReceivedInstruction(instruction)
+                try self.delegate.onReceivedInstruction(instruction)
             }
+        } catch let error as QPACKError {
+            // The instruction parsed, but the decoder can't apply it.
+            assert(error.isConnectionError)
+            self.delegate.onError(HTTP3Error(error, location: .here()))
         } catch {
             let streamError = HTTP3Error(
                 code: .qpackEncoderStreamError,
@@ -66,13 +72,5 @@ final class QPACKInboundEncoderStreamHandler<Delegate: QPACKInboundEncoderStream
             self.delegate.onError(streamError)
             context.fireErrorCaught(error)
         }
-    }
-}
-
-@available(anyAppleOS 26.0, *)
-extension HTTP3.QPACKCoder: QPACKInboundEncoderStreamDelegate
-where OutboundEncoderStream: ~Copyable, OutboundDecoderStream: ~Copyable {
-    func onReceivedInstruction(_ instruction: QPACKEncoderInstruction) {
-        self.receivedIncomingEncoderInstruction(instruction)
     }
 }

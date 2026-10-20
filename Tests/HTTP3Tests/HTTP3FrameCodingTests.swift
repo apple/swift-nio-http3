@@ -20,7 +20,7 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3FrameCodingTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func decodeInvalidFrame() throws {
         var decoder = HTTP3FrameDecoder()
         var buffer = ByteBuffer()
@@ -33,7 +33,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: DATA frames
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func decodePartialDataFrame() throws {
         var decoder = HTTP3FrameDecoder()
         var buffer = ByteBuffer()
@@ -44,7 +44,7 @@ struct HTTP3FrameCodingTests {
         #expect(frame == nil)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeDataFrame() {
         let dataFrameBuffer = ByteBuffer(string: "Test")
         var buffer = ByteBuffer()
@@ -54,7 +54,7 @@ struct HTTP3FrameCodingTests {
         #expect(buffer == ByteBuffer([0x00, 0x04, 0x54, 0x65, 0x73, 0x74]))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeDecodeDataFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let dataFrameBuffer = ByteBuffer(string: "Test")
@@ -67,7 +67,7 @@ struct HTTP3FrameCodingTests {
         #expect(buffer.readableBytes == 0)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeDecodeTwoDataFrames() throws {
         var decoder = HTTP3FrameDecoder()
         let dataFrameBuffer1 = ByteBuffer(string: "Test1")
@@ -84,7 +84,7 @@ struct HTTP3FrameCodingTests {
         #expect(out.readableBytes == 0)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func decodeDataFrameInParts() throws {
         var decoder = HTTP3FrameDecoder()
 
@@ -119,7 +119,7 @@ struct HTTP3FrameCodingTests {
         #expect(!hasLeftovers4)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func decodeEmptyDataFrame() throws {
         var decoder = HTTP3FrameDecoder()
 
@@ -136,7 +136,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: CANCEL_PUSH frames
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeCancelPushFrame() {
         var buffer = ByteBuffer()
 
@@ -148,7 +148,7 @@ struct HTTP3FrameCodingTests {
         #expect(buffer == ByteBuffer([0x03, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeDecodeCancelPushFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let pushID = HTTP3PushID(rawValue: 151_288_809_941_952_652)
@@ -163,7 +163,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: SETTINGS frames
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeSettingsFrame() {
         let settings = HTTP3Settings(
             qpackMaximumTableCapacity: 151_288_809_941_952_652,
@@ -184,7 +184,7 @@ struct HTTP3FrameCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeDecodeSettingsFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let settings = HTTP3Settings(
@@ -200,7 +200,7 @@ struct HTTP3FrameCodingTests {
         #expect(buffer.readableBytes == 0)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeDecodeSettingsFrame_emptySettings() throws {
         var decoder = HTTP3FrameDecoder()
         let settings = HTTP3Settings()
@@ -215,7 +215,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: GOAWAY frames
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeGoawayFrame() {
         var buffer = ByteBuffer()
 
@@ -224,7 +224,7 @@ struct HTTP3FrameCodingTests {
         #expect(buffer == ByteBuffer([0x07, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeGoawayPushFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let pushID: HTTP3GoawayID = 151_288_809_941_952_652
@@ -237,7 +237,7 @@ struct HTTP3FrameCodingTests {
         #expect(buffer.readableBytes == 0)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func decodeGoawayRedundantBytes() throws {
         // Type 7 (goaway), length 2, id 1. The id is not actually 2 bytes so this is an error
         var buffer = ByteBuffer(bytes: [7, 2, 1, 0])
@@ -251,7 +251,7 @@ struct HTTP3FrameCodingTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func decodeGoawayNotEnoughBytes() throws {
         // Type 7 (goaway), length 1, id 64. 64 can't be encoded in a single byte in the QUIC format
         // This is an error. This is NOT a case of waiting for more bytes. We've set the length to 1, and provided one byte.
@@ -265,7 +265,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: MAX_PUSH_ID frames
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeMaxPushIDFrame() {
         var buffer = ByteBuffer()
 
@@ -277,7 +277,7 @@ struct HTTP3FrameCodingTests {
         #expect(buffer == ByteBuffer([0x0d, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeDecodeMaxPushIDFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let pushID = HTTP3PushID(rawValue: 151_288_809_941_952_652)
@@ -292,7 +292,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: PUSH_PROMISE frames
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodePushPromiseFrame() {
         var buffer = ByteBuffer()
 
@@ -335,7 +335,7 @@ struct HTTP3FrameCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodePushPromiseFrameWithHuffman() {
         var buffer = ByteBuffer()
 
@@ -378,7 +378,7 @@ struct HTTP3FrameCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: [true, false])
     func encodeDecodePushPromiseFrame(preferHuffmanEncoding: Bool) throws {
         var decoder = HTTP3FrameDecoder()
@@ -401,7 +401,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: HEADER frames
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeHeaders() throws {
         var buffer = ByteBuffer()
 
@@ -438,7 +438,7 @@ struct HTTP3FrameCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func encodeHeadersWithHuffman() throws {
         var buffer = ByteBuffer()
 
@@ -475,7 +475,7 @@ struct HTTP3FrameCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: [true, false])
     func encodeDecodeHeaders(preferHuffmanEncoding: Bool) throws {
         var decoder = HTTP3FrameDecoder()
@@ -502,7 +502,7 @@ struct HTTP3FrameCodingTests {
         #expect(partialHeader.fieldSection == testFieldSection)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: [true, false])
     func encodeDecodeTwoHeaderFrames(preferHuffmanEncoding: Bool) throws {
         var decoder = HTTP3FrameDecoder()
@@ -532,7 +532,7 @@ struct HTTP3FrameCodingTests {
         #expect(out.readableBytes == 0)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: [true, false])
     func decodeHeadersRedundantBytes(preferHuffmanEncoding: Bool) throws {
         var buffer = ByteBuffer()
@@ -570,7 +570,7 @@ struct HTTP3FrameCodingTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func decodeHeadersNotEnoughBytes() throws {
         // Type 1 (headers) but not enough bytes to actually make a full header field section
         var buffer = ByteBuffer(bytes: [1, 1, 0])
@@ -582,7 +582,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: Unknown type
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: 15...100)  // These frame types are unknown, but not forbidden
     func decodeUnknownType(frameType: UInt64) throws {
         var decoder = HTTP3FrameDecoder()
@@ -599,7 +599,7 @@ struct HTTP3FrameCodingTests {
         #expect(buffer.readableBytes == 0)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: 15...100)  // These frame types are unknown, but not forbidden
     func decodeReservedTypeFollowedByData(frameType: UInt64) throws {
         var decoder = HTTP3FrameDecoder()
@@ -620,7 +620,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: Misc
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func partialFrameType() throws {
         // A type integer beginning with 64 implies more bytes to come
         var buffer = ByteBuffer(bytes: [64])
@@ -632,7 +632,7 @@ struct HTTP3FrameCodingTests {
         #expect(!hasLeftovers)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: [
         (type: HTTP3FrameType.cancelPush, size: 100 as UInt64),
         (type: HTTP3FrameType.goaway, size: 9 as UInt64),

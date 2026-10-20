@@ -17,10 +17,11 @@ import HTTPTypes
 import Logging
 import NIOCore
 import NIOQUICHelpers
+@_spi(PackageInternal) import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator> {
 
     /// The QPACK coder used by all streams of this connection. The coordinator is both the QPACK
@@ -524,7 +525,12 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         case .addHandlers:
             let qpackCoder = self.forceUnwrapQPACKCoder(sourceLocation: .here())
             // qpack streams do not carry h3 frames
-            let forwarder = QPACKInboundEncoderStreamHandler(delegate: qpackCoder)
+            let forwarder = QPACKInboundEncoderStreamHandler(
+                delegate: QPACKInboundStreamDelegate(
+                    qpackCoder: qpackCoder,
+                    connection: self
+                )
+            )
             try streamChannel.pipeline.syncOperations.addHandler(forwarder)
             self.addStreamClosedCallback(
                 streamChannel: streamChannel,
@@ -557,7 +563,12 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         case .addHandlers:
             let qpackCoder = self.forceUnwrapQPACKCoder(sourceLocation: .here())
             // qpack streams do not carry h3 frames
-            let forwarder = QPACKInboundDecoderStreamHandler(delegate: qpackCoder)
+            let forwarder = QPACKInboundDecoderStreamHandler(
+                delegate: QPACKInboundStreamDelegate(
+                    qpackCoder: qpackCoder,
+                    connection: self
+                )
+            )
             try streamChannel.pipeline.syncOperations.addHandler(forwarder)
             self.addStreamClosedCallback(
                 streamChannel: streamChannel,
@@ -599,10 +610,15 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             self.connection?.emitConnectionError(error)
         case .onSettings(let onSettings):
             let qpackCoder = self.forceUnwrapQPACKCoder(sourceLocation: .here())
-            qpackCoder.receivedRemoteSettings(
-                maxQueueSize: Int(clamping: onSettings.qpackBlockedStreams),
-                peersDynamicTableSize: Int(clamping: onSettings.qpackMaximumTableCapacity)
-            )
+            do {
+                try qpackCoder.receivedRemoteSettings(
+                    maxQueueSize: Int(clamping: onSettings.qpackBlockedStreams),
+                    peersDynamicTableSize: Int(clamping: onSettings.qpackMaximumTableCapacity)
+                )
+            } catch {
+                assert(error.isConnectionError)
+                self.emitConnectionErrorFromStream(HTTP3Error(error, location: .here()))
+            }
             let receivedSettings = ReceivedSettings(
                 datagramsSupported: onSettings.datagramsNegotiated,
                 extendedConnectSupported: onSettings.extendedConnect.isSupported
@@ -861,6 +877,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 extension HTTP3ConnectionCoordinator: Sendable {}
 
 extension Channel {
+    @available(anyAppleOS 27, *)
     fileprivate func writeStreamType(_ streamType: HTTP3StreamType.Unidirectional) {
         var buffer = ByteBuffer()
         buffer.writeEncodedInteger(streamType.rawValue, strategy: .quic)
@@ -868,7 +885,7 @@ extension Channel {
     }
 }
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
     func onStreamClosed(_ sawEOF: Bool, streamID: NIOQUICHelpers.QUICStreamID, streamType: HTTP3.HTTP3StreamType.Framed)
     {
@@ -881,13 +898,9 @@ extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
 
 }
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 extension HTTP3ConnectionCoordinator: QPACKConnectionDelegate {
     func makeOutboundEncoderStream() {
         self.createQPACKEncoderInstructionStream()
-    }
-
-    func connectionError(_ error: HTTP3Error) {
-        self.emitConnectionErrorFromStream(error)
     }
 }

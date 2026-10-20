@@ -20,7 +20,7 @@ import Testing
 
 /// Tests for encoding and decoding the `encoder instructions`.
 struct EncoderInstructionCoderTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(
         arguments: [
             QPACKEncoderInstruction.insertWithNameReference(.staticTable, relativeIndex: 10, value: "a"),

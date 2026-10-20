@@ -13,13 +13,13 @@
 //===----------------------------------------------------------------------===//
 
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 import Testing
 
-@_spi(PackageInternal) @testable import HTTP3
+@_spi(PackageInternal) @testable import QPACK
 
 struct QPACKStateMachineTests {
     /// ``QPACKStateMachine/GotRemoteSettingsAction`` carries an error, so it isn't `Equatable`.
+    @available(anyAppleOS 27, *)
     private func isMakeEncoderInstructionStream<Context>(
         _ action: QPACKStateMachine<Context>.GotRemoteSettingsAction?
     ) -> Bool {
@@ -27,11 +27,13 @@ struct QPACKStateMachineTests {
         return true
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testBeginUsingDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testSettingsWithoutDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action = stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0)
@@ -47,6 +49,7 @@ struct QPACKStateMachineTests {
         }
     }
 
+    @available(anyAppleOS 27, *)
     @Test func secondSettingsIsAConnectionError() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
@@ -58,14 +61,14 @@ struct QPACKStateMachineTests {
             Issue.record("Expected a connection error, got \(String(describing: action2))")
             return
         }
-        #expect(error.code == .unexpectedFrame)
-        #expect(error.h3ErrorCode == .frameUnexpected)
+        #expect(error == .duplicateSettings)
 
         // The first settings still stand: the encoder uses the table size they asked for.
         let action3 = stateMachine.outboundEncoderStreamReady()
         #expect(action3 == .sendEncoderInstruction(.setDynamicTableCapacity(300)))
     }
 
+    @available(anyAppleOS 27, *)
     @Test func secondSettingsWithoutDynamicTableIsAConnectionError() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         #expect(stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0) == nil)
@@ -76,14 +79,14 @@ struct QPACKStateMachineTests {
             Issue.record("Expected a connection error, got \(String(describing: action))")
             return
         }
-        #expect(error.code == .unexpectedFrame)
-        #expect(error.h3ErrorCode == .frameUnexpected)
+        #expect(error == .duplicateSettings)
 
         stateMachine.assertEncodesWithoutUsingDynamicTable()
     }
 
     // MARK: Encoding headers
 
+    @available(anyAppleOS 27, *)
     @Test func testEncodeHeadersInInitialState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let result = stateMachine.encodeHeaders([.init(name: .cookie, value: "test")], forStream: 1)
@@ -100,6 +103,7 @@ struct QPACKStateMachineTests {
         )
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testEncodeHeadersInWaitingForStreamState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 100)
@@ -109,6 +113,7 @@ struct QPACKStateMachineTests {
         stateMachine.assertEncodesWithoutUsingDynamicTable()
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testEncodeHeadersInWithoutDynamicState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 0)
@@ -117,6 +122,7 @@ struct QPACKStateMachineTests {
         stateMachine.assertEncodesWithoutUsingDynamicTable()
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testEncodeHeadersInWithDynamicState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
@@ -141,15 +147,14 @@ struct QPACKStateMachineTests {
 
     // MARK: Decoding headers
 
+    @available(anyAppleOS 27, *)
     @Test func testDecodeHeadersWithoutDynamicTable() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
         let receiver = 5
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
-                lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
-            )
+        let testHeader = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+            lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
         )
         let action = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: receiver)
         guard case .informDecodeResult(let result, let context) = action else {
@@ -167,6 +172,7 @@ struct QPACKStateMachineTests {
         #expect(receiver == context)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testDecodeHeadersWithDynamicTable() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
@@ -182,11 +188,9 @@ struct QPACKStateMachineTests {
         #expect(actions1?.decoderInstructions == .insertCountIncrement(increment: 1))
 
         // Ask the machine to decode a header section containing reference to the new entry
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let receiver = 3
         let actions2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: receiver)
@@ -205,6 +209,7 @@ struct QPACKStateMachineTests {
         #expect(context == receiver)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testDecodeHeadersConnectionError() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
@@ -215,11 +220,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // Ask the machine to decode some nonsense header. This is a connection level failure because the references don't exist
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let action2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
 
@@ -227,14 +230,11 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected actions \(String(describing: action2))")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed
-        )
+        #expect(error == .decodeError(.invalidReference))
         #expect(context == contextID)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testDecodeHeadersStreamError() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
@@ -245,11 +245,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // This header will decode fine, but is a malformed message (upper case field names). This is a stream error
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
-                lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
+            lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
         )
         let action2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
         guard case .informDecodeError(let error, let context) = action2 else {
@@ -257,10 +255,11 @@ struct QPACKStateMachineTests {
             return
         }
         #expect(error.streamID == streamID)
-        expectH3ErrorEqual(error: error.error, expectedCode: .qpackDecoderError, expectedH3ErrorCode: .messageError)
+        #expect(error.error == .decodeError(.invalidHeaderName))
         #expect(context == contextID)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testDecodeHeadersWithDynamicTableDelayed() throws {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
@@ -270,11 +269,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // Ask the machine to decode a header section containing dynamic table references
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let contextID = 12
         let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
@@ -302,6 +299,7 @@ struct QPACKStateMachineTests {
         #expect(stateMachine.checkPendingDecodes() == nil)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testDecodeHeadersStreamErrorDelayed() throws {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
@@ -311,15 +309,13 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // Ask the machine to decode a header section containing dynamic table references, plus an invalid literal
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [
-                    .indexedWithPostBase(index: 0),
-                    // Invalid due to uppercase
-                    .literal(requireLiteralRepresentation: false, name: "Test", value: "test"),
-                ]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [
+                .indexedWithPostBase(index: 0),
+                // Invalid due to uppercase
+                .literal(requireLiteralRepresentation: false, name: "Test", value: "test"),
+            ]
         )
         let contextID = 6
         let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
@@ -339,14 +335,11 @@ struct QPACKStateMachineTests {
             return
         }
         #expect(decodeError.streamID == streamID)
-        expectH3ErrorEqual(
-            error: decodeError.error,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .messageError
-        )
+        #expect(decodeError.error == .decodeError(.invalidHeaderName))
         #expect(context == contextID)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testInvalidFieldPrefix() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(0)
@@ -354,13 +347,11 @@ struct QPACKStateMachineTests {
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
         stateMachine.setupLocalDynamicTable(maxSize: 1024)
         stateMachine.setupOutboundDecoderStream()
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
-                lines: [
-                    .literal(requireLiteralRepresentation: false, name: "test", value: "test")
-                ]
-            )
+        let testHeader = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
+            lines: [
+                .literal(requireLiteralRepresentation: false, name: "test", value: "test")
+            ]
         )
         let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
         // The machine can't decode it, because the prefix is nonsense
@@ -368,16 +359,11 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action \(String(describing: actions3))")
             return
         }
-        expectH3ErrorEqual(
-            error:
-                error,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed,
-            expectedMessage: "Invalid field section prefix"
-        )
+        #expect(error == .invalidFieldSectionPrefix)
         #expect(context == contextID)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testMaxBlockedStreams() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 3)
 
@@ -392,11 +378,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // a header which requires an insert count of 1
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 1024),
-                lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 1024),
+            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
         )
 
         // Max blocked streams is 3, so the first 3 are fine, they just get queued
@@ -414,15 +398,11 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action \(String(describing: action4))")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed,
-            expectedMessage: "Too many streams blocked on QPACK"
-        )
+        #expect(error == .tooManyBlockedStreams)
         #expect(context == contextID)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testDecodeInstructionsBufferedWhenStreamNotReady() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
 
@@ -437,11 +417,9 @@ struct QPACKStateMachineTests {
         #expect(action1?.decoderInstructions == nil)
 
         // Ask the machine to decode a header section containing reference to the new entry
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let streamID = QUICStreamID(0)
         let contextID = 11
@@ -477,6 +455,7 @@ struct QPACKStateMachineTests {
 
     // MARK: Decoder instructions
 
+    @available(anyAppleOS 27, *)
     @Test func testGotIncomingDecoderInstruction() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         stateMachine.setupRemoteDynamicTable(maxSize: 1024)
@@ -488,6 +467,7 @@ struct QPACKStateMachineTests {
         #expect(actions == nil)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testGotDecoderInstructionWhenImplicitlyNoDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         // This instruction is invalid because there is no dynamic table initially and no stream with id 1
@@ -496,13 +476,10 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testGotDecoderInstructionWhenExplicitlyNoDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         _ = stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0)
@@ -512,13 +489,10 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testGotDecoderInstructionWhenAwaitingStream() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         _ = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 100)
@@ -528,13 +502,10 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(error == .decoderInstructionWithoutDynamicTable)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testGotInvalidIncomingDecoderInstruction() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         stateMachine.setupRemoteDynamicTable(maxSize: 1)
@@ -544,15 +515,12 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(error == .invalidDecoderInstruction)
     }
 
     // MARK: Encoder instructions
 
+    @available(anyAppleOS 27, *)
     @Test func testGotInvalidIncomingEncoderInstruction() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
 
@@ -562,13 +530,10 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackEncoderStreamError,
-            expectedH3ErrorCode: .qpackEncoderStreamError
-        )
+        #expect(error == .invalidEncoderInstruction)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testInsertTooLargeEntry() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1, decoderMaxBlockedStreams: 100)
 
@@ -584,15 +549,12 @@ struct QPACKStateMachineTests {
             Issue.record("Unexpected action")
             return
         }
-        expectH3ErrorEqual(
-            error: error,
-            expectedCode: .qpackEncoderStreamError,
-            expectedH3ErrorCode: .qpackEncoderStreamError
-        )
+        #expect(error == .invalidEncoderInstruction)
     }
 
     // MARK: Request stream closing
 
+    @available(anyAppleOS 27, *)
     @Test func testClosedRequestStreamAfterEOF() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(1)
@@ -606,6 +568,7 @@ struct QPACKStateMachineTests {
         #expect(actions == nil)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testClosedRequestStreamBeforeEOFWithoutDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(1)
@@ -615,6 +578,7 @@ struct QPACKStateMachineTests {
         #expect(actions == nil)  // No instruction to send, because no dynamic table
     }
 
+    @available(anyAppleOS 27, *)
     @Test func testClosedRequestStreamWhilstDecodingQPACK() {
         var stateMachine = QPACKStateMachine<Int>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
         let streamID = QUICStreamID(1)
@@ -625,11 +589,9 @@ struct QPACKStateMachineTests {
         stateMachine.setupOutboundDecoderStream()
 
         // Ask the machine to decode a header section containing reference which doesn't exist.
-        let testHeader = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let testHeader = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let actions1 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
         // The state machine will have queued the decoding, so we don't have an action yet.
@@ -650,6 +612,7 @@ struct QPACKStateMachineTests {
 
     /// This tests the scenario where a request is fully completed, the stream is closed, and then an ack comes in on the QPACK decoder stream for that request.
     /// This test is for a potential bug where we accidentally treat it as an error to receive an ack for a 'nonexistent' stream.
+    @available(anyAppleOS 27, *)
     @Test func testClosedRequestStreamThenReceiveSectionAck() throws {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
 
@@ -677,6 +640,7 @@ struct QPACKStateMachineTests {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension QPACKStateMachine.DecodeHeaderAction: Equatable where DecodeContext: Equatable {
     static func == (lhs: QPACKStateMachine.DecodeHeaderAction, rhs: QPACKStateMachine.DecodeHeaderAction) -> Bool {
         switch (lhs, rhs) {
@@ -690,6 +654,7 @@ extension QPACKStateMachine.DecodeHeaderAction: Equatable where DecodeContext: E
     }
 }
 
+@available(anyAppleOS 27, *)
 extension QPACKStateMachine {
     /// Simulate receiving settings from the remote which allows the local encoder to use the dynamic table.
     fileprivate mutating func setupRemoteDynamicTable(maxSize: Int) {
@@ -743,6 +708,7 @@ extension QPACKStateMachine {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension QPACKStateMachine.IncomingEncoderInstructionAction {
     fileprivate var decoderInstructions: QPACKDecoderInstruction? {
         switch self {

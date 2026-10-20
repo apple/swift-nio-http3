@@ -18,6 +18,7 @@ public import NIOCore
 public import NIOHTTPTypes
 
 /// Processes and validates the contents of HTTP/3 frames into the parts of an HTTP message.
+@available(anyAppleOS 27, *)
 protocol HTTPMessagePartProcessor {
     associatedtype Part
 
@@ -28,6 +29,7 @@ protocol HTTPMessagePartProcessor {
 }
 
 /// Processes and validates the parts of a request, as received by a server.
+@available(anyAppleOS 27, *)
 struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
     /// Whether we can accept Extended CONNECT requests, i.e. if we sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1.
     let extendedConnectSupported: Bool
@@ -56,6 +58,7 @@ struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
 }
 
 /// Processes and validates the parts of a response, as received by a server.
+@available(anyAppleOS 27, *)
 struct HTTPResponsePartProcessor: HTTPMessagePartProcessor {
     func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         .head(try HTTP3MessageDecoding.response(fields: fields))
@@ -76,6 +79,7 @@ struct HTTPResponsePartProcessor: HTTPMessagePartProcessor {
 
 /// Process HTTP3Frames into HTTPMessageParts.
 /// Use this to convert incoming frames into message parts.
+@available(anyAppleOS 27, *)
 struct HTTPMessageParsingStateMachine<Processor: HTTPMessagePartProcessor> {
     typealias Part = Processor.Part
 
@@ -175,6 +179,7 @@ struct HTTPMessageParsingStateMachine<Processor: HTTPMessagePartProcessor> {
 }
 
 /// Use this on clients to write `HTTPRequestPart` and receive `HTTPResponsePart`.
+@available(anyAppleOS 27, *)
 public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     public typealias InboundIn = HTTP3Frame
     public typealias InboundOut = HTTPResponsePart
@@ -301,6 +306,7 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
 extension HTTP3ToHTTPClientCodec: Sendable {}
 
 /// Use this on servers to receive `HTTPRequestPart` and write `HTTPResponsePart`.
+@available(anyAppleOS 27, *)
 public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
     public typealias InboundIn = HTTP3Frame
     public typealias InboundOut = HTTPRequestPart
