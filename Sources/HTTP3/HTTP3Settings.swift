@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOQUICHelpers
+
 import struct NIOCore.ByteBuffer
 
 /// Represents connection-wide settings for a HTTP/3 connection.

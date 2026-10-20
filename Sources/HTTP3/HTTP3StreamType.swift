@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOQUICHelpers
+
 @available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum HTTP3StreamType: Sendable {

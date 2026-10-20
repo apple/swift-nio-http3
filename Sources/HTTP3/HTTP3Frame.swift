@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
+import NIOQUICHelpers
 @_spi(PackageInternal) public import QPACK
 
 public import struct NIOCore.ByteBuffer
