@@ -105,6 +105,7 @@ struct StreamTracker {
     }
 }
 
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct QPACKEncodeResult: Sendable, Hashable {
     @_spi(PackageInternal)
@@ -120,6 +121,7 @@ public struct QPACKEncodeResult: Sendable, Hashable {
 }
 
 /// A bit like ``FieldLine`` but without caring about wire representation.
+@available(anyAppleOS 27, *)
 private enum HeaderRepresentation {
     case literal(requireLiteralRepresentation: Bool, name: HTTPField.Name, value: String)
     case staticTableReference(index: Int)
@@ -186,6 +188,7 @@ private enum HeaderRepresentation {
 }
 
 /// The result of encoding a single line. Contains the encoded form of the line + the instruction needed, if any.
+@available(anyAppleOS 27, *)
 private struct QPACKEncodeSingleResult {
     let headerRepresentation: HeaderRepresentation
     let instruction: QPACKEncoderInstruction?
@@ -197,6 +200,7 @@ private struct QPACKEncodeSingleResult {
 }
 
 /// A full QPACK encoder which may use the dynamic table and may emit instructions.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct DynamicQPACKEncoder {
     /// The actual header table.
@@ -514,6 +518,7 @@ public struct DynamicQPACKEncoder {
 }
 
 /// Can encode field sections but only statically (can't use dynamic table and can't send instructions).
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct StaticQPACKEncoder {
     @_spi(PackageInternal)

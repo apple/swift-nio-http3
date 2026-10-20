@@ -15,6 +15,7 @@
 public import NIOQUICHelpers
 @_spi(PackageInternal) public import QPACK
 
+@available(anyAppleOS 27, *)
 extension HTTP3Error {
     /// The HTTP/3 error for a failure of the ``QPACKCoder``, with the error code RFC 9114 and RFC 9204 prescribe.
     ///

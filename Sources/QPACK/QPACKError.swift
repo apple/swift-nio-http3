@@ -16,6 +16,7 @@
 ///
 /// The owner of the coder translates this into the error type of the protocol it runs QPACK for. Whether a failure
 /// takes down the connection or only the stream it happened on is given by ``isConnectionError``.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 @nonexhaustive
 public enum QPACKError: Error, Sendable, Hashable {

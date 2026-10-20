@@ -18,6 +18,7 @@ import NIOQUICHelpers
 ///
 /// This is either a stream id (if sent by a server) or a push id (if sent by a client).
 /// See RFC 9114 § 7.2.6.
+@available(anyAppleOS 27, *)
 public struct HTTP3GoawayID: Sendable, Hashable, RawRepresentable {
     /// The underlying raw ID.
     /// For GOAWAY frames sent by a client, this a push ID.
@@ -32,12 +33,14 @@ public struct HTTP3GoawayID: Sendable, Hashable, RawRepresentable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3GoawayID: CustomStringConvertible {
     public var description: String {
         "HTTP3GoawayID(\(self.rawValue))"
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3GoawayID: CustomDebugStringConvertible {
     public var debugDescription: String {
         "HTTP3GoawayID(\(self.rawValue))"
@@ -46,6 +49,7 @@ extension HTTP3GoawayID: CustomDebugStringConvertible {
 
 /// We need to be able to compare goaways internally, but we'll not conform to Comparable publicly.
 /// That is because comparing goaways is weird because a goaway id could represent a stream id or a push id and we don't know which it is.
+@available(anyAppleOS 27, *)
 extension HTTP3GoawayID {
     static func < (lhs: HTTP3GoawayID, rhs: HTTP3GoawayID) -> Bool {
         lhs.rawValue < rhs.rawValue
@@ -56,6 +60,7 @@ extension HTTP3GoawayID {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3GoawayID {
     /// The largest possible GOAWAY ID a server can send (2^62 - 4).
     ///
@@ -66,11 +71,13 @@ extension HTTP3GoawayID {
 
 extension QUICStreamID {
     /// A goaway ID sent from a server to a client represents a ``QUICStreamID``.
+    @available(anyAppleOS 27, *)
     init(goawayID: HTTP3GoawayID) {
         self.init(rawValue: goawayID.rawValue)
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3PushID {
     /// A goaway ID sent from a client to a server represents an ``HTTP3PushID``.
     init(goawayID: HTTP3GoawayID) {

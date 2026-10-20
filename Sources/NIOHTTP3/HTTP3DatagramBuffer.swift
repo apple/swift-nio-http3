@@ -15,6 +15,7 @@
 import DequeModule
 import NIOQUICHelpers
 
+@available(anyAppleOS 27, *)
 struct HTTP3DatagramBuffer {
     /// A batch of buffered datagrams for a given stream ID.
     struct DatagramBatch {
@@ -207,6 +208,7 @@ struct HTTP3DatagramBuffer {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension [QUICStreamID: HTTP3DatagramBuffer.DatagramBatch] {
     struct Dropped {
         var bytes: Int

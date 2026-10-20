@@ -16,7 +16,7 @@
 import NIOCore
 @_spi(PackageInternal) import QPACK
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 struct QPACKOutboundEncoderStream: ~Copyable, QPACK.QPACKOutboundEncoderStream {
     private let channel: any Channel
     private let encoder: QPACKEncoderInstructionEncoder

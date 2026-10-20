@@ -21,6 +21,7 @@ public import HTTPTypes
 /// The ``HTTP3Error/message`` is not static and may include dynamic information.
 ///
 /// Errors may have a ``HTTP3Error/cause``, an underlying error which caused the operation to fail.
+@available(anyAppleOS 27, *)
 public struct HTTP3Error: Error, Sendable {
     /// A high-level error code to provide a broad classification.
     public var code: Code
@@ -59,6 +60,7 @@ public struct HTTP3Error: Error, Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Error: CustomStringConvertible {
     public var description: String {
         if let cause = self.cause {
@@ -69,6 +71,7 @@ extension HTTP3Error: CustomStringConvertible {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Error: CustomDebugStringConvertible {
     public var debugDescription: String {
         if let cause = self.cause {
@@ -82,6 +85,7 @@ extension HTTP3Error: CustomDebugStringConvertible {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Error {
     private func detailedDescriptionLines() -> [String] {
         // Build up a tree-like description of the error. This allows nested causes to be formatted
@@ -123,6 +127,7 @@ extension HTTP3Error {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Error {
     /// A high level indication of the kind of error being thrown.
     public struct Code: Hashable, Sendable, CustomStringConvertible {

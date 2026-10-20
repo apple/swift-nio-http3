@@ -25,6 +25,7 @@ struct DecoderInstructionCoderTests {
         QPACKDecoderInstruction.sectionAcknowledgement(streamID: 20),
         QPACKDecoderInstruction.streamCancellation(streamID: 30),
     ])
+    @available(anyAppleOS 27, *)
     func roundtripEncodeAndDecodeDecoderInstruction(instruction: QPACKDecoderInstruction) throws {
         // Encode "manually". We can trust the result of this because it's tested elsewhere as a unit
         var expectedResult = ByteBuffer()

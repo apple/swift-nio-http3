@@ -17,7 +17,7 @@ public import HTTPTypes
 public import struct NIOCore.ByteBuffer
 public import struct NIOQUICHelpers.QUICApplicationErrorCode
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct HTTP3StreamStateMachine: ~Copyable {
     /// This state machine handles the reading side of the stream only.
@@ -829,6 +829,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 }
 
 /// A HTTP3Frame can be made into a HTTP3PartialFrame trivially, if it is not headers or push promise. This enum represents those 3 possibilities.
+@available(anyAppleOS 27, *)
 private enum MaybePartialFrame {
     /// The frame is headers.
     case headers(HTTP3Frame.Headers)
@@ -850,6 +851,7 @@ private enum MaybePartialFrame {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3PartialFrame {
     /// Turn a partial frame into a full frame as long as it's not a header or push promise frame.
     ///

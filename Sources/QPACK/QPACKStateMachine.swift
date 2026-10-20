@@ -19,6 +19,7 @@ import NIOQUICHelpers
 /// A state machine which holds qpack encoder and decoder.
 /// You can ask it to encode/decode things, and inform it of incoming instructions.
 /// It will then return actions to be taken.
+@available(anyAppleOS 27, *)
 struct QPACKStateMachine<DecodeContext>: ~Copyable {
     struct EncoderStateMachine: ~Copyable {
         private enum State: ~Copyable {

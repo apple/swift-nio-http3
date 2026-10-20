@@ -16,6 +16,7 @@
 import NIOCore
 @_spi(PackageInternal) import QPACK
 
+@available(anyAppleOS 27, *)
 protocol QPACKInboundDecoderStreamDelegate: ~Copyable {
     /// - Throws: A connection error, if the instruction can't be applied.
     func onReceivedInstruction(_ instruction: QPACKDecoderInstruction) throws(QPACKError)
@@ -26,6 +27,7 @@ protocol QPACKInboundDecoderStreamDelegate: ~Copyable {
 /// Read decoder instructions from a channel and give them to a callback.
 /// This belongs on the incoming decoder stream.
 /// The decoder instructions come from the remote decoder and should be fed into the local encoder.
+@available(anyAppleOS 27, *)
 final class QPACKInboundDecoderStreamHandler<Delegate: QPACKInboundDecoderStreamDelegate>: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
 

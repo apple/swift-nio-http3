@@ -18,6 +18,7 @@ import Testing
 @_spi(PackageInternal) @testable import QPACK
 
 struct FieldSectionQueueTests {
+    @available(anyAppleOS 27, *)
     private func makeTestEntry(
         streamID: QUICStreamID,
         requiredInsertCount: Int,
@@ -33,8 +34,8 @@ struct FieldSectionQueueTests {
         )
     }
 
-    @Test
-    func cantAddMoreThanMaxItems() throws {
+    @available(anyAppleOS 27, *)
+    @Test func cantAddMoreThanMaxItems() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 1, context: 1))
@@ -46,8 +47,8 @@ struct FieldSectionQueueTests {
         }
     }
 
-    @Test
-    func popsNothingIfNothingDecodable() throws {
+    @available(anyAppleOS 27, *)
+    @Test func popsNothingIfNothingDecodable() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 10, context: 1))
@@ -56,8 +57,8 @@ struct FieldSectionQueueTests {
         #expect(queue.popIfDecodable(availableInsertCount: 5) == nil)
     }
 
-    @Test
-    func popsOldestIfMultipleDecodable() throws {
+    @available(anyAppleOS 27, *)
+    @Test func popsOldestIfMultipleDecodable() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40, context: 1))
@@ -71,8 +72,8 @@ struct FieldSectionQueueTests {
         #expect(queue.popIfDecodable(availableInsertCount: 40) == nil)
     }
 
-    @Test
-    func removesEntries() throws {
+    @available(anyAppleOS 27, *)
+    @Test func removesEntries() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40, context: 1))

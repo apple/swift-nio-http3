@@ -19,15 +19,15 @@ import Testing
 @testable import NIOHTTP3
 
 struct HTTP3DatagramBufferTests {
-    @Test
-    func emptyBuffer() {
+    @available(anyAppleOS 27, *)
+    @Test func emptyBuffer() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         #expect(buffer.totalSize == 0)
         #expect(buffer.unbufferDatagrams(forStream: 42) == nil)
     }
 
-    @Test
-    func appendWithSpace() {
+    @available(anyAppleOS 27, *)
+    @Test func appendWithSpace() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(512, streamID: 1))
         #expect(buffer.totalSize == 512)
@@ -36,16 +36,16 @@ struct HTTP3DatagramBufferTests {
         #expect(buffer.totalSize == 1024)
     }
 
-    @Test
-    func appendDropsOversizedDatagram() {
+    @available(anyAppleOS 27, *)
+    @Test func appendDropsOversizedDatagram() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(2048, streamID: 1))
         #expect(buffer.totalSize == 0)
         #expect(buffer.unbufferDatagrams(forStream: 1) == nil)
     }
 
-    @Test
-    func appendDropsOldDatagrams() {
+    @available(anyAppleOS 27, *)
+    @Test func appendDropsOldDatagrams() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(256, streamID: 1))
         #expect(buffer.totalSize == 256)
@@ -58,8 +58,8 @@ struct HTTP3DatagramBufferTests {
         #expect(buffer.totalSize == 1024)
     }
 
-    @Test
-    func discardDatagramsForStreamsAtOrAboveID() {
+    @available(anyAppleOS 27, *)
+    @Test func discardDatagramsForStreamsAtOrAboveID() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(10, streamID: 0))
         buffer.append(.zeros(20, streamID: 4))
@@ -73,8 +73,8 @@ struct HTTP3DatagramBufferTests {
         #expect(buffer.unbufferDatagrams(forStream: 0)?.count == 1)
     }
 
-    @Test
-    func discardAllDatagrams() {
+    @available(anyAppleOS 27, *)
+    @Test func discardAllDatagrams() {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(10, streamID: 1))
         buffer.append(.zeros(20, streamID: 2))
@@ -86,8 +86,8 @@ struct HTTP3DatagramBufferTests {
         #expect(buffer.unbufferDatagrams(forStream: 2) == nil)
     }
 
-    @Test
-    func unbufferDatagrams() throws {
+    @available(anyAppleOS 27, *)
+    @Test func unbufferDatagrams() throws {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(10, streamID: 1))
         buffer.append(.zeros(20, streamID: 1))
@@ -106,8 +106,8 @@ struct HTTP3DatagramBufferTests {
         #expect(datagrams.map { $0.payload.readableBytes } == [10, 20, 30])
     }
 
-    @Test
-    func appendDropsInInsertionOrderAcrossStreams() throws {
+    @available(anyAppleOS 27, *)
+    @Test func appendDropsInInsertionOrderAcrossStreams() throws {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 60)
         buffer.append(.zeros(10, streamID: 1))
         buffer.append(.zeros(20, streamID: 2))
@@ -129,8 +129,8 @@ struct HTTP3DatagramBufferTests {
         #expect(buffer.totalSize == 0)
     }
 
-    @Test
-    func appendDropsPartOfARun() throws {
+    @available(anyAppleOS 27, *)
+    @Test func appendDropsPartOfARun() throws {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 100)
         buffer.append(.zeros(10, streamID: 1))
         buffer.append(.zeros(10, streamID: 1))
@@ -146,8 +146,8 @@ struct HTTP3DatagramBufferTests {
         #expect(buffer.totalSize == 90)
     }
 
-    @Test
-    func appendSkipsAlreadyUnbufferedStreamsWhenDropping() throws {
+    @available(anyAppleOS 27, *)
+    @Test func appendSkipsAlreadyUnbufferedStreamsWhenDropping() throws {
         var buffer = HTTP3DatagramBuffer(maxAllowedSize: 1024)
         buffer.append(.zeros(10, streamID: 1))
         buffer.append(.zeros(10, streamID: 2))
@@ -166,6 +166,7 @@ struct HTTP3DatagramBufferTests {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Datagram {
     static func zeros(_ count: Int, streamID: QUICStreamID) -> HTTP3Datagram {
         HTTP3Datagram(streamID: streamID, payload: ByteBuffer(repeating: 0, count: count))

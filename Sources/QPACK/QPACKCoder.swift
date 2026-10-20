@@ -19,6 +19,7 @@ public import NIOQUICHelpers
 ///
 /// This is the unidirectional QPACK encoder stream of RFC 9204 § 4.2.1. It only exists if the peer's settings
 /// permit the dynamic table. Create it in response to ``ConnectionDelegate/makeOutboundEncoderStream()``.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public protocol QPACKOutboundEncoderStream: ~Copyable {
     /// Write instructions to the stream, in the order given.
@@ -29,6 +30,7 @@ public protocol QPACKOutboundEncoderStream: ~Copyable {
 ///
 /// This is the unidirectional QPACK decoder stream of RFC 9204 § 4.2.2. Unlike the encoder stream it always
 /// exists, but the coder buffers instructions until ``QPACKCoder/outboundDecoderStreamReady(_:)`` is called.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public protocol QPACKOutboundDecoderStream: ~Copyable {
     /// Write an instruction to the stream.
@@ -39,6 +41,7 @@ public protocol QPACKOutboundDecoderStream: ~Copyable {
 }
 
 /// An object representing an HTTP3Connection, which opens the outbound encoder stream on request.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public protocol QPACKConnectionDelegate {
     /// Open a unidirectional `HTTP3StreamType.Unidirectional.qpackEncoder` stream and pass it to
@@ -51,6 +54,7 @@ public protocol QPACKConnectionDelegate {
 
 /// An object that is interested in the async QPACK decode result. In most cases this will be an object representing
 /// a HTTP3 stream.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public protocol QPACKDecodeReceiver {
     /// Inform the QPACKDecodeReceiver that a decode has happened.
@@ -94,6 +98,7 @@ public protocol QPACKDecodeReceiver {
 /// - Note: This object retains its ``ConnectionDelegate``. If the object holding the QPACKCoder is also its
 ///   ``ConnectionDelegate`` (likely the HTTP3Connection), the two keep each other alive: the holder must drop
 ///   its reference to the coder to break the cycle.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public final class QPACKCoder<
     OutboundEncoderStream: QPACKOutboundEncoderStream & ~Copyable,

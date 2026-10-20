@@ -17,6 +17,7 @@ public import NIOQUICHelpers
 @_spi(PackageInternal) @_spi(Benchmarks) private import QPACK
 
 // QPACK isn't a library product, so add entry points for benchmarks here under SPI.
+@available(anyAppleOS 27, *)
 @_spi(Benchmarks)
 public enum QPACKBenchmarks {
     /// Encode `headers` with the static-only encoder. Returns the number of field lines

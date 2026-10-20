@@ -34,7 +34,7 @@ struct AsyncEndToEndTests {
     }()
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func asyncRoundtrip(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let serverLogger = Logger(label: "Server")
         let clientLogger = Logger(label: "Client")
@@ -126,7 +126,7 @@ struct AsyncEndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func goawayMidRequestWithHighID(authenticationConfiguration: AuthenticationConfiguration) async throws {
         // Send a goaway to the client in the middle of a request. See that the client can not make further requests.
         let serverLogger = Logger(label: "Server")
@@ -230,7 +230,7 @@ struct AsyncEndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func goawayMidRequest(authenticationConfiguration: AuthenticationConfiguration) async throws {
         // Send a goaway to a client during a request, such that the goaway affects the request in flight.
         // See that the server rejects the request.
@@ -365,7 +365,7 @@ struct AsyncEndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func streamClosesAfterInputClosedWithIncompleteRequest(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -464,7 +464,7 @@ struct AsyncEndToEndTests {
 
     // MARK: - Helper Functions
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func makeHTTP3Server(
         credentials: Credentials,
         settings: HTTP3Settings,
@@ -551,7 +551,7 @@ struct AsyncEndToEndTests {
         }
     }
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func makeHTTP3Client(
         credentials: Credentials,
         settings: HTTP3Settings,

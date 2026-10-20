@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 /// Validates incoming and outgoing frames to be a valid sequence for a given stream type.
+@available(anyAppleOS 27, *)
 enum HTTP3FrameValidator: ~Copyable {
     case incomingControlStream(IncomingControlStreamValidator)
     case outgoingControlStream(OutgoingControlStreamValidator)
@@ -748,6 +749,7 @@ enum HTTP3FrameValidator: ~Copyable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Frame {
     @_spi(PackageInternal)
     public var type: HTTP3FrameType {

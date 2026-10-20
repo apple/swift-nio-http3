@@ -19,16 +19,16 @@ import Testing
 
 struct EncodeDecodeTests {
     /// Dynamic table is disabled, literal should be sent as a literal.
-    @Test
-    func encodeLiteral() {
+    @available(anyAppleOS 27, *)
+    @Test func encodeLiteral() {
         self.testEncodeDecodeRoundtripNoDynamic(
             fields: [.init(name: .init("hello")!, value: "world")]
         )
     }
 
     /// Dynamic table is enabled, literal should be added to the table then a reference to the table sent.
-    @Test
-    func encodeLiteralAddingToTable() throws {
+    @available(anyAppleOS 27, *)
+    @Test func encodeLiteralAddingToTable() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [.init(name: .init("hello")!, value: "world")],
             dynamicTableMaxCapacity: 1000,
@@ -37,8 +37,8 @@ struct EncodeDecodeTests {
     }
 
     /// Dynamic table is enabled but has no capacity, literal should be sent as a literal.
-    @Test
-    func encodeLiteralTableFull() throws {
+    @available(anyAppleOS 27, *)
+    @Test func encodeLiteralTableFull() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [.init(name: .init("hello")!, value: "world")],
             dynamicTableMaxCapacity: 1000,
@@ -49,8 +49,8 @@ struct EncodeDecodeTests {
     /// Dynamic table is enabled, literal should be added to the table then a reference to the table sent.
     /// Further literals are either identical or share a name so should send same references without further inserts.
     /// No literals should be sent in field section.
-    @Test
-    func encodeLiteralAddingToTableWithReuse() throws {
+    @available(anyAppleOS 27, *)
+    @Test func encodeLiteralAddingToTableWithReuse() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [
                 .init(name: .init("hello")!, value: "world"),
@@ -64,8 +64,8 @@ struct EncodeDecodeTests {
 
     /// The field matches exactly a static table entry. We should reference that. No instructions should be sent.
     /// That is regardless of dynamic table being available.
-    @Test
-    func encodeStaticTable() throws {
+    @available(anyAppleOS 27, *)
+    @Test func encodeStaticTable() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [
                 .init(name: .accept, value: "*/*")
@@ -82,8 +82,8 @@ struct EncodeDecodeTests {
 
     /// The field name matches a static table entry but the value does not. Dynamic table is disabled.
     /// So we should refer to the name from the static table and send the value literally.
-    @Test
-    func encodeStaticTableNameReference() {
+    @available(anyAppleOS 27, *)
+    @Test func encodeStaticTableNameReference() {
         self.testEncodeDecodeRoundtripNoDynamic(
             fields: [.init(name: .accept, value: "blabla")]
         )
@@ -92,8 +92,8 @@ struct EncodeDecodeTests {
     /// The field name matches a static table entry but the value does not. Dynamic table is enabled.
     /// We'll send a insert instruction by referencing the name from the static table.
     /// Then we'll send a reference to the newly inserted entry.
-    @Test
-    func encodeStaticTableNameReferenceWithDynamic() throws {
+    @available(anyAppleOS 27, *)
+    @Test func encodeStaticTableNameReferenceWithDynamic() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [.init(name: .accept, value: "blabla")],
             dynamicTableMaxCapacity: 1000,
@@ -103,8 +103,8 @@ struct EncodeDecodeTests {
 
     /// Sending various fields, some of which match static table entries, some which need to be added to dynamic table,
     /// some which already exist in dynamic table, some which are partial matches to static/dynamic table.
-    @Test
-    func encodeMultipleInserts() throws {
+    @available(anyAppleOS 27, *)
+    @Test func encodeMultipleInserts() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [
                 .init(name: .init("test1")!, value: "a"),  // no match. insert it as index 0
@@ -120,6 +120,7 @@ struct EncodeDecodeTests {
         )
     }
 
+    @available(anyAppleOS 27, *)
     private func testEncodeDecodeRoundtripNoDynamic(
         fields: [HTTPField],
         sourceLocation: SourceLocation = #_sourceLocation
@@ -141,6 +142,7 @@ struct EncodeDecodeTests {
         }
     }
 
+    @available(anyAppleOS 27, *)
     private func testEncodeDecodeRoundtripWithDynamic(
         fields: [HTTPField],
         dynamicTableMaxCapacity: Int,
@@ -183,6 +185,7 @@ struct EncodeDecodeTests {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension QPACKFullDecodeResult {
     func unwrap() throws -> ([HTTPField], QPACKDecoderInstruction?)? {
         switch self {
@@ -196,6 +199,7 @@ extension QPACKFullDecodeResult {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension QPACKDecoder {
     fileprivate mutating func decodeFieldSection(
         _ fieldSection: FieldSection,

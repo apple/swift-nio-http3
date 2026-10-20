@@ -33,6 +33,7 @@ struct HTTP3ErrorQPACKCoderErrorTests {
             (.decodeError(.invalidHeaderName), .qpackDecoderError, .messageError),
         ]
     )
+    @available(anyAppleOS 27, *)
     func translation(qpackError: QPACKError, code: HTTP3Error.Code, h3ErrorCode: HTTP3ErrorCode) {
         let error = HTTP3Error(qpackError, location: .here())
         #expect(error.code == code)
@@ -42,6 +43,7 @@ struct HTTP3ErrorQPACKCoderErrorTests {
         #expect(qpackError.isConnectionError == (h3ErrorCode != .messageError))
     }
 
+    @available(anyAppleOS 27, *)
     @Test func fieldSectionFailuresNameTheStream() {
         let error = QPACKError.decodeError(.invalidReference)
         #expect(
@@ -50,6 +52,7 @@ struct HTTP3ErrorQPACKCoderErrorTests {
         #expect(HTTP3Error(error, location: .here()).message == "Could not decode QPACK headers")
     }
 
+    @available(anyAppleOS 27, *)
     @Test func locationIsTheCallSite() {
         let location = HTTP3Error.SourceLocation.here()
         #expect(HTTP3Error(.tooManyBlockedStreams, location: location).location == location)

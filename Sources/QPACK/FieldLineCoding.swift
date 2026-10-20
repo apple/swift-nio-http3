@@ -15,6 +15,7 @@
 public import struct NIOCore.ByteBuffer
 
 /// Represents a FieldSectionPrefix as per RFC 9204 § 4.5.1.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct FieldSectionPrefix: Sendable, Hashable {
     @_spi(PackageInternal)
@@ -59,6 +60,7 @@ public struct FieldSectionPrefix: Sendable, Hashable {
 /// Represents an EncodedFieldSectionPrefix as per RFC 9204 § 4.5.1.
 /// Here, the requiredInsertCount is stored with an encoding as per RFC 9204 § 4.5.1.1.
 /// The deltaBase can be used to get the base relative to the decoded requiredInsertCount.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct EncodedFieldSectionPrefix: Sendable, Hashable {
     @_spi(PackageInternal)
@@ -142,6 +144,7 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
 }
 
 /// Represents a single field line as per RFC 9204 § 4.5.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum FieldLine: Sendable, Hashable {
     /// 4.5.2. Indexed Field Line.
@@ -162,6 +165,7 @@ public enum FieldLine: Sendable, Hashable {
 }
 
 /// Represents a full field section as per RFC 9204 § 4.5.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct FieldSection: Sendable, Hashable {
     /// The field section prefix.
@@ -181,7 +185,7 @@ public struct FieldSection: Sendable, Hashable {
 extension ByteBuffer {
     /// Read a single ``FieldLine`` from this `ByteBuffer`.
     /// - Returns: The instruction, or nil if it cannot be decoded.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     mutating func readFieldLine() throws(IntegerReadingError) -> FieldLine? {
         guard let result = try self.getFieldLine(at: self.readerIndex) else { return nil }
         self.moveReaderIndex(forwardBy: result.bytesRead)
@@ -191,7 +195,7 @@ extension ByteBuffer {
     /// Get a single ``FieldLine`` from this `ByteBuffer`.
     /// Does not move the readerIndex.
     /// - Returns: The instruction, or nil if it cannot be decoded.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     private func getFieldLine(at startIndex: Int) throws(IntegerReadingError) -> Decoded<FieldLine>? {
         guard let firstByte = self.getInteger(at: startIndex, as: UInt8.self) else {
             return nil
@@ -281,7 +285,7 @@ extension ByteBuffer {
     ///   - fieldLine: The line to write.
     ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and where it would be more efficient to do so).
     /// - Returns: The number of bytes written.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @discardableResult
     @_spi(PackageInternal)
     public mutating func writeFieldLine(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) -> Int {
@@ -325,12 +329,14 @@ extension ByteBuffer {
 
     /// Read a single ``FieldSectionPrefix`` from this `ByteBuffer`.
     /// - Returns: The section, or nil if it cannot be decoded.
+    @available(anyAppleOS 27, *)
     mutating func readFieldSectionPrefix() throws(IntegerReadingError) -> EncodedFieldSectionPrefix? {
         guard let result = try self.getFieldSectionPrefix(at: self.readerIndex) else { return nil }
         self.moveReaderIndex(forwardBy: result.bytesRead)
         return result.value
     }
 
+    @available(anyAppleOS 27, *)
     private func getFieldSectionPrefix(
         at startIndex: Int
     ) throws(IntegerReadingError) -> Decoded<EncodedFieldSectionPrefix>? {
@@ -371,6 +377,7 @@ extension ByteBuffer {
     ///   - prefix: The ``FieldSectionPrefix`` to write.
     ///   - maxCapacity: The maximum capacity of the dynamic table.
     /// - Returns: The number of bytes written.
+    @available(anyAppleOS 27, *)
     @discardableResult
     @_spi(PackageInternal)
     public mutating func writeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> Int {
@@ -384,8 +391,8 @@ extension ByteBuffer {
         return bytesWritten
     }
 
+    @available(anyAppleOS 27, *)
     @_spi(PackageInternal)
-    @available(anyAppleOS 26.0, *)
     public mutating func readFieldSection() throws(IntegerReadingError) -> FieldSection? {
         guard let prefix = try self.readFieldSectionPrefix() else {
             return nil

@@ -19,7 +19,7 @@ extension ByteBuffer {
     /// Moves the reader index to the end of the instruction.
     /// If a valid instruction can't be formed, returns nil and leaves the reader index as it was.
     /// - Returns: The instruction, or nil if it cannot be decoded.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     mutating func readQPACKEncoderInstruction() throws(IntegerReadingError) -> QPACKEncoderInstruction? {
         guard let firstByte = self.peekInteger(as: UInt8.self) else {
             return nil
@@ -75,7 +75,7 @@ extension ByteBuffer {
     /// - Parameters:
     ///   - instruction: The instruction to encode.
     ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and more efficient to do so).
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     mutating func writeQPACKEncoderInstruction(
         _ instruction: QPACKEncoderInstruction,
         preferHuffmanEncoding: Bool
@@ -112,6 +112,7 @@ extension ByteBuffer {
     /// Moves the reader index to the end of the instruction.
     /// If a valid instruction can't be formed, returns nil and leaves the reader index as it was.
     /// - Returns: The instruction, or nil if it cannot be decoded.
+    @available(anyAppleOS 27, *)
     mutating func readQPACKDecoderInstruction() throws(IntegerReadingError) -> QPACKDecoderInstruction? {
         guard let firstByte = self.getInteger(at: self.readerIndex, as: UInt8.self) else {
             return nil
@@ -144,6 +145,7 @@ extension ByteBuffer {
 
     /// Encode a single ``QPACKDecoderInstruction`` into this `ByteBuffer`.
     /// - Parameter instruction: The instruction to encode.
+    @available(anyAppleOS 27, *)
     mutating func writeQPACKDecoderInstruction(_ instruction: QPACKDecoderInstruction) {
         switch instruction {
         case .sectionAcknowledgement(let streamID):
@@ -161,7 +163,7 @@ extension ByteBuffer {
 
 /// Encode qpack encoder instructions.
 @_spi(PackageInternal)
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 public struct QPACKEncoderInstructionEncoder {
     @_spi(PackageInternal)
     public typealias OutboundIn = QPACKEncoderInstruction
@@ -181,7 +183,7 @@ public struct QPACKEncoderInstructionEncoder {
 
 /// Decode qpack encoder instructions.
 @_spi(PackageInternal)
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 public struct QPACKEncoderInstructionDecoder {
     @_spi(PackageInternal)
     public init() {}
@@ -201,6 +203,7 @@ public struct QPACKEncoderInstructionDecoder {
 }
 
 /// Encode qpack decoder instructions.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct QPACKDecoderInstructionEncoder {
     @_spi(PackageInternal)
@@ -216,6 +219,7 @@ public struct QPACKDecoderInstructionEncoder {
 }
 
 /// Decode qpack decoder instructions.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct QPACKDecoderInstructionDecoder {
     @_spi(PackageInternal)

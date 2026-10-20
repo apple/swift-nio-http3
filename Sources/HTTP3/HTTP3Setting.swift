@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 /// A type representing a single HTTP/3 setting.
+@available(anyAppleOS 27, *)
 public struct HTTP3Setting: Hashable, Sendable {
     /// The setting's identifier.
     public var identifier: Identifier
@@ -33,6 +34,7 @@ public struct HTTP3Setting: Hashable, Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Setting {
     /// An identifier for a `HTTP3Setting`.
     ///
