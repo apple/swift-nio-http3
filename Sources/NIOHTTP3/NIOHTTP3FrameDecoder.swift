@@ -15,7 +15,7 @@
 @_spi(PackageInternal) import HTTP3
 import NIOCore
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 struct NIOHTTP3FrameDecoder: NIOSingleStepByteToMessageDecoder {
     typealias InboundOut = HTTP3PartialFrameOrUnknown
 

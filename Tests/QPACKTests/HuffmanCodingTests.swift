@@ -41,7 +41,7 @@ struct HuffmanCodingTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     mutating func verifyHuffmanCoding(
         _ string: String,
         _ bytes: [UInt8],
@@ -62,7 +62,7 @@ struct HuffmanCodingTests {
         #expect(decoded == string, "Failed to decode '\(string)'", sourceLocation: sourceLocation)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func basicCoding() {
         // all these values come from http://httpwg.org/specs/rfc7541.html#request.examples.with.huffman.coding
         self.verifyHuffmanCoding(
@@ -106,7 +106,7 @@ struct HuffmanCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func complexCoding() {
         self.verifyHuffmanCoding(
             "鯖審",
@@ -149,7 +149,7 @@ struct HuffmanCodingTests {
     /// 5 bits, and the decode loop then writes into that buffer without bounds checks. These
     /// inputs are made entirely of 5-bit symbols, so they hit that bound exactly: `n`
     /// characters encode to exactly `5n/8` bytes, which decode back to exactly `n` bytes.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test
     mutating func maximallyCompressedInputHitsTheDecodeBoundExactly() {
         // The only symbols with a 5-bit code in the QPACK Huffman table.
@@ -177,7 +177,7 @@ struct HuffmanCodingTests {
 }
 
 extension ByteBuffer {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @discardableResult
     mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
         self.writeHuffmanEncoded(

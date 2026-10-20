@@ -20,13 +20,13 @@ import Testing
 @testable import NIOHTTP3
 
 struct HTTP3DatagramTests {
-    @Test
-    func typeFitsInExistentialInlineStorage() {
+    @available(anyAppleOS 27, *)
+    @Test func typeFitsInExistentialInlineStorage() {
         #expect(MemoryLayout<HTTP3Datagram>.size <= 24)
     }
 
-    @Test
-    func testCoWBehavior() {
+    @available(anyAppleOS 27, *)
+    @Test func testCoWBehavior() {
         let datagram1 = HTTP3Datagram(streamID: 1, payload: ByteBuffer(string: "Hello"))
         var datagram2 = datagram1
         datagram2.streamID = 2
@@ -42,8 +42,8 @@ struct HTTP3DatagramTests {
         #expect(datagram1.payload == ByteBuffer(string: "Hello"))
     }
 
-    @Test
-    func datagramFromEmptyBuffer() throws {
+    @available(anyAppleOS 27, *)
+    @Test func datagramFromEmptyBuffer() throws {
         var buffer = ByteBuffer()
 
         let error = try #require(throws: HTTP3Error.self) {
@@ -54,8 +54,8 @@ struct HTTP3DatagramTests {
         #expect(error.h3ErrorCode == .datagramError)
     }
 
-    @Test
-    func datagramWithInvalidQuarterStreamID() throws {
+    @available(anyAppleOS 27, *)
+    @Test func datagramWithInvalidQuarterStreamID() throws {
         let invalidQuarterStreamID: UInt64 = 1 << 60
         var buffer = ByteBuffer()
         let bytesWritten = buffer.writeEncodedInteger(invalidQuarterStreamID, strategy: .quic)
@@ -71,6 +71,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test(arguments: [42, HTTP3Datagram.largestValidQuarterStreamID])
+    @available(anyAppleOS 27, *)
     func datagramWithValidQuarterStreamID(quarterStreamID: UInt64) throws {
         var buffer = ByteBuffer()
         let bytesWritten = buffer.writeEncodedInteger(quarterStreamID, strategy: .quic)
@@ -82,8 +83,8 @@ struct HTTP3DatagramTests {
         #expect(String(buffer: datagram.payload) == "Hello, Datagram!")
     }
 
-    @Test
-    func writeEmptyDatagramToBuffer() throws {
+    @available(anyAppleOS 27, *)
+    @Test func writeEmptyDatagramToBuffer() throws {
         var buffer = ByteBuffer()
         let bytesWritten = buffer.writeDatagram(HTTP3Datagram(streamID: 40, payload: ByteBuffer()))
         #expect(bytesWritten == 1)  // 40 can be encoded in a single byte.
@@ -93,8 +94,8 @@ struct HTTP3DatagramTests {
         #expect(decoded.payload == ByteBuffer())
     }
 
-    @Test
-    func writeNonEmptyDatagramToBuffer() throws {
+    @available(anyAppleOS 27, *)
+    @Test func writeNonEmptyDatagramToBuffer() throws {
         let payload = ByteBuffer(repeating: 1, count: 1024)
 
         var buffer = ByteBuffer()
@@ -107,6 +108,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test(.enableInDebugBuilds)
+    @available(anyAppleOS 27, *)
     func writeInvalidStreamIDTrapsOnWrite() async {
         @Sendable
         func writeDatagramWithStreamID(_ streamID: QUICStreamID) {

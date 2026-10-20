@@ -14,19 +14,19 @@
 
 import HeapModule
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 
 enum FieldSectionQueueError: Error, Hashable, Sendable {
     case reachedMaxSize
 }
 
 /// A queue of FieldSections which cannot yet be decoded.
+@available(anyAppleOS 27, *)
 struct FieldSectionQueue<Context> {
     /// An entry in the queue.
     /// `Comparable` and `Equatable` are implemented based on the ``FieldSectionPrefix/requiredInsertCount`` only.
     struct Entry: Comparable {
-        /// The original full headers.
-        var headers: HTTP3PartialFrame.Headers
+        /// The original full field section.
+        var fieldSection: FieldSection
         /// The prefix of the message to be decoded.
         var prefix: FieldSectionPrefix
         /// The field lines to decode.
@@ -37,13 +37,13 @@ struct FieldSectionQueue<Context> {
         var context: Context
 
         init(
-            headers: HTTP3PartialFrame.Headers,
+            fieldSection: FieldSection,
             prefix: FieldSectionPrefix,
             lines: [FieldLine],
             streamID: QUICStreamID,
             context: Context
         ) {
-            self.headers = headers
+            self.fieldSection = fieldSection
             self.prefix = prefix
             self.lines = lines
             self.streamID = streamID
@@ -102,4 +102,5 @@ struct FieldSectionQueue<Context> {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension FieldSectionQueue.Entry: Sendable where Context: Sendable {}

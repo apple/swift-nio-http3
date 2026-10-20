@@ -20,7 +20,7 @@ import Testing
 @_spi(PackageInternal) @testable import QPACK
 
 struct EndToEndTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func endToEnd() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1024)
 
@@ -138,8 +138,8 @@ struct EndToEndTests {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension QPACKDecoder {
-    @available(anyAppleOS 26.0, *)
     fileprivate mutating func decodeFieldSection(
         streamBytes: inout ByteBuffer,
         streamID: QUICStreamID

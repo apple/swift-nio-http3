@@ -20,8 +20,8 @@ import Testing
 struct HTTP3ConnectionQuiescingStateMachineTests {
     // MARK: Receiving GOAWAY
 
-    @Test
-    func testReceiveGoawayOnServer() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testReceiveGoawayOnServer() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .server)
         let action1 = stateMachine.receivedGoaway(newGoawayID: 7)
         #expect(action1 == nil)
@@ -30,8 +30,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(action2 == nil)
     }
 
-    @Test
-    func testReceiveGoawayOnClient() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testReceiveGoawayOnClient() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
         let action1 = stateMachine.receivedGoaway(newGoawayID: 24)
         #expect(action1?.cancelStreamsGreaterOrEqualTo == 24)
@@ -41,6 +41,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
     }
 
     @Test(arguments: [1, 2, 3, 5, 6, 7] as [HTTP3GoawayID])
+    @available(anyAppleOS 27, *)
     func testReceiveGoawayOnClientNotAValidID(testID: HTTP3GoawayID) throws {
         // ID should be of a request stream
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
@@ -53,6 +54,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
     }
 
     @Test(arguments: [HTTP3ConnectionType.server, .client])
+    @available(anyAppleOS 27, *)
     func increasedRemoteID(type: HTTP3ConnectionType) throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: type)
         _ = stateMachine.receivedGoaway(newGoawayID: 24)
@@ -65,6 +67,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
     }
 
     @Test(arguments: [HTTP3ConnectionType.server, .client])
+    @available(anyAppleOS 27, *)
     func increasedRemoteIDAfterSendGoaway(type: HTTP3ConnectionType) throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: type)
         _ = stateMachine.sendGoaway(goawayID: 0)
@@ -77,8 +80,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         )
     }
 
-    @Test
-    func testReceiveGoawayOnClientAfterSending() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testReceiveGoawayOnClientAfterSending() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
 
         let action1 = stateMachine.sendGoaway(goawayID: 3)
@@ -91,8 +94,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(action3?.cancelStreamsGreaterOrEqualTo == 20)
     }
 
-    @Test
-    func testReceiveGoawayOnServerAfterSending() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testReceiveGoawayOnServerAfterSending() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .server)
 
         let action1 = stateMachine.sendGoaway(goawayID: 4)
@@ -107,8 +110,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
 
     // MARK: Send GOAWAY
 
-    @Test
-    func sendGoawayFromClient() throws {
+    @available(anyAppleOS 27, *)
+    @Test func sendGoawayFromClient() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
 
         let action1 = stateMachine.sendGoaway(goawayID: 10)
@@ -125,8 +128,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         )
     }
 
-    @Test
-    func sendGoawayFromServer() throws {
+    @available(anyAppleOS 27, *)
+    @Test func sendGoawayFromServer() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .server)
 
         // Send one..that's fine
@@ -155,6 +158,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
     }
 
     @Test(arguments: [HTTP3ConnectionType.server, .client])
+    @available(anyAppleOS 27, *)
     func sendGoawayAfterReceiving(type: HTTP3ConnectionType) throws {
         // This test works the same for both clients and servers.
         // Servers must send multiples of 4, clients can send any number.
@@ -179,8 +183,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
 
     // MARK: Create outbound streams
 
-    @Test
-    func createOutboundRequestStream() throws {
+    @available(anyAppleOS 27, *)
+    @Test func createOutboundRequestStream() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
 
         // I can make many streams because i didn't get a goaway
@@ -197,8 +201,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(!action2.create)
     }
 
-    @Test
-    func createOutboundRequestStreamAfterSendingGoaway() throws {
+    @available(anyAppleOS 27, *)
+    @Test func createOutboundRequestStreamAfterSendingGoaway() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
 
         let action1 = stateMachine.sendGoaway(goawayID: 1)
@@ -220,8 +224,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
 
     // MARK: Incoming requests
 
-    @Test
-    func receiveInboundRequestStream() throws {
+    @available(anyAppleOS 27, *)
+    @Test func receiveInboundRequestStream() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .server)
 
         // Incoming requests are fine because we didn't send a goaway
@@ -241,8 +245,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(stateMachine.inboundRequestStreamAllowed(incomingStreamID: 104) == false)
     }
 
-    @Test
-    func receiveInboundRequestStreamAfterReceiveGoaway() throws {
+    @available(anyAppleOS 27, *)
+    @Test func receiveInboundRequestStreamAfterReceiveGoaway() throws {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .server)
 
         _ = stateMachine.receivedGoaway(newGoawayID: 400)
@@ -267,6 +271,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
     // MARK: Check should close connection
 
     @Test(arguments: [HTTP3ConnectionType.server, .client])
+    @available(anyAppleOS 27, *)
     func testRequestStreamClosedBeforeQuiescing(type: HTTP3ConnectionType) {
         let stateMachine = HTTP3ConnectionQuiescingStateMachine(type: type)
         let action = stateMachine.shouldCloseConnection()
@@ -274,8 +279,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(action == .doNotClose)
     }
 
-    @Test
-    func testRequestStreamClosedWhilstLocallyQuiescingOnClient() {
+    @available(anyAppleOS 27, *)
+    @Test func testRequestStreamClosedWhilstLocallyQuiescingOnClient() {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
         _ = stateMachine.sendGoaway(goawayID: 40)
         let action = stateMachine.shouldCloseConnection()
@@ -284,8 +289,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(action == .doNotClose)
     }
 
-    @Test
-    func testRequestStreamClosedWhilstLocallyQuiescingOnServer() {
+    @available(anyAppleOS 27, *)
+    @Test func testRequestStreamClosedWhilstLocallyQuiescingOnServer() {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .server)
         _ = stateMachine.sendGoaway(goawayID: 40)
         let action = stateMachine.shouldCloseConnection()
@@ -294,8 +299,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(action == .closeIfExhaustedStreamsAndNonOpen(maxID: 40))
     }
 
-    @Test
-    func testRequestStreamClosedWhilstRemotelyQuiescingOnClient() {
+    @available(anyAppleOS 27, *)
+    @Test func testRequestStreamClosedWhilstRemotelyQuiescingOnClient() {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
         _ = stateMachine.receivedGoaway(newGoawayID: 40)
         let action = stateMachine.shouldCloseConnection()
@@ -303,8 +308,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(action == .closeIfNoOpenStreams)
     }
 
-    @Test
-    func testRequestStreamClosedWhilstRemotelyQuiescingOnServer() {
+    @available(anyAppleOS 27, *)
+    @Test func testRequestStreamClosedWhilstRemotelyQuiescingOnServer() {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .server)
         _ = stateMachine.receivedGoaway(newGoawayID: 40)
         let action = stateMachine.shouldCloseConnection()
@@ -312,8 +317,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(action == .doNotClose)
     }
 
-    @Test
-    func testRequestStreamClosedWhilstBothQuiescingOnClient() {
+    @available(anyAppleOS 27, *)
+    @Test func testRequestStreamClosedWhilstBothQuiescingOnClient() {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .client)
         _ = stateMachine.receivedGoaway(newGoawayID: 40)
         _ = stateMachine.sendGoaway(goawayID: 40)
@@ -322,8 +327,8 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
         #expect(action == .closeIfNoOpenStreams)
     }
 
-    @Test
-    func testRequestStreamClosedWhilstBothQuiescingOnServer() {
+    @available(anyAppleOS 27, *)
+    @Test func testRequestStreamClosedWhilstBothQuiescingOnServer() {
         var stateMachine = HTTP3ConnectionQuiescingStateMachine(type: .server)
         _ = stateMachine.receivedGoaway(newGoawayID: 40)
         _ = stateMachine.sendGoaway(goawayID: 40)
@@ -336,6 +341,7 @@ struct HTTP3ConnectionQuiescingStateMachineTests {
 
 // MARK: Test helpers
 
+@available(anyAppleOS 27, *)
 extension HTTP3ConnectionQuiescingStateMachine.ReceivedGoawayAction {
     fileprivate var cancelStreamsGreaterOrEqualTo: QUICStreamID? {
         switch self {
@@ -352,6 +358,7 @@ extension HTTP3ConnectionQuiescingStateMachine.ReceivedGoawayAction {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3ConnectionQuiescingStateMachine.SendGoawayAction {
     fileprivate var sendGoawayID: HTTP3GoawayID? {
         switch self {
@@ -368,6 +375,7 @@ extension HTTP3ConnectionQuiescingStateMachine.SendGoawayAction {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3ConnectionQuiescingStateMachine.CreateOutboundRequestStreamAction {
     fileprivate var create: Bool {
         switch self {

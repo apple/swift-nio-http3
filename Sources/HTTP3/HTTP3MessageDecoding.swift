@@ -20,6 +20,7 @@ import enum NIOCore.SocketAddress
 ///
 /// Every violation is a malformed message, which RFC 9114 § 4.1.2 requires to be treated as a stream error of type
 /// H3_MESSAGE_ERROR.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum HTTP3MessageDecoding {
     struct FieldError: Error, CustomStringConvertible {

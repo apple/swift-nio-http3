@@ -14,10 +14,9 @@
 
 import HTTPTypes
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 import Testing
 
-@_spi(PackageInternal) @testable import HTTP3
+@_spi(PackageInternal) @testable import QPACK
 
 /// Tests for ``QPACKCoder``.
 ///
@@ -27,6 +26,7 @@ import Testing
 struct QPACKCoderTests {
 
     /// Make a coder with limits that are large enough not to matter. Override only what a test is about.
+    @available(anyAppleOS 27, *)
     private static func makeTestCoder(
         encoderMaxTableSize: Int = 1024,
         decoderMaxTableSize: Int = 1024,
@@ -43,33 +43,34 @@ struct QPACKCoderTests {
 
     // MARK: Remote settings
 
-    @Test func remoteSettingsWithDynamicTableAsksForEncoderStream() {
+    @available(anyAppleOS 27, *)
+    @Test func remoteSettingsWithDynamicTableAsksForEncoderStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 1024)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 1024)
 
         #expect(connection.madeOutboundEncoderStreamCount == 1)
-        #expect(connection.errors.isEmpty)
     }
 
-    @Test func remoteSettingsWithoutDynamicTableDoesNotAskForEncoderStream() {
+    @available(anyAppleOS 27, *)
+    @Test func remoteSettingsWithoutDynamicTableDoesNotAskForEncoderStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
         // RFC 9204 § 4.2: An endpoint MAY avoid creating an encoder stream if it will not be used.
-        coder.receivedRemoteSettings(maxQueueSize: 0, peersDynamicTableSize: 0)
+        try coder.receivedRemoteSettings(maxQueueSize: 0, peersDynamicTableSize: 0)
 
         #expect(connection.madeOutboundEncoderStreamCount == 0)
-        #expect(connection.errors.isEmpty)
     }
 
-    @Test func remoteSettingsAreCappedByTheLocalEncoderTableSize() {
+    @available(anyAppleOS 27, *)
+    @Test func remoteSettingsAreCappedByTheLocalEncoderTableSize() throws {
         let connection = TestConnection()
         // The peer offers a bigger table than this endpoint is willing to keep for its own encoder.
         let coder = Self.makeTestCoder(encoderMaxTableSize: 300, errorDelegate: connection)
 
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
         let encoderStream = TestOutboundEncoderStream()
@@ -77,24 +78,23 @@ struct QPACKCoderTests {
 
         // The smaller of the two limits wins, not the peer's.
         #expect(encoderStream.instructions == [.setDynamicTableCapacity(300)])
-        #expect(connection.errors.isEmpty)
     }
 
-    @Test func remoteSettingsWithoutALocalEncoderTableDoesNotAskForEncoderStream() {
+    @available(anyAppleOS 27, *)
+    @Test func remoteSettingsWithoutALocalEncoderTableDoesNotAskForEncoderStream() throws {
         let connection = TestConnection()
         // This endpoint refuses the dynamic table for its own encoder, whatever the peer offers.
         let coder = Self.makeTestCoder(encoderMaxTableSize: 0, errorDelegate: connection)
 
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
 
         #expect(connection.madeOutboundEncoderStreamCount == 0)
-        #expect(connection.errors.isEmpty)
 
         // With no encoder stream the coder must stay on the static encoder: it holds no stream to write
         // instructions to, and would trap.
         let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
         #expect(
-            headers.fieldSection.lines == [
+            headers.lines == [
                 .literalWithNameReference(
                     requireLiteralRepresentation: false,
                     table: .staticTable,
@@ -105,22 +105,19 @@ struct QPACKCoderTests {
         )
     }
 
-    @Test func secondRemoteSettingsIsAConnectionError() {
+    @available(anyAppleOS 27, *)
+    @Test func secondRemoteSettingsIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
         // RFC 9114 § 7.2.4: the peer may only send SETTINGS once.
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
+        #expect(throws: QPACKError.duplicateSettings) {
+            try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
+        }
 
-        #expect(connection.errors.count == 1)
-        expectH3ErrorEqual(
-            error: connection.errors.first,
-            expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .frameUnexpected
-        )
         // The first settings still stand: no second encoder stream, and the table keeps its original size.
         #expect(connection.madeOutboundEncoderStreamCount == 1)
         let encoderStream = TestOutboundEncoderStream()
@@ -128,32 +125,30 @@ struct QPACKCoderTests {
         #expect(encoderStream.instructions == [.setDynamicTableCapacity(300)])
     }
 
-    @Test func secondRemoteSettingsWithoutDynamicTableIsAConnectionError() {
+    @available(anyAppleOS 27, *)
+    @Test func secondRemoteSettingsWithoutDynamicTableIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
-        coder.receivedRemoteSettings(maxQueueSize: 0, peersDynamicTableSize: 0)
+        try coder.receivedRemoteSettings(maxQueueSize: 0, peersDynamicTableSize: 0)
         #expect(connection.madeOutboundEncoderStreamCount == 0)
 
         // The peer can't change its mind about the dynamic table by sending SETTINGS again.
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        #expect(throws: QPACKError.duplicateSettings) {
+            try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        }
 
-        #expect(connection.errors.count == 1)
-        expectH3ErrorEqual(
-            error: connection.errors.first,
-            expectedCode: .unexpectedFrame,
-            expectedH3ErrorCode: .frameUnexpected
-        )
         #expect(connection.madeOutboundEncoderStreamCount == 0)
     }
 
     // MARK: Encoder stream
 
-    @Test func outboundEncoderStreamReadySendsTableCapacity() {
+    @available(anyAppleOS 27, *)
+    @Test func outboundEncoderStreamReadySendsTableCapacity() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
         let encoderStream = TestOutboundEncoderStream()
@@ -164,7 +159,8 @@ struct QPACKCoderTests {
 
     // MARK: Encode
 
-    @Test func encodeHeadersWithoutDynamicTableSendsNoInstructions() {
+    @available(anyAppleOS 27, *)
+    @Test func encodeHeadersWithoutDynamicTableSendsNoInstructions() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -173,7 +169,7 @@ struct QPACKCoderTests {
         let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
 
         #expect(
-            headers.fieldSection.lines == [
+            headers.lines == [
                 .literalWithNameReference(
                     requireLiteralRepresentation: false,
                     table: .staticTable,
@@ -184,19 +180,20 @@ struct QPACKCoderTests {
         )
     }
 
-    @Test func encodeHeadersWhileAwaitingEncoderStreamSendsNoInstructions() {
+    @available(anyAppleOS 27, *)
+    @Test func encodeHeadersWhileAwaitingEncoderStreamSendsNoInstructions() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
         // The peer permits the dynamic table, so an encoder stream has been requested, but it isn't here yet. The
         // coder must stay on the static encoder: it holds no stream to write instructions to, and would trap.
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
         let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
 
         #expect(
-            headers.fieldSection.lines == [
+            headers.lines == [
                 .literalWithNameReference(
                     requireLiteralRepresentation: false,
                     table: .staticTable,
@@ -207,12 +204,13 @@ struct QPACKCoderTests {
         )
     }
 
-    @Test func encodeHeadersWithDynamicTableForwardsInstructions() {
+    @available(anyAppleOS 27, *)
+    @Test func encodeHeadersWithDynamicTableForwardsInstructions() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let encoderStream = TestOutboundEncoderStream()
 
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
         coder.outboundEncoderStreamReady(encoderStream)
         #expect(encoderStream.instructions == [.setDynamicTableCapacity(300)])
         encoderStream.instructions.removeAll()
@@ -222,7 +220,7 @@ struct QPACKCoderTests {
         // The entry was inserted into the dynamic table, so the peer's decoder needs to be told about it.
         #expect(encoderStream.instructions == [.insertWithNameReference(.staticTable, relativeIndex: 5, value: "test")])
         #expect(
-            headers.fieldSection
+            headers
                 == FieldSection(
                     prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 300),
                     lines: [.indexedWithPostBase(index: 0)]
@@ -232,20 +230,22 @@ struct QPACKCoderTests {
 
     // MARK: Decoder stream
 
-    @Test func outboundDecoderStreamReadyFlushesBufferedInstructions() {
+    @available(anyAppleOS 27, *)
+    @Test func outboundDecoderStreamReadyFlushesBufferedInstructions() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
         // The peer inserts an entry before our decoder stream exists, so the acknowledgement must be buffered.
-        coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
-        coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
+        try coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+        try coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
 
         let decoderStream = TestOutboundDecoderStream()
         coder.outboundDecoderStreamReady(decoderStream)
         #expect(decoderStream.instructions == [.insertCountIncrement(increment: 1)])
     }
 
-    @Test func outboundDecoderStreamReadyWithNothingBuffered() {
+    @available(anyAppleOS 27, *)
+    @Test func outboundDecoderStreamReadyWithNothingBuffered() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
@@ -256,28 +256,27 @@ struct QPACKCoderTests {
 
     // MARK: Decode
 
-    @Test func decodeHeadersDeliversResultSynchronously() {
+    @available(anyAppleOS 27, *)
+    @Test func decodeHeadersDeliversResultSynchronously() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
         let receiver = TestDecodeReceiver()
         coder.outboundDecoderStreamReady(decoderStream)
 
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
-                lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
-            )
+        let headers = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+            lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
         )
-        coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: 0, decodeReceiver: receiver)
 
         #expect(receiver.decodedFields == [[.init(name: .cookie, value: "test")]])
         // A field section which only uses the static table needs no acknowledgement.
         #expect(decoderStream.instructions.isEmpty)
-        #expect(connection.errors.isEmpty)
     }
 
-    @Test func decodeHeadersSendsSectionAcknowledgement() {
+    @available(anyAppleOS 27, *)
+    @Test func decodeHeadersSendsSectionAcknowledgement() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -285,25 +284,24 @@ struct QPACKCoderTests {
         let streamID = QUICStreamID(0)
 
         coder.outboundDecoderStreamReady(decoderStream)
-        coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
-        coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
+        try coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+        try coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
         #expect(decoderStream.instructions == [.insertCountIncrement(increment: 1)])
         decoderStream.instructions.removeAll()
 
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
-        coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: streamID, decodeReceiver: receiver)
 
         #expect(receiver.decodedFields == [[.init(name: .cookie, value: "test")]])
         // The field section referenced the dynamic table, so the peer's encoder must be acknowledged.
         #expect(decoderStream.instructions == [.sectionAcknowledgement(streamID: streamID)])
     }
 
-    @Test func blockedDecodeIsDeliveredOnceUnblocked() {
+    @available(anyAppleOS 27, *)
+    @Test func blockedDecodeIsDeliveredOnceUnblocked() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -311,20 +309,18 @@ struct QPACKCoderTests {
         let streamID = QUICStreamID(0)
 
         coder.outboundDecoderStreamReady(decoderStream)
-        coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+        try coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
 
         // This field section references an entry we haven't been told about yet, so the stream becomes blocked.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
-        coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: streamID, decodeReceiver: receiver)
         #expect(receiver.results.isEmpty)
 
         // The missing entry arrives, which unblocks the decode.
-        coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
+        try coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
 
         #expect(receiver.decodedFields == [[.init(name: .cookie, value: "test")]])
         #expect(
@@ -333,34 +329,32 @@ struct QPACKCoderTests {
                 .sectionAcknowledgement(streamID: streamID),
             ]
         )
-        #expect(connection.errors.isEmpty)
     }
 
-    @Test func oneInstructionUnblocksAllWaitingStreams() {
+    @available(anyAppleOS 27, *)
+    @Test func oneInstructionUnblocksAllWaitingStreams() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
 
         coder.outboundDecoderStreamReady(decoderStream)
-        coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+        try coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
 
         // Three streams all block on the very same missing entry.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
         let streamIDs: [QUICStreamID] = [0, 4, 8]
         let receivers = streamIDs.map { streamID -> TestDecodeReceiver in
             let receiver = TestDecodeReceiver()
-            coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
+            coder.decodeFields(headers, streamID: streamID, decodeReceiver: receiver)
             #expect(receiver.results.isEmpty)
             return receiver
         }
 
         // One instruction supplies the entry all three were waiting for.
-        coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
+        try coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
 
         for receiver in receivers {
             #expect(receiver.decodedFields == [[.init(name: .cookie, value: "test")]])
@@ -371,45 +365,43 @@ struct QPACKCoderTests {
             Set(decoderStream.instructions.dropFirst())
                 == Set(streamIDs.map { .sectionAcknowledgement(streamID: $0) })
         )
-        #expect(connection.errors.isEmpty)
     }
 
-    @Test func streamsBlockedOnDifferentInsertCountsUnblockInOrder() {
+    @available(anyAppleOS 27, *)
+    @Test func streamsBlockedOnDifferentInsertCountsUnblockInOrder() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
 
         coder.outboundDecoderStreamReady(decoderStream)
-        coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+        try coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
 
         // Stream 4 needs two entries, stream 0 needs only the first.
-        func headers(requiredInsertCount: Int) -> HTTP3PartialFrame.Headers {
-            HTTP3PartialFrame.Headers(
-                fieldSection: FieldSection(
-                    prefix: FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
-                        .encode(maxCapacity: 1024),
-                    lines: [.indexedWithPostBase(index: requiredInsertCount - 1)]
-                )
+        func headers(requiredInsertCount: Int) -> FieldSection {
+            FieldSection(
+                prefix: FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
+                    .encode(maxCapacity: 1024),
+                lines: [.indexedWithPostBase(index: requiredInsertCount - 1)]
             )
         }
         let receiver0 = TestDecodeReceiver()
         let receiver4 = TestDecodeReceiver()
-        coder.decodeHeaders(headers(requiredInsertCount: 2), streamID: 4, decodeReceiver: receiver4)
-        coder.decodeHeaders(headers(requiredInsertCount: 1), streamID: 0, decodeReceiver: receiver0)
+        coder.decodeFields(headers(requiredInsertCount: 2), streamID: 4, decodeReceiver: receiver4)
+        coder.decodeFields(headers(requiredInsertCount: 1), streamID: 0, decodeReceiver: receiver0)
 
         // The first entry only unblocks stream 0.
-        coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "one"))
+        try coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "one"))
         #expect(receiver0.decodedFields == [[.init(name: .cookie, value: "one")]])
         #expect(receiver4.results.isEmpty)
 
         // The second entry unblocks stream 4.
-        coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "two"))
+        try coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "two"))
         #expect(receiver4.decodedFields == [[.init(name: .cookie, value: "two")]])
         #expect(receiver0.results.count == 1)
-        #expect(connection.errors.isEmpty)
     }
 
-    @Test func decodeStreamErrorOnlyFailsTheStream() {
+    @available(anyAppleOS 27, *)
+    @Test func decodeStreamErrorOnlyFailsTheStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -417,25 +409,20 @@ struct QPACKCoderTests {
         coder.outboundDecoderStreamReady(decoderStream)
 
         // This decodes fine, but an uppercase field name is a malformed message: a stream level error.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
-                lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
+            lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
         )
-        coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: 0, decodeReceiver: receiver)
 
         #expect(receiver.results.count == 1)
-        expectH3ErrorEqual(
-            error: receiver.errors.first,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .messageError
-        )
+        #expect(receiver.errors.first == .decodeError(.invalidHeaderName))
         // A stream level error must not take down the connection.
-        #expect(connection.errors.isEmpty)
+        #expect(receiver.errors.first?.isConnectionError == false)
     }
 
-    @Test func decodeConnectionErrorFailsStreamAndConnection() {
+    @available(anyAppleOS 27, *)
+    @Test func decodeConnectionErrorIsGivenToTheStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -443,28 +430,19 @@ struct QPACKCoderTests {
         coder.outboundDecoderStreamReady(decoderStream)
 
         // A reference to a dynamic table entry which doesn't exist is a connection error.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
-        coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: 0, decodeReceiver: receiver)
 
-        expectH3ErrorEqual(
-            error: connection.errors.first,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed
-        )
-        // The stream is told about the failure too, so that it doesn't wait for a result which will never come.
-        expectH3ErrorEqual(
-            error: receiver.errors.first,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed
-        )
+        // The stream escalates the failure to the connection, so it is the only one to hear of it.
+        #expect(receiver.errors == [.decodeError(.invalidReference)])
+        #expect(receiver.errors.first?.isConnectionError == true)
     }
 
-    @Test func invalidFieldSectionPrefixIsAConnectionError() {
+    @available(anyAppleOS 27, *)
+    @Test func invalidFieldSectionPrefixIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -473,102 +451,82 @@ struct QPACKCoderTests {
 
         // RFC 9204 § 4.5.1.1: an EncodedInsertCount which no conformant encoder could have produced is a
         // connection error of type QPACK_DECOMPRESSION_FAILED.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
-                lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
-            )
+        let headers = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 200, deltaBase: 100, signBit: true),
+            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
         )
-        coder.decodeHeaders(headers, streamID: 0, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: 0, decodeReceiver: receiver)
 
-        expectH3ErrorEqual(
-            error: connection.errors.first,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed,
-            expectedMessage: "Invalid field section prefix"
-        )
-        #expect(receiver.errors.count == 1)
+        #expect(receiver.errors == [.invalidFieldSectionPrefix])
     }
 
-    @Test func tooManyBlockedStreamsIsAConnectionError() {
+    @available(anyAppleOS 27, *)
+    @Test func tooManyBlockedStreamsIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(decoderMaxBlockedStreams: 1, errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
         coder.outboundDecoderStreamReady(decoderStream)
 
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 1024),
-                lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 1024),
+            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "test")]
         )
 
         // We promised to support one blocked stream, so the first one is simply queued.
         let receiver1 = TestDecodeReceiver()
-        coder.decodeHeaders(headers, streamID: 1, decodeReceiver: receiver1)
+        coder.decodeFields(headers, streamID: 1, decodeReceiver: receiver1)
         #expect(receiver1.results.isEmpty)
-        #expect(connection.errors.isEmpty)
 
         // RFC 9204 § 2.1.2: more blocked streams than promised is a connection error.
         let receiver2 = TestDecodeReceiver()
-        coder.decodeHeaders(headers, streamID: 2, decodeReceiver: receiver2)
-        expectH3ErrorEqual(
-            error: connection.errors.first,
-            expectedCode: .qpackDecoderError,
-            expectedH3ErrorCode: .qpackDecompressionFailed,
-            expectedMessage: "Too many streams blocked on QPACK"
-        )
-        #expect(receiver2.errors.count == 1)
+        coder.decodeFields(headers, streamID: 2, decodeReceiver: receiver2)
+        #expect(receiver2.errors == [.tooManyBlockedStreams])
+        #expect(receiver1.results.isEmpty)
     }
 
     // MARK: Incoming instructions
 
-    @Test func invalidIncomingEncoderInstructionIsAConnectionError() {
+    @available(anyAppleOS 27, *)
+    @Test func invalidIncomingEncoderInstructionIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
         // Invalid because it exceeds the capacity we advertised.
-        coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1025))
-
-        expectH3ErrorEqual(
-            error: connection.errors.first,
-            expectedCode: .qpackEncoderStreamError,
-            expectedH3ErrorCode: .qpackEncoderStreamError
-        )
+        #expect(throws: QPACKError.invalidEncoderInstruction) {
+            try coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1025))
+        }
     }
 
-    @Test func incomingDecoderInstructionIsForwardedToTheEncoder() {
+    @available(anyAppleOS 27, *)
+    @Test func incomingDecoderInstructionIsForwardedToTheEncoder() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let encoderStream = TestOutboundEncoderStream()
         let streamID = QUICStreamID(4)
 
-        coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 1024)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 1024)
         coder.outboundEncoderStreamReady(encoderStream)
         _ = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: streamID)
 
-        coder.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: streamID))
+        try coder.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: streamID))
 
-        #expect(connection.errors.isEmpty)
     }
 
-    @Test func incomingDecoderInstructionWithoutDynamicTableIsAConnectionError() {
+    @available(anyAppleOS 27, *)
+    @Test func incomingDecoderInstructionWithoutDynamicTableIsAConnectionError() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
         // We never opened an encoder stream, so the peer's decoder has nothing to acknowledge.
-        coder.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: 1))
-
-        expectH3ErrorEqual(
-            error: connection.errors.first,
-            expectedCode: .qpackDecoderStreamError,
-            expectedH3ErrorCode: .qpackDecoderStreamError
-        )
+        #expect(throws: QPACKError.decoderInstructionWithoutDynamicTable) {
+            try coder.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: 1))
+        }
     }
 
     // MARK: Stream management
 
-    @Test func requestStreamClosedCleanlySendsNothing() {
+    @available(anyAppleOS 27, *)
+    @Test func requestStreamClosedCleanlySendsNothing() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -579,7 +537,8 @@ struct QPACKCoderTests {
         #expect(decoderStream.instructions.isEmpty)
     }
 
-    @Test func requestStreamClosedWhileBlockedCancelsTheStream() {
+    @available(anyAppleOS 27, *)
+    @Test func requestStreamClosedWhileBlockedCancelsTheStream() throws {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let decoderStream = TestOutboundDecoderStream()
@@ -587,16 +546,14 @@ struct QPACKCoderTests {
         let streamID = QUICStreamID(1)
 
         coder.outboundDecoderStreamReady(decoderStream)
-        coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+        try coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
 
         // Block the stream on an entry we haven't received yet.
-        let headers = HTTP3PartialFrame.Headers(
-            fieldSection: FieldSection(
-                prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
-                lines: [.indexedWithPostBase(index: 0)]
-            )
+        let headers = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [.indexedWithPostBase(index: 0)]
         )
-        coder.decodeHeaders(headers, streamID: streamID, decodeReceiver: receiver)
+        coder.decodeFields(headers, streamID: streamID, decodeReceiver: receiver)
         #expect(receiver.results.isEmpty)
 
         // The stream goes away before we could decode. The peer's encoder must be told not to expect an
@@ -606,7 +563,7 @@ struct QPACKCoderTests {
         decoderStream.instructions.removeAll()
 
         // The entry finally arrives. The pending decode is gone, so the receiver is never called.
-        coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
+        try coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "cookie", value: "test"))
         #expect(receiver.results.isEmpty)
         #expect(decoderStream.instructions == [.insertCountIncrement(increment: 1)])
     }
@@ -614,6 +571,7 @@ struct QPACKCoderTests {
 
 // MARK: - Test doubles
 
+@available(anyAppleOS 27, *)
 private typealias TestCoder = QPACKCoder<
     TestOutboundEncoderStream,
     TestOutboundDecoderStream,
@@ -622,6 +580,7 @@ private typealias TestCoder = QPACKCoder<
 >
 
 /// Records the encoder instructions the coder wants to send to the peer's decoder.
+@available(anyAppleOS 27, *)
 private final class TestOutboundEncoderStream: QPACKOutboundEncoderStream {
     var instructions: [QPACKEncoderInstruction] = []
 
@@ -631,6 +590,7 @@ private final class TestOutboundEncoderStream: QPACKOutboundEncoderStream {
 }
 
 /// Records the decoder instructions the coder wants to send to the peer's encoder.
+@available(anyAppleOS 27, *)
 private final class TestOutboundDecoderStream: QPACKOutboundDecoderStream {
     var instructions: [QPACKDecoderInstruction] = []
 
@@ -643,14 +603,9 @@ private final class TestOutboundDecoderStream: QPACKOutboundDecoderStream {
     }
 }
 
-/// Records the connection level side effects: errors and requests to open an encoder stream.
-private final class TestConnection: HTTP3.QPACKConnectionDelegate {
-    var errors: [HTTP3Error] = []
+/// Records the requests to open an encoder stream.
+private final class TestConnection: QPACKConnectionDelegate {
     var madeOutboundEncoderStreamCount = 0
-
-    func connectionError(_ error: HTTP3Error) {
-        self.errors.append(error)
-    }
 
     func makeOutboundEncoderStream() {
         self.madeOutboundEncoderStreamCount += 1
@@ -658,8 +613,9 @@ private final class TestConnection: HTTP3.QPACKConnectionDelegate {
 }
 
 /// Records the decode results delivered to a single stream.
+@available(anyAppleOS 27, *)
 private final class TestDecodeReceiver: QPACKDecodeReceiver {
-    var results: [Result<[HTTPField], HTTP3Error>] = []
+    var results: [Result<[HTTPField], QPACKError>] = []
 
     /// The fields from all successful decodes, in order.
     var decodedFields: [[HTTPField]] {
@@ -672,7 +628,7 @@ private final class TestDecodeReceiver: QPACKDecodeReceiver {
     }
 
     /// The errors from all failed decodes, in order.
-    var errors: [HTTP3Error] {
+    var errors: [QPACKError] {
         self.results.compactMap {
             switch $0 {
             case .success: return nil
@@ -681,7 +637,7 @@ private final class TestDecodeReceiver: QPACKDecodeReceiver {
         }
     }
 
-    func decodeResult(_ result: Result<[HTTPField], HTTP3Error>) {
+    func decodeResult(_ result: Result<[HTTPField], QPACKError>) {
         self.results.append(result)
     }
 }

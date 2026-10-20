@@ -16,6 +16,7 @@ import DequeModule
 @_spi(PackageInternal) import HTTP3
 
 /// State machine used by the handler which is on the outbound control stream.
+@available(anyAppleOS 27, *)
 struct HTTP3OutboundControlStreamStateMachine: ~Copyable {
     private enum State: ~Copyable {
         /// The handler isn't active yet. Any frame which we have tried to send so far gets buffered here.

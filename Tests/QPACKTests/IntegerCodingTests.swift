@@ -22,14 +22,15 @@ struct IntegerCodingTests {
 
     // MARK: - Array-based helpers
 
+    @available(anyAppleOS 27, *)
     private mutating func encodeIntegerToArray(_ value: UInt64, prefix: Int) -> [UInt8] {
-        var data = [UInt8]()
-        self.scratchBuffer.clear()
-        let len = self.scratchBuffer.writeQPACKPrefixedInteger(value, prefix: prefix)
-        data.append(contentsOf: self.scratchBuffer.viewBytes(at: 0, length: len)!)
-        return data
+        let buffer = ByteBuffer(initialCapacity: QPACKEncodedLength.maxPrefixedInteger(UInt64.self)) { output in
+            output.appendQPACKPrefixedInteger(value, prefix: prefix)
+        }
+        return Array(buffer.readableBytesView)
     }
 
+    @available(anyAppleOS 27, *)
     private mutating func decodeInteger(from array: [UInt8], prefix: Int) throws -> Int? {
         self.scratchBuffer.clear()
         self.scratchBuffer.writeBytes(array)
@@ -38,8 +39,8 @@ struct IntegerCodingTests {
 
     // MARK: - Tests
 
-    @Test
-    mutating func testIntegerEncoding() throws {
+    @available(anyAppleOS 27, *)
+    @Test mutating func testIntegerEncoding() throws {
         // values from the standard: http://httpwg.org/specs/rfc7541.html#integer.representation.examples
         var data = self.encodeIntegerToArray(10, prefix: 5)  // 0000 1010
         #expect(data == [0b00001010])
@@ -128,8 +129,21 @@ struct IntegerCodingTests {
         #expect(data == [255, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1])
     }
 
-    @Test
-    mutating func testIntegerDecoding() throws {
+    @available(anyAppleOS 27, *)
+    @Test(arguments: 1...8) func testEncodedLength(prefix: Int) {
+        let values: [UInt64] = [0, 1, 30, 31, 32, 126, 127, 128, 254, 255, 256, 1337, 1 << 14, 1 << 32, .max - 1, .max]
+        for value in values {
+            let length = QPACKEncodedLength.prefixedInteger(value, prefix: prefix)
+            let encoded = ByteBuffer(initialCapacity: QPACKEncodedLength.maxPrefixedInteger(UInt64.self)) { output in
+                output.appendQPACKPrefixedInteger(value, prefix: prefix)
+            }
+            #expect(encoded.readableBytes == length, "\(value) with prefix \(prefix)")
+            #expect(length <= QPACKEncodedLength.maxPrefixedInteger(UInt64.self))
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test mutating func testIntegerDecoding() throws {
         // any bits above the prefix amount shouldn't affect the outcome.
         try #expect(self.decodeInteger(from: [0b00001010], prefix: 5) == 10)
         try #expect(self.decodeInteger(from: [0b11101010], prefix: 5) == 10)
@@ -169,6 +183,7 @@ struct IntegerCodingTests {
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingMultiplicationDoesNotOverflow(prefix: Int) {
         // Zeros with continuation bits (e.g. 128) to increase the shift value (to 9 * 7 = 63), and then multiply by 127.
         #expect(throws: IntegerReadingError.unrepresentable) {
@@ -177,6 +192,7 @@ struct IntegerCodingTests {
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingAdditionDoesNotOverflow(prefix: Int) {
         // Zeros with continuation bits (e.g. 128) to increase the shift value (to 9 * 7 = 63), and then multiply by 127.
         #expect(throws: IntegerReadingError.unrepresentable) {
@@ -185,6 +201,7 @@ struct IntegerCodingTests {
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingShiftDoesNotOverflow(prefix: Int) {
         // With enough iterations we expect the shift to become greater >= 64.
         #expect(throws: IntegerReadingError.unrepresentable) {
@@ -193,11 +210,13 @@ struct IntegerCodingTests {
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingEmptyInput(prefix: Int) throws {
         try #expect(self.decodeInteger(from: [], prefix: prefix) == nil)
     }
 
     @Test(arguments: 1...8)
+    @available(anyAppleOS 27, *)
     mutating func testIntegerDecodingNotEnoughBytes(prefix: Int) throws {
         try #expect(self.decodeInteger(from: [255, 128], prefix: prefix) == nil)
     }

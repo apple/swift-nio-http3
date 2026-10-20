@@ -17,6 +17,7 @@ import NIOCore
 
 /// Handler to be used on the outbound control stream only.
 /// Will send the initial settings frame when the channel is ready.
+@available(anyAppleOS 27, *)
 final class HTTP3OutboundControlStreamHandler: ChannelInboundHandler {
     typealias OutboundIn = HTTP3Frame
     typealias OutboundOut = HTTP3Frame

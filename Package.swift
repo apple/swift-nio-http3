@@ -1,4 +1,4 @@
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the SwiftNIO open source project
@@ -34,8 +34,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.19.3"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.22.0"),
-        .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.1")),
-        .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.4.0")),
+        .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.2")),
+        .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.6.0")),
     ],
     targets: [
         .target(
@@ -46,7 +46,6 @@ let package = Package(
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "DequeModule", package: "swift-collections"),
-                .product(name: "HeapModule", package: "swift-collections"),
                 .target(name: "QPACK"),
             ],
             swiftSettings: swiftSettings
@@ -71,6 +70,7 @@ let package = Package(
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
                 .product(name: "DequeModule", package: "swift-collections"),
+                .product(name: "HeapModule", package: "swift-collections"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
             swiftSettings: swiftSettings
@@ -114,6 +114,8 @@ let package = Package(
                 .target(name: "QPACK"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
+                .product(name: "DequeModule", package: "swift-collections"),
             ],
             swiftSettings: swiftSettings
         ),

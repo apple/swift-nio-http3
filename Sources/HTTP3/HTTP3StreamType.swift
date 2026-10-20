@@ -12,6 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOQUICHelpers
+
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum HTTP3StreamType: Sendable {
     case unidirectional(Unidirectional)
@@ -73,6 +76,7 @@ public enum HTTP3StreamType: Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3StreamType {
     /// Stream types which carry HTTP3 frames (other streams, e.g. qpack streams, do not). This is a subset of ``HTTP3StreamType``.
     @_spi(PackageInternal)

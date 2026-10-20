@@ -58,6 +58,7 @@ enum HeaderTableError: Error, Hashable, Sendable {
 /// `HPACKHeaders` and `NIOHTTP1.HTTPHeaders`, but uses a ring buffer to hold the bytes to
 /// avoid allocation churn while evicting and replacing entries.
 @usableFromInline
+@available(anyAppleOS 27, *)
 struct HeaderTableStorage: Sendable {
     private var headers: Deque<HeaderTableEntry>
     private var lastIndex: Int?
@@ -252,6 +253,7 @@ struct HeaderTableStorage: Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HeaderTableStorage: CustomStringConvertible {
     @usableFromInline
     var description: String {

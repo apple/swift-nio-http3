@@ -15,6 +15,7 @@
 public import HTTPTypes
 public import NIOQUICHelpers
 
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum QPACKDecoderError: Error, Sendable, Hashable {
     case invalidHeaderName
@@ -23,6 +24,7 @@ public enum QPACKDecoderError: Error, Sendable, Hashable {
 }
 
 /// The result of decoding a field section, plus the instruction which need to be sent back, if any.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum QPACKFullDecodeResult: Sendable {
     /// The section cannot not be decoded because we don't have the required insert count. You can try again later.
@@ -43,6 +45,7 @@ enum QPACKDecodeResult: Sendable {
     case error(any Error)
 }
 
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct QPACKDecoder {
     private var dynamicTable: DynamicHeaderTable

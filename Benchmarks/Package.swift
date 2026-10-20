@@ -1,4 +1,4 @@
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the SwiftNIO open source project
@@ -18,7 +18,7 @@ import PackageDescription
 let package = Package(
     name: "swift-nio-http3-benchmarks",
     platforms: [
-        .macOS(.v26)
+        .macOS(.v27)
     ],
     dependencies: [
         .package(name: "swift-nio-http3", path: "../"),

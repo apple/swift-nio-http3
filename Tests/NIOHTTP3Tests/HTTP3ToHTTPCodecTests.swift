@@ -24,37 +24,50 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3ToHTTPCodecTests {
-    private let validRequestHead: HTTP3Frame = .headers([
-        .init(name: .method, value: "GET"),
-        .init(name: .scheme, value: "https"),
-        .init(name: .authority, value: "test"),
-        .init(name: .path, value: "/"),
-    ])
+    @available(anyAppleOS 27, *)
+    private var validRequestHead: HTTP3Frame {
+        .headers([
+            .init(name: .method, value: "GET"),
+            .init(name: .scheme, value: "https"),
+            .init(name: .authority, value: "test"),
+            .init(name: .path, value: "/"),
+        ])
+    }
 
-    private let extendedConnectRequestHead: HTTP3Frame = .headers([
-        .init(name: .method, value: "CONNECT"),
-        .init(name: .protocol, value: "websocket"),
-        .init(name: .scheme, value: "https"),
-        .init(name: .authority, value: "test"),
-        .init(name: .path, value: "/"),
-    ])
+    @available(anyAppleOS 27, *)
+    private var extendedConnectRequestHead: HTTP3Frame {
+        .headers([
+            .init(name: .method, value: "CONNECT"),
+            .init(name: .protocol, value: "websocket"),
+            .init(name: .scheme, value: "https"),
+            .init(name: .authority, value: "test"),
+            .init(name: .path, value: "/"),
+        ])
+    }
 
+    @available(anyAppleOS 27, *)
     private var extendedConnectRequest: HTTPRequest {
         var request = HTTPRequest(method: .connect, scheme: "https", authority: "test", path: "/")
         request.extendedConnectProtocol = "websocket"
         return request
     }
 
-    private let validFinalResponseHead: HTTP3Frame = .headers([
-        .init(name: .status, value: "200")
-    ])
+    @available(anyAppleOS 27, *)
+    private var validFinalResponseHead: HTTP3Frame {
+        .headers([
+            .init(name: .status, value: "200")
+        ])
+    }
 
-    private let validInterimResponseHead: HTTP3Frame = .headers([
-        .init(name: .status, value: "103")
-    ])
+    @available(anyAppleOS 27, *)
+    private var validInterimResponseHead: HTTP3Frame {
+        .headers([
+            .init(name: .status, value: "103")
+        ])
+    }
 
-    @Test
-    func testClientCodecWrite() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testClientCodecWrite() throws {
         let handler = HTTP3ToHTTPClientCodec()
         let eventLoop = EmbeddedEventLoop()
         let framesPromise = eventLoop.makePromise(of: [WriteOrClose<HTTP3Frame>].self)
@@ -99,8 +112,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(events[4] == .close)
     }
 
-    @Test
-    func testClientCodecRead() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testClientCodecRead() throws {
         let handler = HTTP3ToHTTPClientCodec()
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
@@ -120,6 +133,7 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[2] == .body(.init(bytes: [1, 2, 3])))
     }
 
+    @available(anyAppleOS 27, *)
     @Test func clientCodecRefusesExtendedConnectRequestWhenSettingNotEnabled() throws {
         let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
 
@@ -133,6 +147,7 @@ struct HTTP3ToHTTPCodecTests {
         #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func clientCodecSendsExtendedConnectRequestWhenSettingEnabled() throws {
         let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
 
@@ -148,6 +163,7 @@ struct HTTP3ToHTTPCodecTests {
         #expect(headers.fields.contains(HTTPField(name: .protocol, value: "websocket")))
     }
 
+    @available(anyAppleOS 27, *)
     @Test(arguments: [true, false])
     func clientCodecCanSendConnectRequestIndependentOfExtendedConnectSetting(settingValue: Bool) throws {
         let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: settingValue))
@@ -162,6 +178,7 @@ struct HTTP3ToHTTPCodecTests {
         }
     }
 
+    @available(anyAppleOS 27, *)
     @Test func clientCodecRefusesExtendedConnectRequestWhenServerDoesNotSupport() throws {
         let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec())
 
@@ -177,6 +194,7 @@ struct HTTP3ToHTTPCodecTests {
         #expect(error.code == .extendedConnectNotEnabled)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func clientCodecForwardsReceivedSettings() throws {
         let events = NIOLockedValueBox<[ReceivedSettings]>([])
         let recorder = DebugInboundEventsHandler { event, _ in
@@ -191,8 +209,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(events.withLockedValue { $0 } == [settings])
     }
 
-    @Test
-    func testServerCodecWrite() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testServerCodecWrite() throws {
         let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
         let framesPromise = eventLoop.makePromise(of: [WriteOrClose<HTTP3Frame>].self)
@@ -231,8 +249,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(events[4] == .close)
     }
 
-    @Test
-    func testServerCodecRead() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testServerCodecRead() throws {
         let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
@@ -252,6 +270,7 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[2] == .body(.init(bytes: [1, 2, 3])))
     }
 
+    @available(anyAppleOS 27, *)
     @Test func serverCodecRejectsExtendedConnectRequestWhenSettingNotEnabled() throws {
         let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: false)
         let channel = EmbeddedChannel(handler: handler)
@@ -271,6 +290,7 @@ struct HTTP3ToHTTPCodecTests {
         #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func serverCodecAcceptsExtendedConnectRequestWhenSettingEnabled() throws {
         let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: true)
         let channel = EmbeddedChannel(handler: handler)
@@ -283,6 +303,7 @@ struct HTTP3ToHTTPCodecTests {
         #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
     }
 
+    @available(anyAppleOS 27, *)
     @Test func serverCodecAcceptsConnectWhenExtendedConnectSettingNotEnabled() throws {
         let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: false)
         let channel = EmbeddedChannel(handler: handler)
@@ -300,8 +321,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
     }
 
-    @Test
-    func serverCodecGeneratesEndPartForCompleteRequestUponInputClosed() throws {
+    @available(anyAppleOS 27, *)
+    @Test func serverCodecGeneratesEndPartForCompleteRequestUponInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
         let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
@@ -320,8 +341,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[1] == .end(nil))
     }
 
-    @Test
-    func clientCodecGeneratesEndPartForCompleteResponseUponInputClosed() throws {
+    @available(anyAppleOS 27, *)
+    @Test func clientCodecGeneratesEndPartForCompleteResponseUponInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
         let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
@@ -340,8 +361,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[1] == .end(nil))
     }
 
-    @Test
-    func serverCodecDoesNotFireChannelReadWhenNoRequest() throws {
+    @available(anyAppleOS 27, *)
+    @Test func serverCodecDoesNotFireChannelReadWhenNoRequest() throws {
         let eventLoop = EmbeddedEventLoop()
         let promise = eventLoop.makePromise(of: [Void].self)
         let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
@@ -368,6 +389,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test(arguments: [true, false])
+    @available(anyAppleOS 27, *)
     func clientCodecDoesNotEmitEndWhenResponseIncomplete(includeInterimResponses: Bool) throws {
         let eventLoop = EmbeddedEventLoop()
         let promise = eventLoop.makePromise(of: [HTTPResponsePart].self)

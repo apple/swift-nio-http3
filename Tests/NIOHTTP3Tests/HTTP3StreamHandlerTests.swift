@@ -26,6 +26,7 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 @testable import NIOHTTP3
 
+@available(anyAppleOS 27, *)
 final class TestDelegate: HTTP3StreamDelegate {
     static func makeUnexpectedStreamClose() -> (Bool, QUICStreamID, HTTP3StreamType.Framed) -> Void {
         { eof, _, _ in
@@ -60,32 +61,15 @@ final class TestDelegate: HTTP3StreamDelegate {
     }
 }
 
-/// A mock ``HTTP3/QPACKConnectionDelegate`` for tests which exercise ``HTTP3StreamHandler`` in isolation.
-final class TestQPACKConnectionDelegate: HTTP3.QPACKConnectionDelegate {
-
-    static func makeUnexpectedQPACKConnectionErrorHandler() -> (HTTP3Error) -> Void {
-        { error in
-            Issue.record("Unexpected QPACK connection error \(error)")
-        }
-    }
-
-    let _connectionError: (HTTP3Error) -> Void
+/// A mock ``QPACKConnectionDelegate`` for tests which exercise ``HTTP3StreamHandler`` in isolation.
+final class TestQPACKConnectionDelegate: QPACK.QPACKConnectionDelegate {
     let _makeOutboundEncoderStream: () -> Void
 
     /// The number of times the coder asked for an outbound encoder stream.
     private(set) var madeOutboundEncoderStreamCount = 0
 
-    init(
-        onConnectionError: @escaping (HTTP3Error) -> Void =
-            TestQPACKConnectionDelegate.makeUnexpectedQPACKConnectionErrorHandler(),
-        onMakeOutboundEncoderStream: @escaping () -> Void = {}
-    ) {
-        self._connectionError = onConnectionError
+    init(onMakeOutboundEncoderStream: @escaping () -> Void = {}) {
         self._makeOutboundEncoderStream = onMakeOutboundEncoderStream
-    }
-
-    func connectionError(_ error: HTTP3Error) {
-        self._connectionError(error)
     }
 
     func makeOutboundEncoderStream() {
@@ -98,7 +82,7 @@ final class TestQPACKConnectionDelegate: HTTP3.QPACKConnectionDelegate {
 ///
 /// Pass a `decoderStreamChannel` if the test drives a decode which references the dynamic table: the coder writes
 /// the resulting acknowledgements to that channel, and traps if it has no outbound decoder stream at all.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 func makeTestQPACKCoder(
     encoderMaxTableSize: Int = 4096,
     decoderMaxTableSize: Int = 4096,
@@ -118,10 +102,10 @@ func makeTestQPACKCoder(
     return coder
 }
 
-@available(anyAppleOS 26.0, *)
 extension EmbeddedChannel {
     /// Drain everything a ``QPACKOutboundDecoderStream`` has written to this channel, decoded back into
     /// instructions.
+    @available(anyAppleOS 27, *)
     fileprivate func readAllDecoderInstructions() throws -> [QPACKDecoderInstruction] {
         let processor = NIOSingleStepByteToMessageProcessor(QPACKDecoderInstructionDecoder())
         var instructions = [QPACKDecoderInstruction]()
@@ -133,29 +117,34 @@ extension EmbeddedChannel {
 }
 
 struct NIOHTTP3StreamHandlerTests {
-    private var testRequestHeaderFields: [HTTPField] = [
-        .init(name: .method, value: "GET"),
-        .init(name: .path, value: "/"),
-        .init(name: .authority, value: "test"),
-        .init(name: .scheme, value: "http"),
-    ]
+    @available(anyAppleOS 27, *)
+    private var testRequestHeaderFields: [HTTPField] {
+        [
+            .init(name: .method, value: "GET"),
+            .init(name: .path, value: "/"),
+            .init(name: .authority, value: "test"),
+            .init(name: .scheme, value: "http"),
+        ]
+    }
 
+    @available(anyAppleOS 27, *)
     private var testRequestHeaderFrame: HTTP3Frame {
         .headers(self.testRequestHeaderFields)
     }
 
+    @available(anyAppleOS 27, *)
     private var testRequestPartialHeader: HTTP3PartialFrame.Headers {
         .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     private var testRequestPartialHeaderBytes: ByteBuffer {
         var buffer = ByteBuffer()
         buffer.writeHTTP3PartialFrame(.headers(self.testRequestPartialHeader), preferHuffmanEncoding: false)
         return buffer
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     private var testUndecodableRequestPartialHeaderBytes: ByteBuffer {
         var fieldSection = StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields)
         // A relative index of 0 against a base of 0 is absolute index -1, which is never in the table.
@@ -179,7 +168,7 @@ struct NIOHTTP3StreamHandlerTests {
     ///
     /// It declares a required insert count of one and refers to that entry with a post-base index, but the entry
     /// only arrives with ``testUnblockingEncoderInstruction``. Until then the stream is blocked: RFC 9204 § 2.1.2.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     private var testBlockedRequestPartialHeaderBytes: ByteBuffer {
         let fieldSection = FieldSection(
             prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 4096),
@@ -194,56 +183,56 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     /// The peer's encoder instruction which inserts the entry ``testBlockedRequestPartialHeaderBytes`` needs.
-    private let testUnblockingEncoderInstruction = QPACKEncoderInstruction.insertWithLiteralName(
-        name: "cookie",
-        value: "test"
-    )
+    @available(anyAppleOS 27, *)
+    private var testUnblockingEncoderInstruction: QPACKEncoderInstruction {
+        QPACKEncoderInstruction.insertWithLiteralName(
+            name: "cookie",
+            value: "test"
+        )
+    }
 
     private let logger = Logger(label: "NIOHTTP3StreamHandlerTests")
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func receiveInvalidHeaders() throws {
-        var errorReceived = false
-        let qpackDelegate = TestQPACKConnectionDelegate(onConnectionError: { error in
-            errorReceived = true
-            #expect(error.code == .qpackDecoderError)
-            #expect(error.h3ErrorCode == .qpackDecompressionFailed)
-        })
+        // The QPACK coder leaves it to the stream to report the failure to the connection, like it does for every
+        // other connection error it finds.
+        var connectionErrors: [HTTP3Error] = []
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
             streamID: 5,
             streamType: .request,
-            qpackCoder: makeTestQPACKCoder(connectionDelegate: qpackDelegate),
-            delegate: TestDelegate(),
+            qpackCoder: makeTestQPACKCoder(),
+            delegate: TestDelegate(onConnectionError: { connectionErrors.append($0) }),
             logger: self.logger
         )
-        let eventLoop = EmbeddedEventLoop()
-        let recorderPromise = eventLoop.makePromise(of: [HTTP3Frame].self)
-        let recorder = InboundDataRecorder(promise: recorderPromise, targetCount: 1)
-        let channel = EmbeddedChannel(handlers: [handler, recorder], loop: eventLoop)
+        let channel = EmbeddedChannel(handlers: [handler])
 
         // Read in a test header which the QPACK decoder will reject.
         try channel.writeInbound(self.testUndecodableRequestPartialHeaderBytes)
 
-        expectH3Error(
-            code: .qpackDecoderError,
-            h3ErrorCode: .qpackDecompressionFailed,
-            message: "Could not decode QPACK headers for stream 5"
-        ) {
-            _ = try recorderPromise.futureResult.wait()
+        #expect(connectionErrors.count == 1)
+        if let error = connectionErrors.first {
+            expectH3ErrorEqual(
+                error: error,
+                expectedCode: .qpackDecoderError,
+                expectedH3ErrorCode: .qpackDecompressionFailed,
+                expectedMessage: "Could not decode QPACK headers for stream 5"
+            )
         }
-        #expect(errorReceived)
+        // The connection error tears the stream down, nothing is forwarded on it.
+        #expect(try channel.readInbound(as: HTTP3Frame.self) == nil)
     }
 
     /// Receive headers which can't yet be decoded, but can be later.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func receiveHeadersWhichNeedInstructions() throws {
         let eventLoop = EmbeddedEventLoop()
         // The coder writes its acknowledgements here once the decode goes through.
         let decoderStreamChannel = EmbeddedChannel()
         let qpackCoder = makeTestQPACKCoder(decoderStreamChannel: decoderStreamChannel)
         // The peer's encoder may use a dynamic table, but hasn't inserted anything into it yet.
-        qpackCoder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+        try qpackCoder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
         #expect(try decoderStreamChannel.readOutbound(as: ByteBuffer.self) == nil)
 
         let handler = HTTP3StreamHandler(
@@ -269,7 +258,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.isEmpty())
 
         // The missing entry arrives on the peer's encoder stream, which unblocks the decode.
-        qpackCoder.receivedIncomingEncoderInstruction(self.testUnblockingEncoderInstruction)
+        try qpackCoder.receivedIncomingEncoderInstruction(self.testUnblockingEncoderInstruction)
 
         // Make sure we read the right value
         guard let readFrameAny = seenEvents.popFirst()?.readValue else {
@@ -288,7 +277,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(instructions == [.insertCountIncrement(increment: 1), .sectionAcknowledgement(streamID: 5)])
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func receiveUnknownFrameFollowedByHeaders() throws {
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
@@ -327,7 +316,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.isEmpty())
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func write() throws {
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .control, incoming: false, preferHuffmanEncoding: false),
@@ -350,7 +339,7 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     /// Write a frame which would result in a stream error.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func writeStreamError() throws {
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
@@ -377,7 +366,7 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     /// Write a frame which would result in a connection error.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func writeConnectionError() throws {
         let handler = HTTP3StreamHandler(
             stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
@@ -404,7 +393,7 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     /// Write a frame after closing the channel
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func writeAfterClose() throws {
         let eventLoop = EmbeddedEventLoop()
         let sawEOF = eventLoop.makePromise(of: Bool.self)
@@ -434,7 +423,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(try !sawEOF.futureResult.wait())
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func connectionError() throws {
         let eventLoop = EmbeddedEventLoop()
         let connectionErrorPromise = eventLoop.makePromise(of: HTTP3Error.self)
@@ -464,7 +453,7 @@ struct NIOHTTP3StreamHandlerTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func channelInactive() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
@@ -485,7 +474,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(sawEOF == false)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func channelInactiveAfterEOF() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
@@ -508,7 +497,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(sawEOF == true)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func channelInactiveAfterEOFWaitingForDecode() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
@@ -559,7 +548,7 @@ struct NIOHTTP3StreamHandlerTests {
     }
 
     // Make sure that if we have buffered data which we didn't fire read for, then we do so before forwarding channel inactive.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func flushBuffersWhenChannelInactive() throws {
         let eventLoop = EmbeddedEventLoop()
         // The bool is true if the close was clean, ie we saw EOF
@@ -621,7 +610,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.isEmpty())
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func testMoreInputAfterInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
 
@@ -654,7 +643,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenFrames.count == 1)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func inputClosedWithIncompleteRequest() throws {
         let eventLoop = EmbeddedEventLoop()
 
@@ -704,7 +693,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(resetStreamEvent.code == QUICApplicationErrorCode(HTTP3ErrorCode.requestIncomplete))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func inputClosedWithIncompleteResponse() throws {
         let eventLoop = EmbeddedEventLoop()
 
@@ -740,6 +729,7 @@ struct NIOHTTP3StreamHandlerTests {
 }
 
 extension DebugInboundEventsHandler.Event {
+    @available(anyAppleOS 27, *)
     var isInputClosedEvent: Bool {
         switch self {
         case .userInboundEventTriggered(let event as ChannelEvent):
@@ -750,6 +740,7 @@ extension DebugInboundEventsHandler.Event {
         }
     }
 
+    @available(anyAppleOS 27, *)
     var isHTTP3Error: HTTP3Error? {
         switch self {
         case .errorCaught(let error as HTTP3Error):

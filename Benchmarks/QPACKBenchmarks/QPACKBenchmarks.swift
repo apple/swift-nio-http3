@@ -22,7 +22,7 @@ import NIOQUICHelpers
 /// A realistic request header set for a browser GET, exercising a mix of exact
 /// static-table matches (`:method GET`), name-only matches (`:authority`) and
 /// headers absent from the table (`x-custom-header`).
-private let requestHeaders: [HTTPField] = [
+let requestHeaders: [HTTPField] = [
     HTTPField(name: .init(parsed: ":method")!, value: "GET"),
     HTTPField(name: .init(parsed: ":scheme")!, value: "https"),
     HTTPField(name: .init(parsed: ":authority")!, value: "www.example.com"),
@@ -43,6 +43,7 @@ let benchmarks: @Sendable () -> Void = {
         "QPACKStaticEncode_BrowserGET",
         configuration: .init(
             metrics: [.mallocCountTotal, .instructions, .wallClock],
+            units: [.instructions: .count],
             scalingFactor: .kilo
         )
     ) { benchmark in
@@ -57,6 +58,7 @@ let benchmarks: @Sendable () -> Void = {
         "QPACKEncode",
         configuration: .init(
             metrics: [.mallocCountTotal, .instructions, .wallClock],
+            units: [.instructions: .count],
             scalingFactor: .kilo
         )
     ) { benchmark in
@@ -81,6 +83,7 @@ let benchmarks: @Sendable () -> Void = {
         "QPACKDynamicEncode_BrowserGET",
         configuration: .init(
             metrics: [.mallocCountTotal, .instructions, .wallClock],
+            units: [.instructions: .count],
             scalingFactor: .kilo
         )
     ) { benchmark in
@@ -97,4 +100,6 @@ let benchmarks: @Sendable () -> Void = {
             )
         }
     }
+
+    qpackCoderBenchmarks()
 }

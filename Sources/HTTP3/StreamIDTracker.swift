@@ -15,7 +15,7 @@
 import NIOQUICHelpers
 
 /// Keeps track of what streams are open.
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 struct StreamIDTracker {
     /// All currently open streams
     private(set) var openStreams = Set<QUICStreamID>()

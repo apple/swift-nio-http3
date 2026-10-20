@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
+import NIOQUICHelpers
 @_spi(PackageInternal) public import QPACK
 
 public import struct NIOCore.ByteBuffer
@@ -20,6 +21,7 @@ public import struct NIOCore.ByteBuffer
 /// Represents a HTTP3 frame which has not been through the qpack decoder yet.
 ///
 /// The types are identical to ``HTTP3Frame`` except that the ``HTTP3PartialFrame/headers(_:)`` and ``HTTP3PartialFrame/pushPromise(_:)`` cases hold encoded field sections instead of fields.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum HTTP3PartialFrame: Hashable, Sendable {
     /// A headers frame for which we don't have the dynamic table references yet.
@@ -89,6 +91,7 @@ public enum HTTP3PartialFrame: Hashable, Sendable {
 }
 
 /// A representation of a single HTTP/3 frame type.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum HTTP3FrameType: Hashable, Sendable {
     /// Attempts to parse a frame type.
@@ -153,6 +156,7 @@ public enum HTTP3FrameType: Hashable, Sendable {
 }
 
 /// A representation of a single HTTP/3 frame.
+@available(anyAppleOS 27, *)
 public enum HTTP3Frame: Hashable, Sendable {
     /// The payload of a HTTP/3 DATA frame.
     public struct Data: Hashable, Sendable {
@@ -292,6 +296,7 @@ public enum HTTP3Frame: Hashable, Sendable {
 // The following non-public extensions make it easier to construct frames. We don't want to make these public
 // because they are impossible to evolve, hence having structs in the first place.
 
+@available(anyAppleOS 27, *)
 extension HTTP3PartialFrame {
     static func data(_ payload: ByteBuffer) -> Self {
         .data(.init(payload: payload))
@@ -314,6 +319,7 @@ extension HTTP3PartialFrame {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Frame.Headers {
     /// Whether these headers contain a `:status` pseudo-header field whose value is an informational 1xx status code.
     ///
@@ -330,6 +336,7 @@ extension HTTP3Frame.Headers {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3Frame {
     @_spi(PackageInternal)
     public static func data(_ payload: ByteBuffer) -> Self {
