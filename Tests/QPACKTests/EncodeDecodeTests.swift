@@ -19,18 +19,16 @@ import Testing
 
 struct EncodeDecodeTests {
     /// Dynamic table is disabled, literal should be sent as a literal.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteral() {
+    @Test func encodeLiteral() {
         self.testEncodeDecodeRoundtripNoDynamic(
             fields: [.init(name: .init("hello")!, value: "world")]
         )
     }
 
     /// Dynamic table is enabled, literal should be added to the table then a reference to the table sent.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteralAddingToTable() throws {
+    @Test func encodeLiteralAddingToTable() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [.init(name: .init("hello")!, value: "world")],
             dynamicTableMaxCapacity: 1000,
@@ -39,9 +37,8 @@ struct EncodeDecodeTests {
     }
 
     /// Dynamic table is enabled but has no capacity, literal should be sent as a literal.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteralTableFull() throws {
+    @Test func encodeLiteralTableFull() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [.init(name: .init("hello")!, value: "world")],
             dynamicTableMaxCapacity: 1000,
@@ -52,9 +49,8 @@ struct EncodeDecodeTests {
     /// Dynamic table is enabled, literal should be added to the table then a reference to the table sent.
     /// Further literals are either identical or share a name so should send same references without further inserts.
     /// No literals should be sent in field section.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteralAddingToTableWithReuse() throws {
+    @Test func encodeLiteralAddingToTableWithReuse() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [
                 .init(name: .init("hello")!, value: "world"),
@@ -68,9 +64,8 @@ struct EncodeDecodeTests {
 
     /// The field matches exactly a static table entry. We should reference that. No instructions should be sent.
     /// That is regardless of dynamic table being available.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeStaticTable() throws {
+    @Test func encodeStaticTable() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [
                 .init(name: .accept, value: "*/*")
@@ -87,9 +82,8 @@ struct EncodeDecodeTests {
 
     /// The field name matches a static table entry but the value does not. Dynamic table is disabled.
     /// So we should refer to the name from the static table and send the value literally.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeStaticTableNameReference() {
+    @Test func encodeStaticTableNameReference() {
         self.testEncodeDecodeRoundtripNoDynamic(
             fields: [.init(name: .accept, value: "blabla")]
         )
@@ -98,9 +92,8 @@ struct EncodeDecodeTests {
     /// The field name matches a static table entry but the value does not. Dynamic table is enabled.
     /// We'll send a insert instruction by referencing the name from the static table.
     /// Then we'll send a reference to the newly inserted entry.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeStaticTableNameReferenceWithDynamic() throws {
+    @Test func encodeStaticTableNameReferenceWithDynamic() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [.init(name: .accept, value: "blabla")],
             dynamicTableMaxCapacity: 1000,
@@ -110,9 +103,8 @@ struct EncodeDecodeTests {
 
     /// Sending various fields, some of which match static table entries, some which need to be added to dynamic table,
     /// some which already exist in dynamic table, some which are partial matches to static/dynamic table.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeMultipleInserts() throws {
+    @Test func encodeMultipleInserts() throws {
         try self.testEncodeDecodeRoundtripWithDynamic(
             fields: [
                 .init(name: .init("test1")!, value: "a"),  // no match. insert it as index 0

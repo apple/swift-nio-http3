@@ -17,9 +17,8 @@ import HTTPTypes
 import Testing
 
 struct HTTP3ErrorTests {
-    @Test
     @available(anyAppleOS 27, *)
-    func testHTTP3ErrorCustomStringConvertible() throws {
+    @Test func testHTTP3ErrorCustomStringConvertible() throws {
         var error = HTTP3Error(
             code: .malformedMessage,
             message: "An error message.",
@@ -38,9 +37,8 @@ struct HTTP3ErrorTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testHTTP3ErrorCustomDebugStringConvertible() throws {
+    @Test func testHTTP3ErrorCustomDebugStringConvertible() throws {
         var error = HTTP3Error(
             code: .malformedMessage,
             message: "An error message.",
@@ -70,9 +68,8 @@ struct HTTP3ErrorTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testHTTP3ErrorDetailedDescription() throws {
+    @Test func testHTTP3ErrorDetailedDescription() throws {
         var error = HTTP3Error(
             code: .malformedMessage,
             message: "An error message.",
@@ -104,9 +101,8 @@ struct HTTP3ErrorTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testHTTP3ErrorCustomDebugStringConvertibleWithNestedCause() throws {
+    @Test func testHTTP3ErrorCustomDebugStringConvertibleWithNestedCause() throws {
         let location = HTTP3Error.SourceLocation(
             function: "fn(_:)",
             file: "file.swift",
@@ -154,9 +150,8 @@ struct HTTP3ErrorTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testSourceLocationDescription() {
+    @Test func testSourceLocationDescription() {
         let location = HTTP3Error.SourceLocation(function: "fn(_:)", file: "file.swift", line: 42)
         #expect("\(location)" == "fn(_:) (file.swift:42)")
     }

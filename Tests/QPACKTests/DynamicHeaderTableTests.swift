@@ -19,9 +19,8 @@ import Testing
 @testable import QPACK
 
 struct DynamicHeaderTableTests {
-    @Test
     @available(anyAppleOS 27, *)
-    func findByName() throws {
+    @Test func findByName() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
             initialCapacity: 1024,
@@ -42,9 +41,8 @@ struct DynamicHeaderTableTests {
         #expect(entry?.absoluteIndex == 0)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func findByNameAndValue() throws {
+    @Test func findByNameAndValue() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
             initialCapacity: 1024,
@@ -65,9 +63,8 @@ struct DynamicHeaderTableTests {
         #expect(entry?.absoluteIndex == 0)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func findByNameAndValueDoesntExist() throws {
+    @Test func findByNameAndValueDoesntExist() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
             initialCapacity: 1024,
@@ -89,9 +86,8 @@ struct DynamicHeaderTableTests {
         #expect(entry?.absoluteIndex == 0)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func findByNameDoesntExist() throws {
+    @Test func findByNameDoesntExist() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
             initialCapacity: 1024,
@@ -103,9 +99,8 @@ struct DynamicHeaderTableTests {
         #expect(result == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func absoluteIndex() throws {
+    @Test func absoluteIndex() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
             initialCapacity: 1024,
@@ -127,9 +122,8 @@ struct DynamicHeaderTableTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func getOutOfBounds() throws {
+    @Test func getOutOfBounds() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 1024,
             initialCapacity: 1024,
@@ -145,9 +139,8 @@ struct DynamicHeaderTableTests {
         #expect(table.get(absoluteIndex: 11) == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func getOutOfBoundsAfterEviction() throws {
+    @Test func getOutOfBoundsAfterEviction() throws {
         // Set the capacity to only fit 4
         let lengthOfEntry = "name1".count + "value1".count + 32
         var table = DynamicHeaderTable(
@@ -174,9 +167,8 @@ struct DynamicHeaderTableTests {
         #expect(table.get(absoluteIndex: 6) == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func maximumCapacity() throws {
+    @Test func maximumCapacity() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 70,
             initialCapacity: 70,
@@ -213,9 +205,8 @@ struct DynamicHeaderTableTests {
         #expect(entryC?.value == "3")
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func maxCapacityOfZero() {
+    @Test func maxCapacityOfZero() {
         var table = DynamicHeaderTable(
             maximumCapacity: 0,
             initialCapacity: 0,
@@ -229,9 +220,8 @@ struct DynamicHeaderTableTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func tooLargeKeepOld() throws {
+    @Test func tooLargeKeepOld() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 35,
             initialCapacity: 35,
@@ -250,9 +240,8 @@ struct DynamicHeaderTableTests {
         #expect(indexA?.relativeIndex == 0)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func insertCountIncrement() throws {
+    @Test func insertCountIncrement() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 100,
             initialCapacity: 100,
@@ -277,9 +266,8 @@ struct DynamicHeaderTableTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func insertCountIncrementOverflow() throws {
+    @Test func insertCountIncrementOverflow() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 100,
             initialCapacity: 100,
@@ -298,9 +286,8 @@ struct DynamicHeaderTableTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func acknowledgeInsertCount() throws {
+    @Test func acknowledgeInsertCount() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 100,
             initialCapacity: 100,
@@ -325,9 +312,8 @@ struct DynamicHeaderTableTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func nearingEviction() throws {
+    @Test func nearingEviction() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 330,
             initialCapacity: 330,
@@ -355,9 +341,8 @@ struct DynamicHeaderTableTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func unevictableDueToReference() throws {
+    @Test func unevictableDueToReference() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 165,
             initialCapacity: 165,
@@ -390,9 +375,8 @@ struct DynamicHeaderTableTests {
     }
 
     /// We must not evict entries which haven't been received, even if there are no references.
-    @Test
     @available(anyAppleOS 27, *)
-    func unevictableDueToReceiveCount() throws {
+    @Test func unevictableDueToReceiveCount() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 165,
             initialCapacity: 165,
@@ -416,9 +400,8 @@ struct DynamicHeaderTableTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func setCurrentCapacity() throws {
+    @Test func setCurrentCapacity() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 100,
             initialCapacity: 0,
@@ -435,9 +418,8 @@ struct DynamicHeaderTableTests {
         try table.setCurrentCapacity(100)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func cantReduceCapacityDueToReferences() throws {
+    @Test func cantReduceCapacityDueToReferences() throws {
         var table = DynamicHeaderTable(
             maximumCapacity: 40,
             initialCapacity: 40,

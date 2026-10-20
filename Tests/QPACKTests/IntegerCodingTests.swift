@@ -40,9 +40,8 @@ struct IntegerCodingTests {
 
     // MARK: - Tests
 
-    @Test
     @available(anyAppleOS 27, *)
-    mutating func testIntegerEncoding() throws {
+    @Test mutating func testIntegerEncoding() throws {
         // values from the standard: http://httpwg.org/specs/rfc7541.html#integer.representation.examples
         var data = self.encodeIntegerToArray(10, prefix: 5)  // 0000 1010
         #expect(data == [0b00001010])
@@ -131,9 +130,8 @@ struct IntegerCodingTests {
         #expect(data == [255, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1])
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    mutating func testIntegerDecoding() throws {
+    @Test mutating func testIntegerDecoding() throws {
         // any bits above the prefix amount shouldn't affect the outcome.
         try #expect(self.decodeInteger(from: [0b00001010], prefix: 5) == 10)
         try #expect(self.decodeInteger(from: [0b11101010], prefix: 5) == 10)

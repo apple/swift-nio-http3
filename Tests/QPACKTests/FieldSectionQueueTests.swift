@@ -34,9 +34,8 @@ struct FieldSectionQueueTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func cantAddMoreThanMaxItems() throws {
+    @Test func cantAddMoreThanMaxItems() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 1, context: 1))
@@ -48,9 +47,8 @@ struct FieldSectionQueueTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func popsNothingIfNothingDecodable() throws {
+    @Test func popsNothingIfNothingDecodable() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 10, context: 1))
@@ -59,9 +57,8 @@ struct FieldSectionQueueTests {
         #expect(queue.popIfDecodable(availableInsertCount: 5) == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func popsOldestIfMultipleDecodable() throws {
+    @Test func popsOldestIfMultipleDecodable() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40, context: 1))
@@ -75,9 +72,8 @@ struct FieldSectionQueueTests {
         #expect(queue.popIfDecodable(availableInsertCount: 40) == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func removesEntries() throws {
+    @Test func removesEntries() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40, context: 1))

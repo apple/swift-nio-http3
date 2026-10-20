@@ -19,9 +19,8 @@ import Testing
 
 struct EncoderTests {
     /// Dynamic table is disabled, literal should be sent as a literal.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteral() {
+    @Test func encodeLiteral() {
         let encoder = StaticQPACKEncoder()
         let encoded = encoder.encode(headers: [.init(name: .init("hello")!, value: "world")])
         let expect = FieldSection(
@@ -32,9 +31,8 @@ struct EncoderTests {
     }
 
     /// Dynamic table is enabled, literal should be added to the table then a reference to the table sent.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteralAddingToTable() {
+    @Test func encodeLiteralAddingToTable() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 1000,
@@ -51,9 +49,8 @@ struct EncoderTests {
     }
 
     /// Dynamic table is enabled but has no capacity, literal should be sent as a literal.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteralTableFull() {
+    @Test func encodeLiteralTableFull() {
         // This max doesn't matter for this test, the current capacity is still 0
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
@@ -73,9 +70,8 @@ struct EncoderTests {
     /// Dynamic table is enabled, literal should be added to the table then a reference to the table sent.
     /// Further literals are either identical or share a name so should send same references without further inserts.
     /// No literals should be sent in field section.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteralAddingToTableWithReuse() {
+    @Test func encodeLiteralAddingToTableWithReuse() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 1000,
@@ -106,9 +102,8 @@ struct EncoderTests {
     /// Second literal shares a name so would normally send same references without further inserts.
     /// However, the encoder should choose not to reference the existing entry because we'll set the eviction strategy such
     /// that that entry is too old to be referenced.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteralAddingToTableWithReuseNotPossible() {
+    @Test func encodeLiteralAddingToTableWithReuseNotPossible() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             // enough for 3 entries where both entries are 5 (name) + 5 (value) + 32 (overhead), ie 42
             dynamicTableMaxCapacity: 42 * 3,
@@ -155,9 +150,8 @@ struct EncoderTests {
     /// that that entry is too old to be referenced.
     /// Unlike the test above, the encoder also can't duplicate or reinsert due to limited space.
     /// So it is forced to use literals for sending the further headers.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeLiteralAddingToTableWithReuseNotPossibleAndInsertNotPossible() {
+    @Test func encodeLiteralAddingToTableWithReuseNotPossibleAndInsertNotPossible() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             // enough for 1 entry (5+5+32)
             dynamicTableMaxCapacity: 42,
@@ -190,9 +184,8 @@ struct EncoderTests {
     }
 
     /// The field matches exactly a static table entry. We should reference that. No instructions should be sent.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeStaticTable() {
+    @Test func encodeStaticTable() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 1000,
@@ -209,9 +202,8 @@ struct EncoderTests {
 
     /// The field matches exactly a static table entry. We should reference that. No instructions should be sent.
     /// This is despite the dynamic table being enabled, no need to insert when we have it in static table already.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeStaticTableDespiteDynamic() {
+    @Test func encodeStaticTableDespiteDynamic() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 1000,
@@ -228,9 +220,8 @@ struct EncoderTests {
 
     /// The field name matches a static table entry but the value does not. Dynamic table is disabled.
     /// So we should refer to the name from the static table and send the value literally.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeStaticTableNameReference() {
+    @Test func encodeStaticTableNameReference() {
         let encoder = StaticQPACKEncoder()
         let encoded = encoder.encode(headers: [.init(name: .accept, value: "blabla")])
         let expect = FieldSection(
@@ -250,9 +241,8 @@ struct EncoderTests {
     /// The field name matches a static table entry but the value does not. Dynamic table is enabled.
     /// We'll send a insert instruction by referencing the name from the static table.
     /// Then we'll send a reference to the newly inserted entry.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeStaticTableNameReferenceWithDynamic() {
+    @Test func encodeStaticTableNameReferenceWithDynamic() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 1000,
@@ -272,9 +262,8 @@ struct EncoderTests {
 
     /// The field name matches a static table entry but the value does not. Dynamic table is enabled but can't fit the value.
     /// So we should refer to the name from the static table and send the value literally.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeStaticTableNameReferenceDynamicTableFull() {
+    @Test func encodeStaticTableNameReferenceDynamicTableFull() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1,
             dynamicTableInitialCapacity: 1,
@@ -298,9 +287,8 @@ struct EncoderTests {
 
     /// Sending various fields, some of which match static table entries, some which need to be added to dynamic table,
     /// some which already exist in dynamic table, some which are partial matches to static/dynamic table.
-    @Test
     @available(anyAppleOS 27, *)
-    func encodeMultipleInserts() {
+    @Test func encodeMultipleInserts() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 1000,
@@ -349,9 +337,8 @@ struct EncoderTests {
 
     /// Encode some header, then separately encode it again.
     /// The base will be different the second time.
-    @Test
     @available(anyAppleOS 27, *)
-    func multipleEncodes() {
+    @Test func multipleEncodes() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 1000,
@@ -381,9 +368,8 @@ struct EncoderTests {
         #expect(secondEncoded.instructions == [])
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func ackSectionWhichDidntUseTable() {
+    @Test func ackSectionWhichDidntUseTable() {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 100,
             dynamicTableInitialCapacity: 100,
@@ -403,9 +389,8 @@ struct EncoderTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func doubleSectionAck() throws {
+    @Test func doubleSectionAck() throws {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 100,
             dynamicTableInitialCapacity: 100,
@@ -425,9 +410,8 @@ struct EncoderTests {
     }
 
     /// Ensure we cannot remove unevictable entries when another stream is using it.
-    @Test
     @available(anyAppleOS 27, *)
-    func multipleStreamEviction() throws {
+    @Test func multipleStreamEviction() throws {
         let maxCapacity = 100
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: maxCapacity,
@@ -473,9 +457,8 @@ struct EncoderTests {
         #expect(encoded5.prefix.decode(totalInserts: 2, maxCapacity: maxCapacity)?.requiredInsertCount == 2)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func avoidUsingEntriesNearingEviction() throws {
+    @Test func avoidUsingEntriesNearingEviction() throws {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 330,
             dynamicTableInitialCapacity: 330,
@@ -511,9 +494,8 @@ struct EncoderTests {
     }
 
     /// We must not evict entries not yet acknowledged by the decoder.
-    @Test
     @available(anyAppleOS 27, *)
-    func avoidEvictingUnacknowledgedEntries() throws {
+    @Test func avoidEvictingUnacknowledgedEntries() throws {
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 165,
             dynamicTableInitialCapacity: 165,
@@ -556,9 +538,8 @@ struct EncoderTests {
         #expect(encodedAsLiteral2.instructions == .init())
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func initializeDynamicTableSendsInstruction() {
+    @Test func initializeDynamicTableSendsInstruction() {
         _ = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 10,
@@ -566,9 +547,8 @@ struct EncoderTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func initializeDynamicTableWithNoInitialCapacity() {
+    @Test func initializeDynamicTableWithNoInitialCapacity() {
         _ = DynamicQPACKEncoder.makeAssertingInstructions(
             dynamicTableMaxCapacity: 1000,
             dynamicTableInitialCapacity: 0,
@@ -660,9 +640,8 @@ struct EncoderTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func indexingStrategyWithStaticTableMatch() {
+    @Test func indexingStrategyWithStaticTableMatch() {
         // These are the same because there is no dynamic table anyway
         for strategy in [HTTPField.DynamicTableIndexingStrategy.automatic, .prefer, .avoid] {
             self.assertEncodedAsLiteralWithNameReferenceNoDynamic(
@@ -699,9 +678,8 @@ struct EncoderTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func maxBlockedStreams() throws {
+    @Test func maxBlockedStreams() throws {
         // Make the dynamic table really big, so that the only limitation is maxBlocked, not the size of the table
         let dynamicTableSize = 1_000_000_000
         var encoder = DynamicQPACKEncoder.makeAssertingInstructions(

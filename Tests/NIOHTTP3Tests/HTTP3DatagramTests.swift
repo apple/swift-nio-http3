@@ -20,15 +20,13 @@ import Testing
 @testable import NIOHTTP3
 
 struct HTTP3DatagramTests {
-    @Test
     @available(anyAppleOS 27, *)
-    func typeFitsInExistentialInlineStorage() {
+    @Test func typeFitsInExistentialInlineStorage() {
         #expect(MemoryLayout<HTTP3Datagram>.size <= 24)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testCoWBehavior() {
+    @Test func testCoWBehavior() {
         let datagram1 = HTTP3Datagram(streamID: 1, payload: ByteBuffer(string: "Hello"))
         var datagram2 = datagram1
         datagram2.streamID = 2
@@ -44,9 +42,8 @@ struct HTTP3DatagramTests {
         #expect(datagram1.payload == ByteBuffer(string: "Hello"))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func datagramFromEmptyBuffer() throws {
+    @Test func datagramFromEmptyBuffer() throws {
         var buffer = ByteBuffer()
 
         let error = try #require(throws: HTTP3Error.self) {
@@ -57,9 +54,8 @@ struct HTTP3DatagramTests {
         #expect(error.h3ErrorCode == .datagramError)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func datagramWithInvalidQuarterStreamID() throws {
+    @Test func datagramWithInvalidQuarterStreamID() throws {
         let invalidQuarterStreamID: UInt64 = 1 << 60
         var buffer = ByteBuffer()
         let bytesWritten = buffer.writeEncodedInteger(invalidQuarterStreamID, strategy: .quic)
@@ -87,9 +83,8 @@ struct HTTP3DatagramTests {
         #expect(String(buffer: datagram.payload) == "Hello, Datagram!")
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func writeEmptyDatagramToBuffer() throws {
+    @Test func writeEmptyDatagramToBuffer() throws {
         var buffer = ByteBuffer()
         let bytesWritten = buffer.writeDatagram(HTTP3Datagram(streamID: 40, payload: ByteBuffer()))
         #expect(bytesWritten == 1)  // 40 can be encoded in a single byte.
@@ -99,9 +94,8 @@ struct HTTP3DatagramTests {
         #expect(decoded.payload == ByteBuffer())
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func writeNonEmptyDatagramToBuffer() throws {
+    @Test func writeNonEmptyDatagramToBuffer() throws {
         let payload = ByteBuffer(repeating: 1, count: 1024)
 
         var buffer = ByteBuffer()

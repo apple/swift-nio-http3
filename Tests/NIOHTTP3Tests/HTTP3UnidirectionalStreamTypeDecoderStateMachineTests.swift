@@ -20,9 +20,8 @@ import struct NIOCore.ByteBuffer
 @testable import NIOHTTP3
 
 struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
-    @Test
     @available(anyAppleOS 27, *)
-    func getsStreamType() {
+    @Test func getsStreamType() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
         var buffer = ByteBuffer()
@@ -36,9 +35,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
         #expect(stateMachine.unbufferElement() == .done)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func getsMultiByteStreamType() {
+    @Test func getsMultiByteStreamType() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
         var buffer = ByteBuffer()
@@ -61,9 +59,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
         #expect(stateMachine.unbufferElement() == .done)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func queuesBytesAfterStreamType() {
+    @Test func queuesBytesAfterStreamType() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
         var buffer = ByteBuffer()
@@ -82,9 +79,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
         #expect(stateMachine.unbufferElement() == .done)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func queuesBytesAfterStreamTypeMultiByte() {
+    @Test func queuesBytesAfterStreamTypeMultiByte() {
         // This test specifically is for the scenario where it takes multiple bytes to get the stream type, and each of those bytes comes
         // separately and thus needs to be buffered, but the final incoming bytebuffer, the one which contains the last byte needed for the
         // stream type, also contains extra bytes. We need to make sure those extra bytes make it to the next handler
@@ -108,9 +104,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
         #expect(stateMachine.unbufferElement() == .done)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func bufferNewBytesWhilstUnbuffering() {
+    @Test func bufferNewBytesWhilstUnbuffering() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
         var firstBuffer = ByteBuffer()
@@ -143,9 +138,8 @@ struct HTTP3UnidirectionalStreamTypeDecoderStateMachineTests {
         #expect(stateMachine.unbufferElement() == .done)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func dropsBytesAfterAbort() {
+    @Test func dropsBytesAfterAbort() {
         var stateMachine = HTTP3UnidirectionalStreamTypeDecoderStateMachine()
 
         var buffer = ByteBuffer()

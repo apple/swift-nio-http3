@@ -90,9 +90,8 @@ struct HTTPMessageParsingTests {
         #expect(action3?.returnPart == .end([.init("test")!: "hello"]))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testProcessInvalidHeaders() throws {
+    @Test func testProcessInvalidHeaders() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         // Headers
         let action1 = machine.processFrame(frame: .headers([]))  // Invalid because missing required headers
@@ -111,9 +110,8 @@ struct HTTPMessageParsingTests {
         #expect(action2 == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testProcessInvalidTrailers() throws {
+    @Test func testProcessInvalidTrailers() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         // Valid headers
         let action1 = machine.processFrame(frame: self.validRequestHead)
@@ -138,9 +136,8 @@ struct HTTPMessageParsingTests {
         #expect(action3 == nil)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testEmitsEndOnClose() {
+    @Test func testEmitsEndOnClose() {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
@@ -154,9 +151,8 @@ struct HTTPMessageParsingTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testNoActionOnCloseAfterTrailers() throws {
+    @Test func testNoActionOnCloseAfterTrailers() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPRequestPart>()
         let action1 = machine.processFrame(frame: self.validRequestHead)
         #expect(
@@ -174,9 +170,8 @@ struct HTTPMessageParsingTests {
         HTTP3Frame.headers([.init(name: .status, value: "103")])
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testSingleInterimThenFinal() throws {
+    @Test func testSingleInterimThenFinal() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
 
         let action1 = machine.processFrame(frame: self.informationalEarlyHintsHead)
@@ -192,9 +187,8 @@ struct HTTPMessageParsingTests {
         #expect(action4?.returnPart == .end([.init("test")!: "hello"]))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testMultipleInterimThenFinal() throws {
+    @Test func testMultipleInterimThenFinal() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
 
         let action1 = machine.processFrame(frame: self.informationalEarlyHintsHead)
@@ -213,9 +207,8 @@ struct HTTPMessageParsingTests {
         #expect(action5?.returnPart == .end([.init("test")!: "hello"]))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testInvalidInterimHeaders() throws {
+    @Test func testInvalidInterimHeaders() throws {
         var machine = HTTPMessageParsingStateMachine<HTTPResponsePart>()
 
         // 1xx response with a forbidden transfer-encoding field.
@@ -241,9 +234,8 @@ struct HTTPMessageParsingTests {
 
     // MARK: General request and response header validation
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testProcessPseudoNotFirst() {
+    @Test func testProcessPseudoNotFirst() {
         self.assertRequestHeadersNotValid(
             fields: [
                 .init(name: .method, value: "GET"),
@@ -265,9 +257,8 @@ struct HTTPMessageParsingTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testProcessDuplicatePseudoHeaders() {
+    @Test func testProcessDuplicatePseudoHeaders() {
         self.assertRequestHeadersNotValid(
             fields: [
                 .init(name: .method, value: "GET"),
@@ -287,9 +278,8 @@ struct HTTPMessageParsingTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testTeHeader() {
+    @Test func testTeHeader() {
         /// The only exception to this is the TE header field, which MAY be present in an HTTP/3 request header; when it is, it MUST NOT contain any value other than "trailers".
         self.assertRequestHeadersValid(
             fields: [
@@ -320,9 +310,8 @@ struct HTTPMessageParsingTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testTransferEncoding() {
+    @Test func testTransferEncoding() {
         self.assertRequestHeadersNotValid(
             fields: [
                 .init(name: .method, value: "GET"),
@@ -342,9 +331,8 @@ struct HTTPMessageParsingTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testUnknownHeaders() {
+    @Test func testUnknownHeaders() {
         self.assertRequestHeadersValid(fields: [
             .init(name: .method, value: "GET"),
             .init(name: .scheme, value: "https"),
@@ -377,9 +365,8 @@ struct HTTPMessageParsingTests {
 
     // MARK: Request-specific header validation
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testRequestWithResponsePseudo() {
+    @Test func testRequestWithResponsePseudo() {
         self.assertRequestHeadersNotValid(
             fields: [
                 .init(name: .method, value: "GET"),
@@ -392,9 +379,8 @@ struct HTTPMessageParsingTests {
         )
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testHTTPMustHaveAuthorityHost() {
+    @Test func testHTTPMustHaveAuthorityHost() {
         // Missing authority and host
         self.assertRequestHeadersNotValid(
             fields: [
@@ -499,9 +485,8 @@ struct HTTPMessageParsingTests {
         ])
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testConnect() {
+    @Test func testConnect() {
         self.assertRequestHeadersNotValid(
             fields: [
                 .init(name: .method, value: "CONNECT"),
@@ -626,9 +611,8 @@ struct HTTPMessageParsingTests {
 
     // MARK: Response-specific header validation
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testResponseWithRequestPseudo() {
+    @Test func testResponseWithRequestPseudo() {
         self.assertResponseHeadersNotValid(
             fields: [
                 .init(name: .path, value: "/"),  // Response shouldn't have path

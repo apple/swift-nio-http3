@@ -24,9 +24,8 @@ struct HTTP3OutboundControlStreamHandlerTests {
         HTTP3Settings(qpackMaximumTableCapacity: 100)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func writesSettings_handlerAddedThenActive() throws {
+    @Test func writesSettings_handlerAddedThenActive() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP3OutboundControlStreamHandler(settings: self.testSettings)
         let dataPromise = loop.makePromise(of: [HTTP3Frame].self)
@@ -38,9 +37,8 @@ struct HTTP3OutboundControlStreamHandlerTests {
         #expect(writtenFrames == [.settings(self.testSettings)])
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func writesSettings_activeThenHandlerAdded() throws {
+    @Test func writesSettings_activeThenHandlerAdded() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP3OutboundControlStreamHandler(settings: self.testSettings)
         let dataPromise = loop.makePromise(of: [HTTP3Frame].self)
@@ -54,9 +52,8 @@ struct HTTP3OutboundControlStreamHandlerTests {
         #expect(writtenFrames == [.settings(self.testSettings)])
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func writeGoawayBeforeActiveOrAdded() throws {
+    @Test func writeGoawayBeforeActiveOrAdded() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP3OutboundControlStreamHandler(settings: self.testSettings)
 
@@ -71,9 +68,8 @@ struct HTTP3OutboundControlStreamHandlerTests {
         #expect(writtenFrames == [.settings(self.testSettings), .goaway(10)])
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func writeGoawayAfterActiveAndAdded() throws {
+    @Test func writeGoawayAfterActiveAndAdded() throws {
         let loop = EmbeddedEventLoop()
         let handler = HTTP3OutboundControlStreamHandler(settings: self.testSettings)
 

@@ -48,9 +48,8 @@ struct HTTP3ToHTTPCodecTests {
         ])
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testClientCodecWrite() throws {
+    @Test func testClientCodecWrite() throws {
         let handler = HTTP3ToHTTPClientCodec()
         let eventLoop = EmbeddedEventLoop()
         let framesPromise = eventLoop.makePromise(of: [WriteOrClose<HTTP3Frame>].self)
@@ -95,9 +94,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(events[4] == .close)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testClientCodecRead() throws {
+    @Test func testClientCodecRead() throws {
         let handler = HTTP3ToHTTPClientCodec()
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
@@ -117,9 +115,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[2] == .body(.init(bytes: [1, 2, 3])))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testServerCodecWrite() throws {
+    @Test func testServerCodecWrite() throws {
         let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
         let framesPromise = eventLoop.makePromise(of: [WriteOrClose<HTTP3Frame>].self)
@@ -158,9 +155,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(events[4] == .close)
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func testServerCodecRead() throws {
+    @Test func testServerCodecRead() throws {
         let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
@@ -180,9 +176,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[2] == .body(.init(bytes: [1, 2, 3])))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func serverCodecGeneratesEndPartForCompleteRequestUponInputClosed() throws {
+    @Test func serverCodecGeneratesEndPartForCompleteRequestUponInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
         let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
@@ -201,9 +196,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[1] == .end(nil))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func clientCodecGeneratesEndPartForCompleteResponseUponInputClosed() throws {
+    @Test func clientCodecGeneratesEndPartForCompleteResponseUponInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
         let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
@@ -222,9 +216,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[1] == .end(nil))
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func serverCodecDoesNotFireChannelReadWhenNoRequest() throws {
+    @Test func serverCodecDoesNotFireChannelReadWhenNoRequest() throws {
         let eventLoop = EmbeddedEventLoop()
         let promise = eventLoop.makePromise(of: [Void].self)
         let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
