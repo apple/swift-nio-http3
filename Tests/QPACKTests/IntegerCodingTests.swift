@@ -129,8 +129,8 @@ struct IntegerCodingTests {
         #expect(data == [255, 128, 128, 128, 128, 128, 128, 128, 128, 128, 1])
     }
 
-    @Test(arguments: 1...8)
-    func testEncodedLength(prefix: Int) {
+    @available(anyAppleOS 27, *)
+    @Test(arguments: 1...8) func testEncodedLength(prefix: Int) {
         let values: [UInt64] = [0, 1, 30, 31, 32, 126, 127, 128, 254, 255, 256, 1337, 1 << 14, 1 << 32, .max - 1, .max]
         for value in values {
             let length = QPACKEncodedLength.prefixedInteger(value, prefix: prefix)
