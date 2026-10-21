@@ -19,7 +19,9 @@ extension QPACKEncodedLength {
     @available(anyAppleOS 27, *)
     static func huffman(of bytes: Span<UInt8>) -> Int {
         var numberOfBits = 0
-        // TODO: Move to `for byte in bytes` once we can require an anyAppleOS( 27.0, *)
+        // Iterating by index on purpose: on Swift 6.4, `for ch in span` leaves an extra outer loop and a
+        // trap around this one, which makes the equivalent encode loops slower.
+        // TODO: Revisit `for byte in bytes` once Swift 6.5 has landed.
         for i in bytes.indices {
             numberOfBits &+= HuffmanEncoderTable[bytes[i]].nbits
         }
@@ -48,7 +50,9 @@ extension OutputRawSpan {
             // bits always fit into 64 bits. Bits above them are left over from earlier symbols and are never written.
             var pending: UInt64 = 0
             var pendingBitCount = 0
-            // TODO: Move to `for byte in bytes` once we can require an anyAppleOS( 27.0, *)
+            // Iterating by index on purpose: on Swift 6.4, `for ch in span` leaves an extra outer loop and a
+            // trap around this one, which makes the equivalent encode loops slower.
+            // TODO: Revisit `for byte in bytes` once Swift 6.5 has landed.
             for i in bytes.indices {
                 let entry = HuffmanEncoderTable[bytes[i]]
                 pending = (pending &<< entry.nbits) | UInt64(entry.bits)
@@ -167,7 +171,9 @@ extension ByteBuffer {
             var state: UInt8 = 0
             var acceptable = false
 
-            // TODO: Move to `for ch in span` once we can require an anyAppleOS( 27.0, *)
+            // Iterating by index on purpose: on Swift 6.4, `for ch in span` leaves an extra outer loop and a
+            // trap around this one, which makes the equivalent encode loops slower.
+            // TODO: Revisit `for ch in span` once Swift 6.5 has landed.
             for i in span.indices {
                 let ch = span[i]
                 var t = HuffmanDecoderTable[state: state, nybble: ch >> 4]
