@@ -90,6 +90,14 @@ public enum HTTP3MessageDecoding {
         let authority = request.authority
         let host = request.headerFields[.host]
 
+        // The :protocol pseudo-header is only allowed on CONNECT requests.
+        if request.extendedConnectProtocol != nil {
+            throw Self.invalidHeadersError(
+                message: ":protocol pseudo-header is only allowed on CONNECT requests",
+                location: .here()
+            )
+        }
+
         // All HTTP/3 requests MUST include exactly one value for the :method, :scheme, and :path pseudo-header fields,
         // unless the request is a CONNECT request
         guard let scheme else {
@@ -152,7 +160,7 @@ public enum HTTP3MessageDecoding {
             guard extendedConnectSupported else {
                 throw HTTP3Error(
                     code: .extendedConnectNotEnabled,
-                    message: "Extended CONNECT request received, but SETTINGS_ENABLE_CONNECT_PROTOCOL was not sent",
+                    message: "Received an Extended CONNECT request, but Extended CONNECT is not supported",
                     cause: nil,
                     errorCode: .messageError,
                     location: .here()

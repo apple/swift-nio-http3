@@ -220,9 +220,24 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
 
         switch part {
         case .head(let request):
-            // A client MUST NOT send an Extended CONNECT request unless it has received
-            // SETTINGS_ENABLE_CONNECT_PROTOCOL with value 1 from the server (RFC 9220 § 3).
-            if request.method == .connect, request.extendedConnectProtocol != nil {
+            if request.extendedConnectProtocol != nil {
+                // The :protocol pseudo-header is only allowed on CONNECT requests.
+                guard request.method == .connect else {
+                    let error = HTTP3Error(
+                        code: .malformedMessage,
+                        message: ":protocol pseudo-header is only allowed on CONNECT requests",
+                        cause: nil,
+                        errorCode: nil,
+                        location: .here()
+                    )
+                    context.fireErrorCaught(error)
+                    promise?.fail(error)
+
+                    return
+                }
+
+                // A client MUST NOT send an Extended CONNECT request unless it has received
+                // SETTINGS_ENABLE_CONNECT_PROTOCOL with value 1 from the server (RFC 9220 § 3).
                 guard self.extendedConnectSupported else {
                     let error = HTTP3Error(
                         code: .extendedConnectNotEnabled,
@@ -281,7 +296,6 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     public func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         if let settings = event as? ReceivedSettings {
             self.extendedConnectSupported = settings.extendedConnectSupported
-            context.fireUserInboundEventTriggered(event)
             return
         }
 

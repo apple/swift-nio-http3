@@ -594,6 +594,22 @@ struct HTTPMessageParsingTests {
         #expect(request.extendedConnectProtocol == "websocket")
     }
 
+    @available(anyAppleOS 27, *)
+    @Test(arguments: ["GET", "POST"], [true, false])
+    func protocolPseudoHeaderOnNonConnectRequestIsMalformed(method: String, extendedConnectSupported: Bool) {
+        self.assertRequestHeadersNotValid(
+            fields: [
+                .init(name: .method, value: method),
+                .init(name: .protocol, value: "websocket"),
+                .init(name: .scheme, value: "https"),
+                .init(name: .path, value: "/"),
+                .init(name: .authority, value: "example.com:443"),
+            ],
+            extendedConnectSupported: extendedConnectSupported,
+            expectedError: ":protocol pseudo-header is only allowed on CONNECT requests"
+        )
+    }
+
     @Test(arguments: [
         "example.com:443",
         "127.0.0.1:8000",
