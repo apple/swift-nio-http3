@@ -23,7 +23,7 @@ struct FieldLineCodingTests {
         var buffer = ByteBuffer()
         let maxCapacity = 100
         let prefix = FieldSectionPrefix(requiredInsertCount: 40, base: 45)
-        buffer.appendFieldSectionPrefix(prefix.encode(maxCapacity: maxCapacity))
+        buffer.writeFieldSectionPrefixAndValidateLength(prefix.encode(maxCapacity: maxCapacity))
 
         let bytes = buffer.getBytes(at: 0, length: buffer.readableBytes)
         #expect(
@@ -49,7 +49,7 @@ struct FieldLineCodingTests {
         var buffer = ByteBuffer()
         let maxCapacity = 100
         let prefix = FieldSectionPrefix(requiredInsertCount: 40, base: 35)
-        buffer.appendFieldSectionPrefix(prefix.encode(maxCapacity: maxCapacity))
+        buffer.writeFieldSectionPrefixAndValidateLength(prefix.encode(maxCapacity: maxCapacity))
 
         let bytes = buffer.getBytes(at: 0, length: buffer.readableBytes)
         #expect(
@@ -75,7 +75,7 @@ struct FieldLineCodingTests {
         var buffer = ByteBuffer()
         let maxCapacity = 100
         let prefix = FieldSectionPrefix(requiredInsertCount: 40, base: 40)
-        buffer.appendFieldSectionPrefix(prefix.encode(maxCapacity: maxCapacity))
+        buffer.writeFieldSectionPrefixAndValidateLength(prefix.encode(maxCapacity: maxCapacity))
 
         let bytes = buffer.getBytes(at: 0, length: buffer.readableBytes)
         #expect(
@@ -104,7 +104,7 @@ struct FieldLineCodingTests {
         let maxEntries = 3  // floor(MaxCapacity / 32)
         let requiredInsertCount = 5
         let encodedRequiredInsertCount = (requiredInsertCount % (2 * maxEntries)) + 1
-        buffer.appendFieldSectionPrefix(
+        buffer.writeFieldSectionPrefixAndValidateLength(
             .init(encodedRequiredInsertCount: encodedRequiredInsertCount, deltaBase: 6, signBit: true)
         )
 
@@ -288,7 +288,7 @@ struct FieldLineCodingTests {
     @available(anyAppleOS 27, *)
     @Test func index() throws {
         var buffer = ByteBuffer()
-        buffer.appendFieldLine(.indexed(.staticTable, index: 6), preferHuffmanEncoding: false)
+        buffer.writeFieldLineAndValidateLengthAndBounds(.indexed(.staticTable, index: 6), preferHuffmanEncoding: false)
 
         let bytes = buffer.getBytes(at: 0, length: buffer.readableBytes)
         #expect(
@@ -302,7 +302,7 @@ struct FieldLineCodingTests {
     @available(anyAppleOS 27, *)
     @Test func indexWithPostBase() throws {
         var buffer = ByteBuffer()
-        buffer.appendFieldLine(.indexedWithPostBase(index: 6), preferHuffmanEncoding: false)
+        buffer.writeFieldLineAndValidateLengthAndBounds(.indexedWithPostBase(index: 6), preferHuffmanEncoding: false)
 
         let bytes = buffer.getBytes(at: 0, length: buffer.readableBytes)
         #expect(
@@ -316,7 +316,7 @@ struct FieldLineCodingTests {
     @available(anyAppleOS 27, *)
     @Test func literalWithNameReference() throws {
         var buffer = ByteBuffer()
-        buffer.appendFieldLine(
+        buffer.writeFieldLineAndValidateLengthAndBounds(
             .literalWithNameReference(
                 requireLiteralRepresentation: false,
                 table: .dynamicTable,
@@ -351,7 +351,7 @@ struct FieldLineCodingTests {
     @available(anyAppleOS 27, *)
     @Test func literalWithNameReferencePostBase() throws {
         var buffer = ByteBuffer()
-        buffer.appendFieldLine(
+        buffer.writeFieldLineAndValidateLengthAndBounds(
             .literalWithNameReferenceWithPostBase(requireLiteralRepresentation: false, index: 3, value: "hello"),
             preferHuffmanEncoding: false
         )
@@ -376,7 +376,7 @@ struct FieldLineCodingTests {
     @available(anyAppleOS 27, *)
     @Test func literal() throws {
         var buffer = ByteBuffer()
-        buffer.appendFieldLine(
+        buffer.writeFieldLineAndValidateLengthAndBounds(
             .literal(requireLiteralRepresentation: true, name: "Name", value: "Value"),
             preferHuffmanEncoding: false
         )
@@ -399,7 +399,7 @@ struct FieldLineCodingTests {
     @available(anyAppleOS 27, *)
     @Test func literalWithHuffman() throws {
         var buffer = ByteBuffer()
-        buffer.appendFieldLine(
+        buffer.writeFieldLineAndValidateLengthAndBounds(
             .literal(requireLiteralRepresentation: false, name: "custom-key", value: "custom-value"),
             preferHuffmanEncoding: true
         )
@@ -422,7 +422,7 @@ extension ByteBuffer {
     /// Appends `fieldLine` through an `OutputRawSpan`, and checks that it takes no more room than
     /// ``QPACKEncodedLength/maxFieldLine(_:)`` promises.
     @available(anyAppleOS 27, *)
-    fileprivate mutating func appendFieldLine(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) {
+    fileprivate mutating func writeFieldLineAndValidateLengthAndBounds(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) {
         let bound = QPACKEncodedLength.maxFieldLine(fieldLine)
         let start = self.writerIndex
         self.writeWithOutputRawSpan(minimumWritableBytes: bound) {
@@ -434,7 +434,7 @@ extension ByteBuffer {
     /// Appends `prefix` through an `OutputRawSpan`, and checks that it takes exactly as much room as
     /// ``QPACKEncodedLength/fieldSectionPrefix(_:)`` says.
     @available(anyAppleOS 27, *)
-    fileprivate mutating func appendFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) {
+    fileprivate mutating func writeFieldSectionPrefixAndValidateLength(_ prefix: EncodedFieldSectionPrefix) {
         let start = self.writerIndex
         self.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.fieldSectionPrefix(prefix)) {
             $0.appendFieldSectionPrefix(prefix)
