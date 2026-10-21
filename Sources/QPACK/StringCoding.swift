@@ -95,7 +95,7 @@ extension ByteBuffer {
         // Using an enum to capture whether or not to use huffman AND the byte length means we avoid calculating the byte length again later
         let encoding: Encoding
         if preferHuffmanEncoding {
-            let huffmanEncodedByteLength = Self.huffmanEncodedByteLength(of: utf8)
+            let huffmanEncodedByteLength = string.withContiguousUTF8 { QPACKEncodedLength.huffman(of: $0) }
             let unencodedByteLength = utf8.count
             // Huffman coding is usually, but not always, more space-efficient. It is optimised for regular ASCII range.
             if huffmanEncodedByteLength < unencodedByteLength {
@@ -117,7 +117,9 @@ extension ByteBuffer {
                 prefix: prefix - 1,
                 prefixBits: huffmanMask | prefixBits
             )
-            self.writeHuffmanEncoded(bytes: utf8, encodedByteLength: encodedByteLength)
+            self.writeWithOutputRawSpan(minimumWritableBytes: encodedByteLength) { output in
+                string.withContiguousUTF8 { output.appendHuffmanEncoded($0, encodedByteLength: encodedByteLength) }
+            }
         case .raw:
             // One bit is used for the Huffman flag (0)
             // So the prefix is reduced by one
@@ -125,5 +127,20 @@ extension ByteBuffer {
             self.writeBytes(utf8)
         }
         return self.writerIndex &- start
+    }
+}
+
+extension String {
+    /// Calls `body` with the UTF-8 bytes of this string.
+    ///
+    /// Strings which don't store contiguous UTF-8, such as a lazily bridged `NSString`, are copied into contiguous
+    /// storage first.
+    @available(anyAppleOS 27, *)
+    func withContiguousUTF8<Result>(_ body: (Span<UInt8>) -> Result) -> Result {
+        if let result = self.utf8.withContiguousStorageIfAvailable({ body($0.span) }) {
+            return result
+        }
+        var copy = self
+        return copy.withUTF8 { body($0.span) }
     }
 }
