@@ -148,6 +148,27 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @available(anyAppleOS 27, *)
+    @Test(arguments: [true, false])
+    func clientCodecRefusesProtocolPseudoHeaderOnNonConnectRequest(extendedConnectSupported: Bool) throws {
+        let channel = EmbeddedChannel(
+            handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: extendedConnectSupported)
+        )
+
+        var request = HTTPRequest(method: .get, scheme: "https", authority: "test", path: "/")
+        request.extendedConnectProtocol = "websocket"
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeOutbound(HTTPRequestPart.head(request))
+        }
+
+        // A :protocol pseudo-header on a non-CONNECT request is invalid, whether or not the server supports Extended
+        // CONNECT.
+        #expect(error.code == .malformedMessage)
+
+        // Nothing should be written.
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
     @Test func clientCodecSendsExtendedConnectRequestWhenSettingEnabled() throws {
         let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
 
@@ -301,6 +322,29 @@ struct HTTP3ToHTTPCodecTests {
         expectedRequest.extendedConnectProtocol = "websocket"
         #expect(try channel.readInbound(as: HTTPRequestPart.self) == .head(expectedRequest))
         #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [true, false])
+    func serverCodecRejectsProtocolPseudoHeaderOnNonConnectRequest(extendedConnectSupported: Bool) throws {
+        let channel = EmbeddedChannel(
+            handler: HTTP3ToHTTPServerCodec(extendedConnectSupported: extendedConnectSupported)
+        )
+
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeInbound(
+                HTTP3Frame.headers([
+                    .init(name: .method, value: "GET"),
+                    .init(name: .protocol, value: "websocket"),
+                    .init(name: .scheme, value: "https"),
+                    .init(name: .authority, value: "test"),
+                    .init(name: .path, value: "/"),
+                ])
+            )
+        }
+        #expect(error.code == .malformedMessage)
+        #expect(error.h3ErrorCode == .messageError)
+        #expect(try channel.readInbound(as: HTTPRequestPart.self) == nil)
     }
 
     @available(anyAppleOS 27, *)
