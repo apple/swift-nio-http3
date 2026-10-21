@@ -296,7 +296,6 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     public func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         if let settings = event as? ReceivedSettings {
             self.extendedConnectSupported = settings.extendedConnectSupported
-            context.fireUserInboundEventTriggered(event)
             return
         }
 

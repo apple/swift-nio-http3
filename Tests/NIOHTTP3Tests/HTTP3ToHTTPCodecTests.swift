@@ -216,7 +216,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @available(anyAppleOS 27, *)
-    @Test func clientCodecForwardsReceivedSettings() throws {
+    @Test func clientCodecDoesNotForwardReceivedSettings() throws {
         let events = NIOLockedValueBox<[ReceivedSettings]>([])
         let recorder = DebugInboundEventsHandler { event, _ in
             if case .userInboundEventTriggered(let event) = event, let settings = event as? ReceivedSettings {
@@ -225,9 +225,10 @@ struct HTTP3ToHTTPCodecTests {
         }
         let channel = EmbeddedChannel(handlers: [HTTP3ToHTTPClientCodec(), recorder])
 
-        let settings = ReceivedSettings(datagramsSupported: false, extendedConnectSupported: true)
-        channel.pipeline.fireUserInboundEventTriggered(settings)
-        #expect(events.withLockedValue { $0 } == [settings])
+        channel.pipeline.fireUserInboundEventTriggered(
+            ReceivedSettings(datagramsSupported: false, extendedConnectSupported: true)
+        )
+        #expect(events.withLockedValue { $0 } == [])
     }
 
     @available(anyAppleOS 27, *)
