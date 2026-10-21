@@ -25,7 +25,7 @@ extension QPACKEncodedLength {
         for i in bytes.indices {
             numberOfBits &+= HuffmanEncoderTable[bytes[i]].nbits
         }
-        // round up to nearest multiple of 8 for EOS prefix
+        // round up to a whole number of bytes to account for EOS prefix
         return (numberOfBits &+ 7) / 8
     }
 }
