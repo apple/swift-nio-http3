@@ -422,7 +422,10 @@ extension ByteBuffer {
     /// Appends `fieldLine` through an `OutputRawSpan`, and checks that it takes no more room than
     /// ``QPACKEncodedLength/maxFieldLine(_:)`` promises.
     @available(anyAppleOS 27, *)
-    fileprivate mutating func writeFieldLineAndValidateLengthAndBounds(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) {
+    fileprivate mutating func writeFieldLineAndValidateLengthAndBounds(
+        _ fieldLine: FieldLine,
+        preferHuffmanEncoding: Bool
+    ) {
         let bound = QPACKEncodedLength.maxFieldLine(fieldLine)
         let start = self.writerIndex
         self.writeWithOutputRawSpan(minimumWritableBytes: bound) {
