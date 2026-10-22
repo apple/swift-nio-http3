@@ -21,14 +21,15 @@ struct StringCodingTests {
     private var scratchBuffer = ByteBufferAllocator().buffer(capacity: 11)
 
     @available(anyAppleOS 27, *)
-    private mutating func encodeStringToArray(_ value: String, preferHuffmanEncoding: Bool, prefix: Int) -> [UInt8] {
-        self.scratchBuffer.clear()
-        let len = self.scratchBuffer.writeQPACKEncodedString(
-            value,
-            preferHuffmanEncoding: preferHuffmanEncoding,
-            prefix: prefix
-        )
-        return Array(self.scratchBuffer.viewBytes(at: 0, length: len)!)
+    private func encodeStringToArray(_ value: String, preferHuffmanEncoding: Bool, prefix: Int) -> [UInt8] {
+        let bound = QPACKEncodedLength.maxString(byteCount: value.utf8.count, prefix: prefix)
+        let buffer = ByteBuffer(initialCapacity: bound) { output in
+            value.withContiguousUTF8 {
+                output.appendQPACKEncodedString($0, preferHuffmanEncoding: preferHuffmanEncoding, prefix: prefix)
+            }
+        }
+        #expect(buffer.readableBytes <= bound)
+        return Array(buffer.readableBytesView)
     }
 
     @available(anyAppleOS 27, *)
