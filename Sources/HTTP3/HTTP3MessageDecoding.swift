@@ -55,7 +55,7 @@ public enum HTTP3MessageDecoding {
 
     /// Builds a request from the fields of a request's HEADERS frame.
     @_spi(PackageInternal)
-    public static func request(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequest {
+    public static func request(fields: [HTTPField], extendedConnectSupported: Bool) throws(HTTP3Error) -> HTTPRequest {
         let request: HTTPRequest
         do {
             request = try HTTPRequest(parsed: fields)
@@ -74,7 +74,7 @@ public enum HTTP3MessageDecoding {
             throw Self.invalidHeadersError(message: "transfer-encoding field must not be present", location: .here())
         }
         if request.method == .connect {
-            try Self.validateConnectRequest(request)
+            try Self.validateConnectRequest(request, extendedConnectSupported: extendedConnectSupported)
         } else {
             try Self.validateNonConnectRequest(request)
         }
@@ -89,6 +89,14 @@ public enum HTTP3MessageDecoding {
         let path = request.path
         let authority = request.authority
         let host = request.headerFields[.host]
+
+        // The :protocol pseudo-header is only allowed on CONNECT requests.
+        if request.extendedConnectProtocol != nil {
+            throw Self.invalidHeadersError(
+                message: ":protocol pseudo-header is only allowed on CONNECT requests",
+                location: .here()
+            )
+        }
 
         // All HTTP/3 requests MUST include exactly one value for the :method, :scheme, and :path pseudo-header fields,
         // unless the request is a CONNECT request
@@ -128,7 +136,10 @@ public enum HTTP3MessageDecoding {
         }
     }
 
-    private static func validateConnectRequest(_ request: HTTPRequest) throws(HTTP3Error) {
+    private static func validateConnectRequest(
+        _ request: HTTPRequest,
+        extendedConnectSupported: Bool
+    ) throws(HTTP3Error) {
         precondition(request.method == .connect)
 
         let scheme = request.scheme
@@ -140,6 +151,18 @@ public enum HTTP3MessageDecoding {
             guard scheme != nil, path != nil else {
                 throw Self.invalidHeadersError(
                     message: "CONNECT request with a :protocol pseudo-header must contain path and scheme",
+                    location: .here()
+                )
+            }
+
+            // A client MUST NOT send an Extended CONNECT request unless we sent SETTINGS_ENABLE_CONNECT_PROTOCOL
+            // with a value of 1 (RFC 8441 § 3).
+            guard extendedConnectSupported else {
+                throw HTTP3Error(
+                    code: .extendedConnectNotEnabled,
+                    message: "Received an Extended CONNECT request, but Extended CONNECT is not supported",
+                    cause: nil,
+                    errorCode: .messageError,
                     location: .here()
                 )
             }

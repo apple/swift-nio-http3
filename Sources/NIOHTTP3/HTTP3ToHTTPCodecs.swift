@@ -17,48 +17,62 @@ import HTTPTypes
 public import NIOCore
 public import NIOHTTPTypes
 
+/// Processes and validates the contents of HTTP/3 frames into the parts of an HTTP message.
 @available(anyAppleOS 27, *)
-protocol HTTPMessagePart {
-    static func head(fields: [HTTPField]) throws(HTTP3Error) -> Self
-    static func body(buffer: ByteBuffer) -> Self
-    static func end(trailers: [HTTPField]) throws(HTTP3Error) -> Self
-    static func end() -> Self
+protocol HTTPMessagePartProcessor {
+    associatedtype Part
+
+    func head(fields: [HTTPField]) throws(HTTP3Error) -> Part
+    func body(buffer: ByteBuffer) -> Part
+    func end(trailers: [HTTPField]) throws(HTTP3Error) -> Part
+    func end() -> Part
 }
 
+/// Processes and validates the parts of a request, as received by a server.
 @available(anyAppleOS 27, *)
-extension HTTPRequestPart: HTTPMessagePart {
-    static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
-        .head(try HTTP3MessageDecoding.request(fields: fields))
+struct HTTPRequestPartProcessor: HTTPMessagePartProcessor {
+    /// Whether we can accept Extended CONNECT requests, i.e. if we sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1.
+    let extendedConnectSupported: Bool
+
+    init(extendedConnectSupported: Bool = false) {
+        self.extendedConnectSupported = extendedConnectSupported
     }
 
-    static func body(buffer: ByteBuffer) -> HTTPRequestPart {
+    func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
+        .head(
+            try HTTP3MessageDecoding.request(fields: fields, extendedConnectSupported: self.extendedConnectSupported)
+        )
+    }
+
+    func body(buffer: ByteBuffer) -> HTTPRequestPart {
         .body(buffer)
     }
 
-    static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
+    func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPRequestPart {
         .end(try HTTP3MessageDecoding.trailers(fields: trailers))
     }
 
-    static func end() -> HTTPRequestPart {
+    func end() -> HTTPRequestPart {
         .end(nil)
     }
 }
 
+/// Processes and validates the parts of a response, as received by a server.
 @available(anyAppleOS 27, *)
-extension HTTPResponsePart: HTTPMessagePart {
-    static func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
+struct HTTPResponsePartProcessor: HTTPMessagePartProcessor {
+    func head(fields: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         .head(try HTTP3MessageDecoding.response(fields: fields))
     }
 
-    static func body(buffer: ByteBuffer) -> HTTPResponsePart {
+    func body(buffer: ByteBuffer) -> HTTPResponsePart {
         .body(buffer)
     }
 
-    static func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
+    func end(trailers: [HTTPField]) throws(HTTP3Error) -> HTTPResponsePart {
         .end(try HTTP3MessageDecoding.trailers(fields: trailers))
     }
 
-    static func end() -> HTTPResponsePart {
+    func end() -> HTTPResponsePart {
         .end(nil)
     }
 }
@@ -66,7 +80,9 @@ extension HTTPResponsePart: HTTPMessagePart {
 /// Process HTTP3Frames into HTTPMessageParts.
 /// Use this to convert incoming frames into message parts.
 @available(anyAppleOS 27, *)
-struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
+struct HTTPMessageParsingStateMachine<Processor: HTTPMessagePartProcessor> {
+    typealias Part = Processor.Part
+
     enum State {
         case awaitingHeaders
         case awaitingBodyOrTrailers
@@ -76,7 +92,12 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
 
     private var state = State.awaitingHeaders
 
-    init() {}
+    /// Processes and validates the parts of the message.
+    private let processor: Processor
+
+    init(_ processor: Processor) {
+        self.processor = processor
+    }
 
     enum ProcessFrameAction {
         case returnPart(Part)
@@ -91,7 +112,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
             switch frame {
             case .headers(let headers):
                 do {
-                    let part = try Part.head(fields: headers.fields)
+                    let part = try self.processor.head(fields: headers.fields)
                     if headers.representsInterimResponse {
                         // Multiple interim (1xx) responses can precede the final response; remain in the same state to
                         // accept further interim responses or the final response. We can only reach this branch on the
@@ -114,7 +135,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
             case .headers(let headers):
                 // If the incoming frame is of type 'headers', it must be the trailers
                 do {
-                    let part = try Part.end(trailers: headers.fields)
+                    let part = try self.processor.end(trailers: headers.fields)
                     self.state = .messageComplete
                     return .returnPart(part)
                 } catch {
@@ -123,7 +144,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
                 }
             // Any number of data frames is fine. State stays as-is
             case .data(let payload):
-                return .returnPart(.body(buffer: payload.payload))
+                return .returnPart(self.processor.body(buffer: payload.payload))
             case .cancelPush, .settings, .maxPushID, .pushPromise, .goaway:
                 // This should not happen because the stream state machine shouldn't allow a bad frame to get here
                 fatalError("Unexpected frame")
@@ -147,7 +168,7 @@ struct HTTPMessageParsingStateMachine<Part: HTTPMessagePart> {
             return .none
         case .awaitingBodyOrTrailers:
             self.state = .messageComplete
-            return .returnPart(.end())
+            return .returnPart(self.processor.end())
         case .failed:
             return .none
         case .messageComplete:
@@ -166,9 +187,20 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     public typealias OutboundIn = HTTPRequestPart
     public typealias OutboundOut = HTTP3Frame
 
-    private var readState: HTTPMessageParsingStateMachine<HTTPResponsePart> = .init()
+    private var readState = HTTPMessageParsingStateMachine(HTTPResponsePartProcessor())
 
-    public init() {}
+    /// Whether the server sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1, i.e. whether it accepts Extended
+    /// CONNECT requests (RFC 9220 § 3).
+    private var extendedConnectSupported: Bool
+
+    /// - Parameter extendedConnectSupported: Whether the server sent `SETTINGS_ENABLE_CONNECT_PROTOCOL` with value 1,
+    ///   i.e. whether it accepts Extended CONNECT requests (RFC 9220 § 3).
+    ///
+    ///   Set to `false` if the server's SETTINGS frame hasn't arrived yet (the ``ReceivedSettings`` inbound event will
+    ///   fire when the server's SETTINGS arrive, and the flag will automatically be updated then).
+    public init(extendedConnectSupported: Bool = false) {
+        self.extendedConnectSupported = extendedConnectSupported
+    }
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let frame = self.unwrapInboundIn(data)
@@ -188,6 +220,39 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
 
         switch part {
         case .head(let request):
+            if request.extendedConnectProtocol != nil {
+                // The :protocol pseudo-header is only allowed on CONNECT requests.
+                guard request.method == .connect else {
+                    let error = HTTP3Error(
+                        code: .malformedMessage,
+                        message: ":protocol pseudo-header is only allowed on CONNECT requests",
+                        cause: nil,
+                        errorCode: nil,
+                        location: .here()
+                    )
+                    context.fireErrorCaught(error)
+                    promise?.fail(error)
+
+                    return
+                }
+
+                // A client MUST NOT send an Extended CONNECT request unless it has received
+                // SETTINGS_ENABLE_CONNECT_PROTOCOL with value 1 from the server (RFC 9220 § 3).
+                guard self.extendedConnectSupported else {
+                    let error = HTTP3Error(
+                        code: .extendedConnectNotEnabled,
+                        message: "The server has not enabled Extended CONNECT (SETTINGS_ENABLE_CONNECT_PROTOCOL)",
+                        cause: nil,
+                        errorCode: nil,
+                        location: .here()
+                    )
+                    context.fireErrorCaught(error)
+                    promise?.fail(error)
+
+                    return
+                }
+            }
+
             var fields = [HTTPField]()
             fields.reserveCapacity(request.headerFields.count + 5)
             fields.append(request.pseudoHeaderFields.method)
@@ -229,6 +294,11 @@ public final class HTTP3ToHTTPClientCodec: ChannelDuplexHandler {
     }
 
     public func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if let settings = event as? ReceivedSettings {
+            self.extendedConnectSupported = settings.extendedConnectSupported
+            return
+        }
+
         guard event as? ChannelEvent == ChannelEvent.inputClosed else {
             context.fireUserInboundEventTriggered(event)
             return
@@ -258,9 +328,16 @@ public final class HTTP3ToHTTPServerCodec: ChannelDuplexHandler {
     public typealias OutboundIn = HTTPResponsePart
     public typealias OutboundOut = HTTP3Frame
 
-    private var readState: HTTPMessageParsingStateMachine<HTTPRequestPart> = .init()
+    private var readState: HTTPMessageParsingStateMachine<HTTPRequestPartProcessor>
 
-    public init() {}
+    /// Create a new ``HTTP3ToHTTPServerCodec``.
+    ///
+    /// - Parameter extendedConnectSupported: Whether Extended CONNECT requests are accepted. This must match the
+    ///   `SETTINGS_ENABLE_CONNECT_PROTOCOL` value sent to the peer. If `false`, incoming Extended CONNECT requests will
+    ///   result in a malformed message error per RFC 8441 § 3.
+    public init(extendedConnectSupported: Bool = false) {
+        self.readState = .init(HTTPRequestPartProcessor(extendedConnectSupported: extendedConnectSupported))
+    }
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let frame = self.unwrapInboundIn(data)
