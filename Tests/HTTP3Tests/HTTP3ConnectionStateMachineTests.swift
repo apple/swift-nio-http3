@@ -966,7 +966,7 @@ struct HTTP3ConnectionStateMachineTests {
 
     @available(anyAppleOS 27, *)
     @Test(arguments: [HTTP3ConnectionType.server, .client])
-    func receivedDatagramBeforePeerSettingsWithoutRemoteSupport(type: HTTP3ConnectionType) {
+    func receivedDatagramBeforeRemoteSettingsWithoutRemoteSupport(type: HTTP3ConnectionType) {
         var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: type)
         _ = stateMachine.initialize()
 
@@ -994,7 +994,7 @@ struct HTTP3ConnectionStateMachineTests {
     }
 
     @available(anyAppleOS 27, *)
-    @Test func receivedDiscardedDatagramBeforePeerSettingsWithoutRemoteSupport() {
+    @Test func receivedDatagramForClosedStreamBeforeRemoteSettingsWithoutRemoteSupport() {
         var idGenerator = IDGenerator(type: .server)
         var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: .server)
         _ = stateMachine.initialize()
