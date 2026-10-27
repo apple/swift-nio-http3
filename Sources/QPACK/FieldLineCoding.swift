@@ -426,6 +426,47 @@ extension OutputRawSpan {
         self.appendQPACKPrefixedInteger(prefix.deltaBase, prefix: 7, prefixBits: signBit)
     }
 
+    /// Appends a field section whose prefix is only known once its field lines are written.
+    ///
+    /// `writeLines` appends the field lines to the span it is given, which starts `maxPrefixLength` bytes after the
+    /// end of this one, and returns the prefix. The prefix is then written in front of the lines, which are moved back
+    /// over the bytes the prefix doesn't need.
+    ///
+    /// Like `append`, this traps if there isn't enough room: if the span has less than `maxPrefixLength` bytes left,
+    /// or the prefix takes more than `maxPrefixLength` bytes.
+    @available(anyAppleOS 27, *)
+    mutating func appendFieldSection(
+        maxPrefixLength: Int,
+        writeLines: (inout OutputRawSpan) -> EncodedFieldSectionPrefix
+    ) {
+        self.withUnsafeMutableBytes { buffer, initializedCount in
+            let prefixStart = initializedCount
+            let linesStart = prefixStart &+ maxPrefixLength
+            precondition(linesStart <= buffer.count, "Not enough room for the field section prefix")
+
+            let linesBuffer = UnsafeMutableRawBufferPointer(rebasing: buffer[linesStart...])
+            var linesOutput = OutputRawSpan(buffer: linesBuffer, initializedCount: 0)
+            let prefix = writeLines(&linesOutput)
+            let linesLength = linesOutput.finalize(for: linesBuffer)
+
+            let prefixLength = QPACKEncodedLength.fieldSectionPrefix(prefix)
+            precondition(prefixLength <= maxPrefixLength, "Not enough room reserved for the field section prefix")
+            let prefixBuffer = UnsafeMutableRawBufferPointer(
+                rebasing: buffer[prefixStart..<(prefixStart &+ prefixLength)]
+            )
+            var prefixOutput = OutputRawSpan(buffer: prefixBuffer, initializedCount: 0)
+            prefixOutput.appendFieldSectionPrefix(prefix)
+            _ = prefixOutput.finalize(for: prefixBuffer)
+
+            if prefixLength < maxPrefixLength {
+                // The regions may overlap, which `copyMemory` allows.
+                let base = buffer.baseAddress!
+                (base + (prefixStart &+ prefixLength)).copyMemory(from: base + linesStart, byteCount: linesLength)
+            }
+            initializedCount = prefixStart &+ prefixLength &+ linesLength
+        }
+    }
+
     /// Appends a string literal, encoded as in RFC 9204 § 4.1.2.
     @available(anyAppleOS 27, *)
     private mutating func appendQPACKEncodedString(
