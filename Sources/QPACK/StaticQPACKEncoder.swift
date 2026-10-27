@@ -28,13 +28,13 @@ public struct StaticQPACKEncoder {
         for header in headers {
             lines.append(self.fieldLine(for: header))
         }
-        return .init(prefix: Self.prefix, lines: lines)
+        return .init(prefix: Self.staticPrefix, lines: lines)
     }
 
     /// The largest number of bytes ``encode(headers:into:preferHuffmanEncoding:)`` appends for `headers`.
     @_spi(PackageInternal)
     public func maxEncodedLength(of headers: [HTTPField]) -> Int {
-        QPACKEncodedLength.fieldSectionPrefix(Self.prefix)
+        QPACKEncodedLength.fieldSectionPrefix(Self.staticPrefix)
             &+ QPACKEncodedLength.maxFieldLines(headers, indexLimit: StaticHeaderTable.raw.count)
     }
 
@@ -43,26 +43,30 @@ public struct StaticQPACKEncoder {
     /// - Precondition: `output` has room for ``maxEncodedLength(of:)`` more bytes.
     @_spi(PackageInternal)
     public func encode(headers: [HTTPField], into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
-        output.appendFieldSectionPrefix(Self.prefix)
+        output.appendFieldSectionPrefix(Self.staticPrefix)
         for header in headers {
             output.appendFieldLine(self.fieldLine(for: header), preferHuffmanEncoding: preferHuffmanEncoding)
         }
     }
 
-    /// The prefix of every field section this encoder produces: it references no dynamic table entries.
-    private static var prefix: EncodedFieldSectionPrefix {
-        // base 0 is the cheapest way when no dynamic entries
+    /// The prefix of every field section this encoder produces: it references no dynamic table entries and is therefore always
+    /// the same.
+    private static var staticPrefix: EncodedFieldSectionPrefix {
         FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
     }
 
     /// Encodes a single field.
     private func fieldLine(for header: HTTPField) -> FieldLine {
-        let requireLiteralRepresentation =
-            switch header.indexingStrategy {
-            case .prefer, .automatic, .avoid: false
-            case .disallow: true
-            default: false
-            }
+        let requireLiteralRepresentation: Bool
+        switch header.indexingStrategy {
+        case .prefer, .automatic, .avoid:
+            requireLiteralRepresentation = false
+        case .disallow:
+            requireLiteralRepresentation = true
+        default:
+            requireLiteralRepresentation = false
+        }
+
         return self.encodeSingleHeader(header, requireLiteralRepresentation: requireLiteralRepresentation)
             .asFieldLine(base: 0)
     }
@@ -101,8 +105,8 @@ extension QPACKEncodedLength {
     /// The largest number of bytes the field lines encoding `headers` take, if every table index the encoder may
     /// reference is below `indexLimit`.
     static func maxFieldLines(_ headers: [HTTPField], indexLimit: Int) -> Int {
-        // Indices are written with a prefix of 3 bits or more. A name is either referenced by its index, or written as
-        // a string literal; a value is written as a string literal if at all.
+        // The smallest index prefix is 3 bits (RFC 9204 § 4.5.5). A name is an index or a string literal; a value, if
+        // present, is a string literal.
         let maxIndex = Self.prefixedInteger(indexLimit, prefix: 3)
         var length = 0
         for header in headers {
