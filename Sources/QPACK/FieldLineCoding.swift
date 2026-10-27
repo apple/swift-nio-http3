@@ -30,6 +30,12 @@ public struct FieldSectionPrefix: Sendable, Hashable {
         self.base = base
     }
 
+    /// MaxEntries of RFC 9204 § 4.5.1.1: the most entries a table with `maxTableCapacity` can hold. Prefixes are
+    /// encoded with the maximum table capacity of the decoder.
+    static func maxEntries(maxTableCapacity: Int) -> Int {
+        maxTableCapacity / 32
+    }
+
     @_spi(PackageInternal)
     public func encode(maxCapacity: Int) -> EncodedFieldSectionPrefix {
         // 4.5.1.1.
@@ -42,7 +48,7 @@ public struct FieldSectionPrefix: Sendable, Hashable {
         if self.requiredInsertCount == 0 {
             return .init(encodedRequiredInsertCount: 0, deltaBase: self.base, signBit: false)
         }
-        let maxEntries = maxCapacity / 32
+        let maxEntries = FieldSectionPrefix.maxEntries(maxTableCapacity: maxCapacity)
         let encodedRequiredInsertCount = (requiredInsertCount % (2 * maxEntries)) + 1
         let deltaBase: Int
         let signBit: Bool
@@ -107,7 +113,7 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
         if self.encodedRequiredInsertCount == 0 {
             return .init(requiredInsertCount: 0, base: self.deltaBase)
         }
-        let maxEntries = maxCapacity / 32
+        let maxEntries = FieldSectionPrefix.maxEntries(maxTableCapacity: maxCapacity)
         let fullRange = 2 * maxEntries
         if self.encodedRequiredInsertCount > fullRange {
             return nil
@@ -426,6 +432,59 @@ extension OutputRawSpan {
         self.appendQPACKPrefixedInteger(prefix.deltaBase, prefix: 7, prefixBits: signBit)
     }
 
+    /// Appends a field section whose prefix is only known once its field lines are written.
+    ///
+    /// `writeLines` appends the field lines to the span it is given, which starts `expectedPrefixLength` bytes after
+    /// the end of this one, and returns the prefix. If the prefix takes a different number of bytes, the lines are
+    /// moved to make room for it, before it is written in front of them. The span `writeLines` is given ends
+    /// `maxPrefixLength - expectedPrefixLength` bytes before the end of this one, so that the lines always fit
+    /// after the longest prefix.
+    ///
+    /// Like `append`, this traps if there isn't enough room: if the span has less than `maxPrefixLength` bytes left,
+    /// or the prefix takes more than `maxPrefixLength` bytes.
+    ///
+    /// - Precondition: `0 <= expectedPrefixLength <= maxPrefixLength`.
+    @available(anyAppleOS 27, *)
+    mutating func appendFieldSection(
+        expectedPrefixLength: Int,
+        maxPrefixLength: Int,
+        writeLines: (inout OutputRawSpan) -> EncodedFieldSectionPrefix
+    ) {
+        precondition(expectedPrefixLength >= 0, "Expected a prefix of negative length")
+        precondition(expectedPrefixLength <= maxPrefixLength, "Expected a prefix longer than the longest one")
+        self.withUnsafeMutableBytes { buffer, initializedCount in
+            let prefixStart = initializedCount
+            precondition(prefixStart &+ maxPrefixLength <= buffer.count, "Not enough room for the field section prefix")
+            let linesStart = prefixStart &+ expectedPrefixLength
+            let linesEnd = buffer.count &- (maxPrefixLength &- expectedPrefixLength)
+
+            let linesBuffer = UnsafeMutableRawBufferPointer(rebasing: buffer[linesStart..<linesEnd])
+            var linesOutput = OutputRawSpan(buffer: linesBuffer, initializedCount: 0)
+            let prefix = writeLines(&linesOutput)
+            let linesLength = linesOutput.finalize(for: linesBuffer)
+
+            let prefixLength = QPACKEncodedLength.fieldSectionPrefix(prefix)
+            precondition(prefixLength <= maxPrefixLength, "Not enough room reserved for the field section prefix")
+            if prefixLength != expectedPrefixLength {
+                // Move the lines before the prefix is written, as a longer prefix overwrites their start. The regions
+                // may overlap, which `copyMemory` allows.
+                let base = buffer.baseAddress!
+                (base + (prefixStart &+ prefixLength)).copyMemory(from: base + linesStart, byteCount: linesLength)
+            }
+
+            let prefixBuffer = UnsafeMutableRawBufferPointer(
+                rebasing: buffer[prefixStart..<(prefixStart &+ prefixLength)]
+            )
+            var prefixOutput = OutputRawSpan(buffer: prefixBuffer, initializedCount: 0)
+            prefixOutput.appendFieldSectionPrefix(prefix)
+            let writtenPrefixLength = prefixOutput.finalize(for: prefixBuffer)
+            // Anything else would leave uninitialised bytes between the prefix and the lines.
+            precondition(writtenPrefixLength == prefixLength, "Prefix length miscalculated")
+
+            initializedCount = prefixStart &+ prefixLength &+ linesLength
+        }
+    }
+
     /// Appends a string literal, encoded as in RFC 9204 § 4.1.2.
     @available(anyAppleOS 27, *)
     private mutating func appendQPACKEncodedString(
@@ -462,6 +521,18 @@ extension QPACKEncodedLength {
             Self.maxString(byteCount: name.utf8.count, prefix: 4)
                 &+ Self.maxString(byteCount: value.utf8.count, prefix: 8)
         }
+    }
+
+    /// The largest number of bytes ``OutputRawSpan/appendFieldSectionPrefix(_:)`` appends for the prefix of a field
+    /// section whose Required Insert Count is at most `maxRequiredInsertCount` and whose Delta Base is at most
+    /// `maxDeltaBase`, if the decoder's maximum table capacity is `maxTableCapacity`.
+    @available(anyAppleOS 27, *)
+    static func maxFieldSectionPrefix(maxRequiredInsertCount: Int, maxDeltaBase: Int, maxTableCapacity: Int) -> Int {
+        // RFC 9204 § 4.5.1.1: The Required Insert Count is either 0 or encoded as
+        // (ReqInsertCount mod (2 * MaxEntries)) + 1, which is at most 2 * MaxEntries, and at most ReqInsertCount + 1.
+        let maxEntries = FieldSectionPrefix.maxEntries(maxTableCapacity: maxTableCapacity)
+        return Self.prefixedInteger(min(2 &* maxEntries, maxRequiredInsertCount &+ 1), prefix: 8)
+            &+ Self.prefixedInteger(maxDeltaBase, prefix: 7)
     }
 
     /// The number of bytes ``OutputRawSpan/appendFieldSectionPrefix(_:)`` appends for `prefix`.

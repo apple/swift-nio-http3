@@ -56,7 +56,7 @@ public struct StaticQPACKEncoder {
     }
 
     /// Encodes a single field.
-    private func fieldLine(for header: HTTPField) -> FieldLine {
+    func fieldLine(for header: HTTPField) -> FieldLine {
         let requireLiteralRepresentation: Bool
         switch header.indexingStrategy {
         case .prefer, .automatic, .avoid:

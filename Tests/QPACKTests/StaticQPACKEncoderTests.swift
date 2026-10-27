@@ -44,14 +44,13 @@ struct StaticQPACKEncoderTests {
     func writesItsFieldSection(preferHuffmanEncoding: Bool) throws {
         let encoder = StaticQPACKEncoder()
         let bound = encoder.maxEncodedLength(of: Self.headers)
-        var buffer = ByteBuffer(initialCapacity: bound) { output in
+        let buffer = ByteBuffer(initialCapacity: bound) { output in
             encoder.encode(headers: Self.headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
         }
         #expect(buffer.readableBytes <= bound)
-
-        let decoded = try buffer.readFieldSection()
-        #expect(buffer.readableBytes == 0)
-        #expect(decoded == encoder.encode(headers: Self.headers))
+        // Comparing bytes, not decoded field sections, checks the Huffman coding too.
+        let expected = encoder.encode(headers: Self.headers)
+        #expect(buffer == ByteBuffer(fieldSection: expected, preferHuffmanEncoding: preferHuffmanEncoding))
     }
 
     @available(anyAppleOS 27, *)
@@ -62,5 +61,17 @@ struct StaticQPACKEncoderTests {
         }
         // Required Insert Count 0, then Base 0
         #expect(Array(buffer.readableBytesView) == [0, 0])
+    }
+}
+
+extension ByteBuffer {
+    /// `fieldSection`, written one line at a time.
+    @available(anyAppleOS 27, *)
+    init(fieldSection: FieldSection, preferHuffmanEncoding: Bool) {
+        self.init()
+        self.writeFieldSectionPrefix(fieldSection.prefix)
+        for line in fieldSection.lines {
+            self.writeFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
     }
 }
