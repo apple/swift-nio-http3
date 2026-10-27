@@ -76,68 +76,150 @@ public struct DynamicQPACKEncoder {
 
     @_spi(PackageInternal)
     public mutating func encode(headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
-        let base = self.table.insertCount
-        var highestRequiredIndex: Int?
-        var requiredIndices = [Int]()
-        var instructions = [QPACKEncoderInstruction]()
-        // At most, each header can require one instruction
-        instructions.reserveCapacity(headers.count)
-        let lines = headers.map { header in
-            let encodeResult =
-                switch header.indexingStrategy {
-                case .avoid:
-                    // We want to avoid using the dynamic table, but not block intermediates from doing so
-                    QPACKEncodeSingleResult(
-                        headerRepresentation: self.staticEncoder.encodeSingleHeader(
-                            header,
-                            requireLiteralRepresentation: false
-                        ),
-                        instruction: nil
-                    )
-                case .disallow:
-                    // We must prevent intermediates from adding this to the table
-                    QPACKEncodeSingleResult(
-                        headerRepresentation: self.staticEncoder.encodeSingleHeader(
-                            header,
-                            requireLiteralRepresentation: true
-                        ),
-                        instruction: nil
-                    )
-                case .prefer, .automatic, _:
-                    self.encodeSingleHeader(
-                        header,
-                        streamID: streamID,
-                        maxBlockedStreams: self.maxBlockedStreams
-                    )
-                }
-            let encoded = encodeResult.headerRepresentation
-            if let ins = encodeResult.instruction {
-                instructions.append(ins)
-            }
-            if let requiredIndex = encoded.requiredIndex {
-                requiredIndices.append(requiredIndex)
-                if let existing = highestRequiredIndex {
-                    highestRequiredIndex = max(existing, requiredIndex)
-                } else {
-                    highestRequiredIndex = requiredIndex
-                }
-            }
-            return encoded.asFieldLine(base: base)
+        var section = SectionState(base: self.table.insertCount, fieldCount: headers.count)
+        var lines = [FieldLine]()
+        lines.reserveCapacity(headers.count)
+        for header in headers {
+            lines.append(self.fieldLine(for: header, forStream: streamID, section: &section))
         }
+        let prefix = self.finishSection(section, forStream: streamID)
+        return .init(fieldSection: .init(prefix: prefix, lines: lines), instructions: section.instructions)
+    }
+
+    /// The largest number of bytes ``encode(headers:forStream:into:preferHuffmanEncoding:)`` appends for `headers`,
+    /// if it is called next.
+    @_spi(PackageInternal)
+    public func maxEncodedLength(of headers: [HTTPField]) -> Int {
+        // A dynamic table entry takes 32 bytes at the least, so its relative index is below this.
+        let maxEntries = self.table.maximumCapacity / 32
+        return self.maxPrefixLength(fieldCount: headers.count)
+            &+ QPACKEncodedLength.maxFieldLines(headers, indexLimit: max(StaticHeaderTable.raw.count, maxEntries))
+    }
+
+    /// Encodes `headers` into a field section, and appends it to `output`. No intermediate ``FieldSection`` is built.
+    ///
+    /// - Precondition: `output` has room for ``maxEncodedLength(of:)`` more bytes.
+    /// - Returns: The instructions the peer's decoder needs to decode the field section. They must be sent on the
+    ///   encoder stream.
+    @_spi(PackageInternal)
+    public mutating func encode(
+        headers: [HTTPField],
+        forStream streamID: QUICStreamID,
+        into output: inout OutputRawSpan,
+        preferHuffmanEncoding: Bool
+    ) -> [QPACKEncoderInstruction] {
+        var section = SectionState(base: self.table.insertCount, fieldCount: headers.count)
+        // The prefix comes first, but depends on the dynamic table entries the field lines reference. Leave room for
+        // the longest one it can be, and fill it in once the lines are written.
+        output.appendFieldSection(maxPrefixLength: self.maxPrefixLength(fieldCount: headers.count)) { lines in
+            for header in headers {
+                lines.appendFieldLine(
+                    self.fieldLine(for: header, forStream: streamID, section: &section),
+                    preferHuffmanEncoding: preferHuffmanEncoding
+                )
+            }
+            return self.finishSection(section, forStream: streamID)
+        }
+        return section.instructions
+    }
+
+    /// The longest prefix of a field section with `fieldCount` fields, if it is encoded next.
+    private func maxPrefixLength(fieldCount: Int) -> Int {
+        // The Required Insert Count can't exceed the insert count after this section, which inserts one entry per
+        // field at most. RFC 9204 § 4.5.1.1: it is either 0 or encoded as (ReqInsertCount mod (2 * MaxEntries)) + 1,
+        // which is at most 2 * MaxEntries, and at most ReqInsertCount + 1.
+        let maxEntries = self.table.maximumCapacity / 32
+        let maxRequiredInsertCount = self.table.insertCount &+ fieldCount
+        // RFC 9204 § 4.5.1.2: Base is the current insert count. The Delta Base is either Base - ReqInsertCount, which
+        // is at most Base, or ReqInsertCount - Base - 1, which is less than the number of entries this section inserts.
+        return QPACKEncodedLength.prefixedInteger(min(2 &* maxEntries, maxRequiredInsertCount &+ 1), prefix: 8)
+            &+ QPACKEncodedLength.prefixedInteger(max(self.table.insertCount, fieldCount), prefix: 7)
+    }
+
+    /// What the encoder needs to remember while it encodes the fields of a section.
+    private struct SectionState {
+        /// The Base of the section: the insert count when it was started.
+        let base: Int
+        /// The highest absolute index of the dynamic table entries the section references.
+        var highestRequiredIndex: Int? = nil
+        /// The absolute indices of the dynamic table entries the section references.
+        var requiredIndices = [Int]()
+        /// The instructions the peer's decoder needs to decode the section.
+        var instructions = [QPACKEncoderInstruction]()
+
+        init(base: Int, fieldCount: Int) {
+            self.base = base
+            // At most, each header can require one instruction
+            self.instructions.reserveCapacity(fieldCount)
+        }
+    }
+
+    /// Encodes a single field of the section described by `section`.
+    private mutating func fieldLine(
+        for header: HTTPField,
+        forStream streamID: QUICStreamID,
+        section: inout SectionState
+    ) -> FieldLine {
+        let encodeResult =
+            switch header.indexingStrategy {
+            case .avoid:
+                // We want to avoid using the dynamic table, but not block intermediates from doing so
+                QPACKEncodeSingleResult(
+                    headerRepresentation: self.staticEncoder.encodeSingleHeader(
+                        header,
+                        requireLiteralRepresentation: false
+                    ),
+                    instruction: nil
+                )
+            case .disallow:
+                // We must prevent intermediates from adding this to the table
+                QPACKEncodeSingleResult(
+                    headerRepresentation: self.staticEncoder.encodeSingleHeader(
+                        header,
+                        requireLiteralRepresentation: true
+                    ),
+                    instruction: nil
+                )
+            case .prefer, .automatic, _:
+                self.encodeSingleHeader(
+                    header,
+                    streamID: streamID,
+                    maxBlockedStreams: self.maxBlockedStreams
+                )
+            }
+        let encoded = encodeResult.headerRepresentation
+        if let ins = encodeResult.instruction {
+            section.instructions.append(ins)
+        }
+        if let requiredIndex = encoded.requiredIndex {
+            section.requiredIndices.append(requiredIndex)
+            if let existing = section.highestRequiredIndex {
+                section.highestRequiredIndex = max(existing, requiredIndex)
+            } else {
+                section.highestRequiredIndex = requiredIndex
+            }
+        }
+        return encoded.asFieldLine(base: section.base)
+    }
+
+    /// Records the dynamic table entries the section references, and returns its prefix.
+    private mutating func finishSection(
+        _ section: SectionState,
+        forStream streamID: QUICStreamID
+    ) -> EncodedFieldSectionPrefix {
         // insert count is one more than absolute index
-        let requiredInsertCount = highestRequiredIndex.map { $0 + 1 } ?? 0
-        if !requiredIndices.isEmpty {
+        let requiredInsertCount = section.highestRequiredIndex.map { $0 + 1 } ?? 0
+        if !section.requiredIndices.isEmpty {
             self.streamTracker.recordSentMessage(
                 StreamTrackerMessage(
-                    dynamicTableIndices: requiredIndices,
+                    dynamicTableIndices: section.requiredIndices,
                     requiredInsertCount: requiredInsertCount
                 ),
                 forStream: streamID
             )
         }
-        let prefix = FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: base)
-        let encodedPrefix = prefix.encode(maxCapacity: self.table.maximumCapacity)
-        return .init(fieldSection: .init(prefix: encodedPrefix, lines: lines), instructions: instructions)
+        let prefix = FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: section.base)
+        return prefix.encode(maxCapacity: self.table.maximumCapacity)
     }
 
     /// - Parameters:
