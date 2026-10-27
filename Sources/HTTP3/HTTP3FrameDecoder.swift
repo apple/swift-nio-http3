@@ -17,7 +17,7 @@
 public import struct NIOCore.ByteBuffer
 
 /// A decoder for ``HTTP3PartialFrame``.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct HTTP3FrameDecoder {
 
@@ -245,7 +245,7 @@ extension ByteBuffer {
     /// `self` should be the payload, already sliced to the right length.
     /// - Returns: The frame, or nil if there aren't enough bytes.
     /// - Throws: If a frame is malformed in a specific way, e.g. a setting identifier is forbidden.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     fileprivate mutating func readHTTP3Frame(type: HTTP3FrameType) throws(HTTP3Error) -> HTTP3PartialFrameOrUnknown? {
         switch type {
         case .data:
@@ -290,7 +290,7 @@ extension ByteBuffer {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     private mutating func readFieldSectionWithHTTP3Error() throws(HTTP3Error) -> FieldSection? {
         do {
             return try self.readFieldSection()
@@ -309,12 +309,14 @@ extension ByteBuffer {
     }
 }
 
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum HTTP3PartialFrameOrUnknown: Hashable {
     case known(HTTP3PartialFrame)
     case unknown
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3FrameType {
     fileprivate var maximumAcceptableLength: Int {
         switch self {

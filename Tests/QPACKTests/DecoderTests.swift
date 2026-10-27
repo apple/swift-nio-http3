@@ -20,8 +20,8 @@ import Testing
 @_spi(PackageInternal) @testable import QPACK
 
 struct DecoderTests {
-    @Test
-    func testDecodeLiteral() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLiteral() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
 
         let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0)
@@ -32,8 +32,8 @@ struct DecoderTests {
         #expect(fields == [HTTPField(name: .init("Hello")!, value: "World")])
     }
 
-    @Test
-    func testDecodeIndexedStatic() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedStatic() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
 
         let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0)
@@ -44,8 +44,8 @@ struct DecoderTests {
         #expect(fields == [HTTPField(name: .init("content-type")!, value: "application/json")])
     }
 
-    @Test
-    func testDecodeIndexedStaticPseudo() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedStaticPseudo() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
 
         let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0)
@@ -56,8 +56,8 @@ struct DecoderTests {
         #expect(fields == [HTTPField(name: .init(parsed: ":method")!, value: "GET")])
     }
 
-    @Test
-    func testDecodeLiteralValueIndexedNameStatic() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLiteralValueIndexedNameStatic() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
 
         let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0)
@@ -73,8 +73,8 @@ struct DecoderTests {
         #expect(fields == [HTTPField(name: .contentType, value: "image/png")])
     }
 
-    @Test
-    func testDecodeIndexedStaticInvalidRef() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedStaticInvalidRef() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 100)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
@@ -84,8 +84,8 @@ struct DecoderTests {
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
     }
 
-    @Test
-    func testDecodeIndexedStaticNameReferenceInvalid() {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedStaticNameReferenceInvalid() {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 100)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
@@ -102,8 +102,8 @@ struct DecoderTests {
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
     }
 
-    @Test
-    func testDecodeIndexedDynamic() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedDynamic() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
         try tester.processInstruction(.setDynamicTableCapacity(1000))
 
@@ -125,8 +125,8 @@ struct DecoderTests {
     }
 
     /// Ask the decoder to decode a field section with a required insert count of 1, when the table is empty. Then add an entry to unblock the decoder.
-    @Test
-    func testDecodeIndexedDynamicBlocked() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedDynamicBlocked() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
         try tester.processInstruction(.setDynamicTableCapacity(1000))
 
@@ -156,8 +156,8 @@ struct DecoderTests {
     }
 
     /// Ask the decoder to decode a field section with a required insert count of 5, when the table is empty. Then add entries until unblocked.
-    @Test
-    func testDecodeIndexedDynamicMultipleBlocked() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedDynamicMultipleBlocked() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
         try tester.processInstruction(.setDynamicTableCapacity(1000))
 
@@ -223,8 +223,8 @@ struct DecoderTests {
         tester.assertNoMoreInstructions()
     }
 
-    @Test
-    func testDecodeIndexedDynamicDuplicated() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedDynamicDuplicated() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
         try tester.processInstruction(.setDynamicTableCapacity(1000))
 
@@ -243,8 +243,8 @@ struct DecoderTests {
         #expect(fields == [HTTPField(name: .init("Hello")!, value: "World")])
     }
 
-    @Test
-    func testDecodeLiteralValueIndexedNameDynamic() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLiteralValueIndexedNameDynamic() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
         try tester.processInstruction(.setDynamicTableCapacity(100))
 
@@ -265,8 +265,8 @@ struct DecoderTests {
         #expect(fields == [HTTPField(name: .init("Hello")!, value: "NewValue")])
     }
 
-    @Test
-    func testDecodeLiteralValueIndexedNameDynamicInvalidReference() {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLiteralValueIndexedNameDynamicInvalidReference() {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
@@ -283,8 +283,8 @@ struct DecoderTests {
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
     }
 
-    @Test
-    func testDecodeLiteralValueIndexedNameDynamicInvalidReferencePostBase() {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLiteralValueIndexedNameDynamicInvalidReferencePostBase() {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
@@ -300,8 +300,8 @@ struct DecoderTests {
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
     }
 
-    @Test
-    func testDecodeIndexedDynamicPostBase() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedDynamicPostBase() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
         try tester.processInstruction(.setDynamicTableCapacity(1000))
 
@@ -327,8 +327,8 @@ struct DecoderTests {
         #expect(fields == [HTTPField(name: .init("Hello2")!, value: "World")])
     }
 
-    @Test
-    func testDecodeLiteralValueIndexedNameDynamicPostBase() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLiteralValueIndexedNameDynamicPostBase() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
         try tester.processInstruction(.setDynamicTableCapacity(1000))
         for absoluteIndex in 0...10 {
@@ -349,8 +349,8 @@ struct DecoderTests {
         #expect(fields == [HTTPField(name: .init("Hello7")!, value: "NewValue")])
     }
 
-    @Test
-    func testDecodeIndexedWithPostBaseInvalidRef() {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeIndexedWithPostBaseInvalidRef() {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
@@ -360,8 +360,8 @@ struct DecoderTests {
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
     }
 
-    @Test
-    func testDecodeInvalidReference() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeInvalidReference() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
         try tester.processInstruction(.setDynamicTableCapacity(1000))
 
@@ -378,29 +378,29 @@ struct DecoderTests {
 
     // MARK: Test processing instructions
 
-    @Test
-    func testSetCapacity() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testSetCapacity() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(500)
     }
 
-    @Test
-    func testSetCapacityInvalid() {
+    @available(anyAppleOS 27, *)
+    @Test func testSetCapacityInvalid() {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         #expect(throws: DynamicHeaderTableError.capacityTooHigh) {
             try decoder.processInstruction(.setDynamicTableCapacity(2000))
         }
     }
 
-    @Test
-    func testInsertLiteral() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testInsertLiteral() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(100)
         try decoder.assertInsertEntry(name: "test", value: "hello")
     }
 
-    @Test
-    func testInsertInvalidLiteral() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testInsertInvalidLiteral() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(100)
         // Upper case field names are forbidden
@@ -409,8 +409,8 @@ struct DecoderTests {
         }
     }
 
-    @Test
-    func testInsertLiteralNoSpace() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testInsertLiteralNoSpace() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(1)
         #expect(throws: HeaderTableError.insufficientStorage) {
@@ -418,8 +418,8 @@ struct DecoderTests {
         }
     }
 
-    @Test
-    func testInsertWithStaticNameRef() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testInsertWithStaticNameRef() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(1000)
 
@@ -428,8 +428,8 @@ struct DecoderTests {
         #expect(returnInstructions == .insertCountIncrement(increment: 1))
     }
 
-    @Test
-    func testInsertWithInvalidStaticNameRef() {
+    @available(anyAppleOS 27, *)
+    @Test func testInsertWithInvalidStaticNameRef() {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         // Relative index 2000 doesn't exist
         let instruction = QPACKEncoderInstruction.insertWithNameReference(
@@ -442,8 +442,8 @@ struct DecoderTests {
         }
     }
 
-    @Test
-    func testInsertWithDynamicNameRef() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testInsertWithDynamicNameRef() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(100)
         try decoder.assertInsertEntry(name: "test", value: "hello")
@@ -453,8 +453,8 @@ struct DecoderTests {
         #expect(returnInstructions == .insertCountIncrement(increment: 1))
     }
 
-    @Test
-    func testInsertWithInvalidDynamicNameRef() {
+    @available(anyAppleOS 27, *)
+    @Test func testInsertWithInvalidDynamicNameRef() {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         // Relative index 0 is invalid because there's nothing in the table
         let instruction = QPACKEncoderInstruction.insertWithNameReference(.dynamicTable, relativeIndex: 0, value: "hi")
@@ -463,8 +463,8 @@ struct DecoderTests {
         }
     }
 
-    @Test
-    func testDuplicateEntry() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDuplicateEntry() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(1000)
         try decoder.assertInsertEntry(name: "test", value: "hello")
@@ -473,8 +473,8 @@ struct DecoderTests {
         #expect(returnInstructions == .insertCountIncrement(increment: 1))
     }
 
-    @Test
-    func testDuplicateInvalidEntry() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testDuplicateInvalidEntry() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(1000)
         // Duplicate the last entry. But it doesn't exist because we didn't insert anything yet
@@ -483,8 +483,8 @@ struct DecoderTests {
         }
     }
 
-    @Test
-    func testReferenceEvictingEntry() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testReferenceEvictingEntry() throws {
         // A new entry can reference an entry in the dynamic table that will be evicted when adding this new entry into the dynamic table.
         // Implementations are cautioned to avoid deleting the referenced name or value if the referenced entry is evicted from the
         // dynamic table prior to inserting the new entry.
@@ -509,24 +509,24 @@ struct DecoderTests {
         #expect(unwrapped?.0 == [.init(name: .init("a")!, value: "c")])
     }
 
-    @Test
-    func testCancelStreamWhenMaxCapacityZero() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testCancelStreamWhenMaxCapacityZero() throws {
         let decoder = QPACKDecoder(dynamicTableMaxCapacity: 0)  // Max and current capacity both 0.
         let returnInstructions = decoder.cancelStream(streamID: 1)
         // Cancelling a stream when there is no dynamic table does not require telling the other side
         #expect(returnInstructions == nil)
     }
 
-    @Test
-    func testCancelStreamWhenCurrentCapacityZero() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testCancelStreamWhenCurrentCapacityZero() throws {
         let decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)  // This is the max. The current capacity is still 0.
         let returnInstructions = decoder.cancelStream(streamID: 1)
         // Cancelling a stream when the current capacity is 0 DOES still require telling the other side because the maximum is non-0
         #expect(returnInstructions == .streamCancellation(streamID: 1))
     }
 
-    @Test
-    func testCancelStreamWhenHasCapacity() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testCancelStreamWhenHasCapacity() throws {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(1000)
         let returnInstructions = decoder.cancelStream(streamID: 1)
@@ -535,6 +535,7 @@ struct DecoderTests {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension QPACKDecoder {
     fileprivate mutating func assertSetDynamicTableCapacity(_ capacity: Int) throws {
         let returnInstructions = try self.processInstruction(.setDynamicTableCapacity(capacity))
@@ -551,6 +552,7 @@ extension QPACKDecoder {
 /// A helper for testing the decoder.
 /// Wraps the decoder functions and returns only the actual results, not the instructions.
 /// Instructions go into a recorder, in order, which you can pop and assert on.
+@available(anyAppleOS 27, *)
 private class QPACKDecoderTester {
     /// The decoder being tested.
     private var decoder: QPACKDecoder

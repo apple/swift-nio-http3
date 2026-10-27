@@ -34,7 +34,7 @@ struct AsyncEndToEndTests {
     }()
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func asyncRoundtrip(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let serverLogger = Logger(label: "Server")
         let clientLogger = Logger(label: "Client")
@@ -71,7 +71,7 @@ struct AsyncEndToEndTests {
                         try await inboundStream.executeThenClose { inboundParts, outbound in
                             var inboundPartIterator = inboundParts.makeAsyncIterator()
                             try await #expect(inboundPartIterator.next() == .head(testRequest))
-                            try await #expect(inboundPartIterator.next() == .end())
+                            try await #expect(inboundPartIterator.next() == .end(nil))
                             try await #expect(inboundPartIterator.next() == nil)
 
                             try await outbound.write(.head(testResponse))
@@ -110,7 +110,7 @@ struct AsyncEndToEndTests {
                     var inboundPartIterator = inboundParts.makeAsyncIterator()
                     try await #expect(inboundPartIterator.next() == .head(testResponse))
                     try await #expect(inboundPartIterator.next() == .body(.init(string: "Hello World")))
-                    try await #expect(inboundPartIterator.next() == .end())
+                    try await #expect(inboundPartIterator.next() == .end(nil))
                     try await #expect(inboundPartIterator.next() == nil)
                 }
 
@@ -126,7 +126,7 @@ struct AsyncEndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func goawayMidRequestWithHighID(authenticationConfiguration: AuthenticationConfiguration) async throws {
         // Send a goaway to the client in the middle of a request. See that the client can not make further requests.
         let serverLogger = Logger(label: "Server")
@@ -166,7 +166,7 @@ struct AsyncEndToEndTests {
                     try await inboundStream.executeThenClose { inboundParts, outbound in
                         var inboundPartIterator = inboundParts.makeAsyncIterator()
                         try await #expect(inboundPartIterator.next() == .head(testRequest))
-                        try await #expect(inboundPartIterator.next() == .end())
+                        try await #expect(inboundPartIterator.next() == .end(nil))
                         try await #expect(inboundPartIterator.next() == nil)
 
                         // Tell the client to goaway, but with an id that won't affect this request
@@ -209,7 +209,7 @@ struct AsyncEndToEndTests {
                     var inboundPartIterator = inboundParts.makeAsyncIterator()
                     try await #expect(inboundPartIterator.next() == .head(testResponse))
                     try await #expect(inboundPartIterator.next() == .body(.init(string: "Hello World")))
-                    try await #expect(inboundPartIterator.next() == .end())
+                    try await #expect(inboundPartIterator.next() == .end(nil))
                     try await #expect(inboundPartIterator.next() == nil)
                 }
 
@@ -230,7 +230,7 @@ struct AsyncEndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func goawayMidRequest(authenticationConfiguration: AuthenticationConfiguration) async throws {
         // Send a goaway to a client during a request, such that the goaway affects the request in flight.
         // See that the server rejects the request.
@@ -270,7 +270,7 @@ struct AsyncEndToEndTests {
                     try await inboundStream.executeThenClose { inboundParts, outbound in
                         var inboundPartIterator = inboundParts.makeAsyncIterator()
                         try await #expect(inboundPartIterator.next() == .head(testRequest))
-                        try await #expect(inboundPartIterator.next() == .end())
+                        try await #expect(inboundPartIterator.next() == .end(nil))
                         try await #expect(inboundPartIterator.next() == nil)
 
                         // Tell the client to goaway, with an id will affect this current request
@@ -365,7 +365,7 @@ struct AsyncEndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func streamClosesAfterInputClosedWithIncompleteRequest(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -464,7 +464,7 @@ struct AsyncEndToEndTests {
 
     // MARK: - Helper Functions
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func makeHTTP3Server(
         credentials: Credentials,
         settings: HTTP3Settings,
@@ -482,7 +482,6 @@ struct AsyncEndToEndTests {
                 privateKeyPath: privateKeyPath
             )
             let (channel, mux) = try await DatagramBootstrap(group: self.eventLoopGroup)
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(
                     host: "127.0.0.1",
                     port: 0,
@@ -519,7 +518,6 @@ struct AsyncEndToEndTests {
                 keyPath: keyPath
             )
             let (channel, mux) = try await DatagramBootstrap(group: self.eventLoopGroup)
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(
                     host: "127.0.0.1",
                     port: 0,
@@ -553,7 +551,7 @@ struct AsyncEndToEndTests {
         }
     }
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func makeHTTP3Client(
         credentials: Credentials,
         settings: HTTP3Settings,
@@ -566,7 +564,6 @@ struct AsyncEndToEndTests {
             logger.info("Starting QUIC client")
 
             return try await DatagramBootstrap(group: self.eventLoopGroup)
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(host: "127.0.0.1", port: 0) { channel in
                     channel.eventLoop.makeCompletedFuture {
                         let mux = try channel.pipeline.syncOperations.configureHTTP3Client(
@@ -582,7 +579,6 @@ struct AsyncEndToEndTests {
             logger.info("Starting QUIC client")
 
             return try await DatagramBootstrap(group: self.eventLoopGroup)
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(host: "127.0.0.1", port: 0) { channel in
                     channel.eventLoop.makeCompletedFuture {
                         let mux = try channel.pipeline.syncOperations.configureHTTP3Client(

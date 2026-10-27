@@ -13,12 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 import Testing
 
-@_spi(PackageInternal) @testable import HTTP3
+@_spi(PackageInternal) @testable import QPACK
 
 struct FieldSectionQueueTests {
+    @available(anyAppleOS 27, *)
     private func makeTestEntry(
         streamID: QUICStreamID,
         requiredInsertCount: Int,
@@ -26,7 +26,7 @@ struct FieldSectionQueueTests {
     ) -> FieldSectionQueue<Int>.Entry {
         let prefix = FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
         return FieldSectionQueue.Entry(
-            headers: .init(fieldSection: .init(prefix: prefix.encode(maxCapacity: 100), lines: [])),
+            fieldSection: .init(prefix: prefix.encode(maxCapacity: 100), lines: []),
             prefix: prefix,
             lines: [],
             streamID: streamID,
@@ -34,8 +34,8 @@ struct FieldSectionQueueTests {
         )
     }
 
-    @Test
-    func cantAddMoreThanMaxItems() throws {
+    @available(anyAppleOS 27, *)
+    @Test func cantAddMoreThanMaxItems() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 1, context: 1))
@@ -47,8 +47,8 @@ struct FieldSectionQueueTests {
         }
     }
 
-    @Test
-    func popsNothingIfNothingDecodable() throws {
+    @available(anyAppleOS 27, *)
+    @Test func popsNothingIfNothingDecodable() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 10, context: 1))
@@ -57,8 +57,8 @@ struct FieldSectionQueueTests {
         #expect(queue.popIfDecodable(availableInsertCount: 5) == nil)
     }
 
-    @Test
-    func popsOldestIfMultipleDecodable() throws {
+    @available(anyAppleOS 27, *)
+    @Test func popsOldestIfMultipleDecodable() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40, context: 1))
@@ -72,8 +72,8 @@ struct FieldSectionQueueTests {
         #expect(queue.popIfDecodable(availableInsertCount: 40) == nil)
     }
 
-    @Test
-    func removesEntries() throws {
+    @available(anyAppleOS 27, *)
+    @Test func removesEntries() throws {
         var queue = FieldSectionQueue<Int>(maxItems: 3)
 
         try queue.add(self.makeTestEntry(streamID: 1, requiredInsertCount: 40, context: 1))

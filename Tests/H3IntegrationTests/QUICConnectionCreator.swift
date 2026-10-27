@@ -20,7 +20,7 @@ import NIOQUICHelpers
 
 typealias ConcreteQUICStreamCreator = NIOQUIC.QUICStreamCreator
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 struct QUICConnectionCreator: HTTP3ConnectionCreator {
     let quicHandler: QUICHandler<QUICStreamChannels>
     let connectionInitializer: @Sendable (any Channel, ConcreteQUICStreamCreator) -> EventLoopFuture<any Channel>

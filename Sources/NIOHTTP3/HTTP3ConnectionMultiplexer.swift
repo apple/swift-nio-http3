@@ -21,7 +21,7 @@ public import NIOQUICHelpers
 // Allow creating outbound push streams.
 /// A HTTP/3 connection from a servers side. Allows iterating inbound streams.
 @_spi(HTTP3AsyncInterface)
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 public struct HTTP3ServerConnection<Output: Sendable, StreamCreator: QUICStreamCreator>: Sendable {
     /// Channel initializer called for each new inbound stream.
     private let inboundStreamInitializer: @Sendable (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>
@@ -86,7 +86,7 @@ extension HTTP3ServerConnection.InboundStreams.AsyncIterator: Sendable {}
 // Allow iterating incoming push streams.
 /// A HTTP/3 connection from a clients side. Allows creating outbound request streams.
 @_spi(HTTP3AsyncInterface)
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 public struct HTTP3ClientConnection<
     Output: Sendable,
     StreamCreator: QUICStreamCreator & SendableMetatype
@@ -156,6 +156,7 @@ public struct HTTP3ClientConnection<
 /// Internal type to abstract away the `Output` type of the multiplexer. This means we are going through an existential
 /// in the `HTTP3ConnectionHandler` when yielding a new `Channel`. However, this is okay for now otherwise
 /// we would need to make the handler generic as well.
+@available(anyAppleOS 27, *)
 protocol StreamMultiplexerContinuation: Sendable {
     /// We have to do a bit of an awkward dance here to carry the `Output` between the initializer and the continuation where
     /// we yield to. That's why we are using `Any` here to avoid making the handler generic.
@@ -164,7 +165,7 @@ protocol StreamMultiplexerContinuation: Sendable {
     func finish()
 }
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 extension HTTP3ServerConnection: StreamMultiplexerContinuation {
     func initialize(parameters: HTTP3StreamInitializerParameters) -> EventLoopFuture<any Sendable> {
         self.inboundStreamInitializer(parameters).map { $0 as any Sendable }
@@ -184,7 +185,7 @@ extension HTTP3ServerConnection: StreamMultiplexerContinuation {
 /// You can use this type to wrap a QUIC implementation. Have the QUIC implementation call ``yield(connection:)`` and ``finish()`` as appropriate.
 /// Then, you can easily iterate through incoming connections and handle them.
 @_spi(HTTP3AsyncInterface)
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 public struct HTTP3ServerConnectionMultiplexer<Output: Sendable, StreamCreator: QUICStreamCreator>: Sendable {
     /// The inboundConnections' continuation.
     private let inboundConnectionsContinuation: AsyncStream<HTTP3ServerConnection<Output, StreamCreator>>.Continuation
@@ -241,7 +242,7 @@ extension HTTP3ServerConnectionMultiplexer.InboundConnections.AsyncIterator: Sen
 
 /// Implementations of QUIC should implement this protocol to be able to use the HTTP3ClientConnectionMultiplexer.
 @_spi(HTTP3AsyncInterface)
-@available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
+@available(anyAppleOS 27, *)
 public protocol HTTP3ConnectionCreator {
     /// Create a new QUIC connection using the parameters provided.
     /// - Parameters:
@@ -258,7 +259,7 @@ public protocol HTTP3ConnectionCreator {
 
 /// Allows you to create outbound connections as a client.
 @_spi(HTTP3AsyncInterface)
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 public struct HTTP3ClientConnectionMultiplexer<
     ConnectionCreator: HTTP3ConnectionCreator & SendableMetatype,
     StreamCreator: QUICStreamCreator

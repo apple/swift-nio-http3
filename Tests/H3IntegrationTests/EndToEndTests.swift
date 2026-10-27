@@ -16,6 +16,7 @@ import HTTPTypes
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
+import NIOExtras
 import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
@@ -28,6 +29,7 @@ import X509
 @_spi(PackageInternal) @testable import QPACK
 
 /// Buffers incoming body data until end. Then echoes it all back with a 200 status header.
+@available(anyAppleOS 27, *)
 final class EchoHTTPServerHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPRequestPart
     typealias OutboundOut = HTTPResponsePart
@@ -43,7 +45,7 @@ final class EchoHTTPServerHandler: ChannelInboundHandler {
         case .end:
             context.write(self.wrapOutboundOut(.head(.init(status: .ok))), promise: nil)
             context.write(self.wrapOutboundOut(.body(self.receivedData)), promise: nil)
-            context.write(self.wrapOutboundOut(.end()), promise: nil)
+            context.write(self.wrapOutboundOut(.end(nil)), promise: nil)
         }
         context.fireChannelRead(data)
     }
@@ -67,6 +69,7 @@ final class InboundSlowingHandler: ChannelInboundHandler {
 }
 
 /// Records the ``ReceivedSettings`` events fired on a connection channel.
+@available(anyAppleOS 27, *)
 final class ReceivedSettingsRecorder: ChannelInboundHandler, Sendable {
     typealias InboundIn = HTTP3Datagram
 
@@ -124,6 +127,7 @@ final class InboundDataRecorder<DataType: Sendable>: ChannelInboundHandler {
 /// Uses two promises for control: one signals when request is received,
 /// another controls when response is sent.
 /// Request number `immediateResponseCount + 1` waits for signal; all others respond immediately.
+@available(anyAppleOS 27, *)
 private final class ControllableEchoResponseHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPRequestPart
     typealias OutboundOut = HTTPResponsePart
@@ -187,7 +191,7 @@ private final class ControllableEchoResponseHandler: ChannelInboundHandler {
     private func sendResponse(context: ChannelHandlerContext, body: ByteBuffer) {
         context.write(self.wrapOutboundOut(.head(self.responseToSend)), promise: nil)
         context.write(self.wrapOutboundOut(.body(body)), promise: nil)
-        context.writeAndFlush(self.wrapOutboundOut(.end()), promise: nil)
+        context.writeAndFlush(self.wrapOutboundOut(.end(nil)), promise: nil)
     }
 }
 
@@ -237,7 +241,7 @@ struct EndToEndTests {
     }()
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testSettingsFrame(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -324,7 +328,7 @@ struct EndToEndTests {
         .disabled("See DynamicTable document in NIOHTTP3 module"),
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testRoundtripWithSlowDynamicTable(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -545,7 +549,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testRoundtripWithoutDynamicTable(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -651,7 +655,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testConnectionError(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -710,7 +714,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testServerClosesConnection(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -758,7 +762,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testClosingConnectionAlsoClosesStreams(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -811,9 +815,10 @@ struct EndToEndTests {
     }
 
     @Test(
+        .timeLimit(.minutes(1)),
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testServerClosesConnectionWithActiveStream(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -825,9 +830,8 @@ struct EndToEndTests {
         let serverLogger = Logger(label: "Server")
 
         let streamErrorPromise = self.eventLoopGroup.any().makePromise(of: (any Error).self)
-        defer { streamErrorPromise.fail(NeverFulfilled()) }
 
-        let lastServerConnection: NIOLockedValueBox<(any Channel)?> = .init(nil)
+        let serverConnectionPromise = self.eventLoopGroup.any().makePromise(of: (any Channel)?.self)
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
 
@@ -837,8 +841,15 @@ struct EndToEndTests {
             settings: .init(),
             logger: serverLogger,
             inboundConnectionInitializer: { conn in
-                lastServerConnection.withLockedValue { $0 = conn }
-                return conn.eventLoop.makeSucceededVoidFuture()
+                conn.eventLoop.makeCompletedFuture {
+                    try conn.pipeline.syncOperations.addHandler(
+                        DebugInboundEventsHandler { event, _ in
+                            if case .active = event {
+                                serverConnectionPromise.succeed(conn)
+                            }
+                        }
+                    )
+                }
             }
         )
 
@@ -859,8 +870,8 @@ struct EndToEndTests {
             )
         }.get()
 
-        // Now close the server connection while the request stream is open
-        let serverConnection = try #require(lastServerConnection.withLockedValue { $0 })
+        // Wait for the established connection, and then close the connection while the request stream is open.
+        let serverConnection = try await #require(serverConnectionPromise.futureResult.get())
         try await serverConnection.close()
 
         // The request stream should see an error, not a clean close
@@ -881,7 +892,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testStreamError(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -955,7 +966,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testUnknownIncomingStream(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1013,7 +1024,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testIncomingPushStreamOnServer(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1071,7 +1082,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testIncomingPushStreamOnClient(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1158,7 +1169,7 @@ struct EndToEndTests {
         .disabled("See DynamicTable document in NIOHTTP3 module"),
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testBadQPACKInstruction(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1231,7 +1242,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testForwardShouldQuiesce(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1290,7 +1301,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testNoOutboundRequestsAfterGoawayReceived(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -1306,6 +1317,9 @@ struct EndToEndTests {
         let responsePromise = self.eventLoopGroup.any().makePromise(of: Void.self)
         // Shared counter across all streams
         let sharedRequestCounter = NIOLockedValueBox<Int>(0)
+        // Completes once the client has processed the server's SETTINGS and GOAWAY
+        let clientControlStreamFramesPromise = self.eventLoopGroup.any().makePromise(of: [HTTP3Frame].self)
+        defer { clientControlStreamFramesPromise.fail(NeverFulfilled()) }
 
         let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
 
@@ -1343,7 +1357,19 @@ struct EndToEndTests {
             host: host,
             port: serverPort,
             settings: .init(),
-            logger: clientLogger
+            logger: clientLogger,
+            internalInboundStreamInitializer: { streamChannel, _, streamType in
+                switch streamType {
+                case .control:
+                    // Sits behind the handler that processes control frames, so it only sees frames already processed
+                    return streamChannel.eventLoop.makeCompletedFuture {
+                        let recorder = InboundDataRecorder(promise: clientControlStreamFramesPromise, targetCount: 2)
+                        try streamChannel.pipeline.syncOperations.addHandler(recorder)
+                    }
+                case .push, .qpackEncoder, .qpackDecoder, .unknown:
+                    return streamChannel.eventLoop.makeSucceededVoidFuture()
+                }
+            }
         )
 
         func makeRequest() async throws {
@@ -1369,8 +1395,8 @@ struct EndToEndTests {
                 ),
                 promise: nil
             )
-            requestStreamChannel.write(HTTPRequestPart.body(buffer: .init(string: "hello world")), promise: nil)
-            try await requestStreamChannel.writeAndFlush(HTTPRequestPart.end())
+            requestStreamChannel.write(HTTPRequestPart.body(.init(string: "hello world")), promise: nil)
+            try await requestStreamChannel.writeAndFlush(HTTPRequestPart.end(nil))
 
             let response = try await inboundDataPromise.futureResult.get()
             #expect(response[0] == .head(.init(status: .ok)))
@@ -1400,6 +1426,11 @@ struct EndToEndTests {
             try $0.sendGoaway(id: 12)
         }.get()
 
+        // `sendGoaway` only queues the frame. Wait until the client has processed it, otherwise the request below can
+        // open stream 12 before the GOAWAY arrives and fail with `ChannelError.ioOnClosedChannel` instead.
+        let clientReceivedControlFrames = try await clientControlStreamFramesPromise.futureResult.get()
+        #expect(clientReceivedControlFrames == [.settings(.init()), .goaway(12)])
+
         // Now client refuses new outbound requests because we received GOAWAY
         await #expect(throws: HTTP3Error.self) {
             try await makeRequest()
@@ -1414,7 +1445,7 @@ struct EndToEndTests {
     @Test(
         arguments: Self.standardAuthenticationConfigurations
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testControlStreamClosed(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let host = "127.0.0.1"
 
@@ -1502,7 +1533,7 @@ struct EndToEndTests {
     /// Sets up a client and server, waits until each has received the other's SETTINGS frame, then calls `execute` with
     /// the two connection channels and the ID of a request stream which the client has opened and the server has
     /// accepted.
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func withDatagramConnection(
         authenticationConfiguration: AuthenticationConfiguration,
         clientSettings: HTTP3Settings = HTTP3Settings(h3Datagram: true),
@@ -1639,7 +1670,7 @@ struct EndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testClientSendsDatagramToServer(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let serverDatagrams = self.eventLoopGroup.any().makePromise(of: [HTTP3Datagram].self)
 
@@ -1661,7 +1692,7 @@ struct EndToEndTests {
     }
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testServerSendsDatagramToClient(authenticationConfiguration: AuthenticationConfiguration) async throws {
         let clientDatagrams = self.eventLoopGroup.any().makePromise(of: [HTTP3Datagram].self)
 
@@ -1688,7 +1719,7 @@ struct EndToEndTests {
             (client: false, server: false),
         ]
     )
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testDatagramsNegotiated(
         authenticationConfiguration: AuthenticationConfiguration,
         support: (client: Bool, server: Bool)
@@ -1702,7 +1733,10 @@ struct EndToEndTests {
             recorders: recorders
         ) { _, _, _ in
             // Both peers must advertise support for datagrams to be negotiated.
-            let expected = ReceivedSettings(datagramsSupported: support.client && support.server)
+            let expected = ReceivedSettings(
+                datagramsSupported: support.client && support.server,
+                extendedConnectSupported: false
+            )
             #expect(recorders.client.recordedEvents == [expected])
             #expect(recorders.server.recordedEvents == [expected])
         }
@@ -1710,7 +1744,7 @@ struct EndToEndTests {
 
     // The remote hasn't advertised 'SETTINGS_H3_DATAGRAM', so we must not send it datagrams.
     @Test(arguments: Self.standardAuthenticationConfigurations)
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     func testSendingDatagramWithoutRemoteSupportFails(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
@@ -1733,7 +1767,7 @@ struct EndToEndTests {
 
     // MARK: - Helper Functions
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func makeServer(
         credentials: Credentials,
         host: String,
@@ -1764,7 +1798,7 @@ struct EndToEndTests {
         )
     }
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private func makeClient(
         credentials: Credentials,
         host: String,
@@ -1789,7 +1823,7 @@ struct EndToEndTests {
         )
     }
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private static func createHTTP3ClientChannel(
         eventLoopGroup: any EventLoopGroup,
         host: String,
@@ -1813,7 +1847,6 @@ struct EndToEndTests {
             serverName = name
         }
         let h3ConnectionMultiplexer = try await DatagramBootstrap(group: eventLoopGroup)
-            .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: "127.0.0.1", port: 0) { channel in
                 channel.eventLoop.makeCompletedFuture {
                     var config = HTTP3ClientConfiguration.defaults
@@ -1838,7 +1871,7 @@ struct EndToEndTests {
         return try await httpChannelFuture.get()
     }
 
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     private static func createHTTP3ServerChannel(
         eventLoopGroup: any EventLoopGroup,
         host: String,
@@ -1869,7 +1902,6 @@ struct EndToEndTests {
                 .makeH3ServerConfig(certPath: certPath, keyPath: keyPath)
             }
         let channel = try await DatagramBootstrap(group: eventLoopGroup)
-            .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: host, port: port) { channel in
                 channel.eventLoop.makeCompletedFuture {
                     var config = HTTP3ServerConfiguration.defaults
@@ -1893,11 +1925,10 @@ struct EndToEndTests {
     }
 }
 
-@available(anyAppleOS 26, *)
 extension Channel {
     /// Call this on a HTTP3 connection channel to make an outbound request stream.
     /// - Returns: The request stream channel.
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     fileprivate func makeHTTP3RequestChannel(
         initializer: (@Sendable (HTTP3StreamInitializerParameters) throws -> Void)? = nil
     ) -> EventLoopFuture<any Channel> {
@@ -1916,7 +1947,7 @@ extension Channel {
 
     /// Call this on a HTTP3 connection channel to make an outbound unidirectional stream.
     /// - Returns: The stream channel.
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     fileprivate func makeHTTP3UnidirectionalStreamChannel(
         streamType: HTTP3StreamType.Unidirectional,
         initializer: (@Sendable (HTTP3StreamInitializerParameters) throws -> Void)? = nil

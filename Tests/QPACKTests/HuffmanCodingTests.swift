@@ -41,7 +41,7 @@ struct HuffmanCodingTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     mutating func verifyHuffmanCoding(
         _ string: String,
         _ bytes: [UInt8],
@@ -49,8 +49,7 @@ struct HuffmanCodingTests {
     ) {
         self.scratchBuffer.clear()
 
-        let utf8 = string.utf8
-        let numBytes = self.scratchBuffer.writeHuffmanEncoded(bytes: utf8)
+        let numBytes = self.scratchBuffer.writeBytes(string.huffmanEncodedBytes)
         #expect(numBytes == bytes.count, "Wrong length encoding '\(string)'", sourceLocation: sourceLocation)
 
         self.assertEqualContents(self.scratchBuffer, bytes, sourceLocation: sourceLocation)
@@ -62,7 +61,7 @@ struct HuffmanCodingTests {
         #expect(decoded == string, "Failed to decode '\(string)'", sourceLocation: sourceLocation)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func basicCoding() {
         // all these values come from http://httpwg.org/specs/rfc7541.html#request.examples.with.huffman.coding
         self.verifyHuffmanCoding(
@@ -106,7 +105,7 @@ struct HuffmanCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func complexCoding() {
         self.verifyHuffmanCoding(
             "鯖審",
@@ -145,11 +144,35 @@ struct HuffmanCodingTests {
         self.verifyHuffmanCoding(text2, Array(encoded2Data))
     }
 
+    /// Every code length, from 5 to 30 bits, in every alignment within a byte.
+    @available(anyAppleOS 27, *)
+    @Test mutating func everyCodeRoundTrips() {
+        let ascii = String(decoding: Array(0...127 as ClosedRange<UInt8>), as: UTF8.self)
+        // Non-ASCII UTF-8 bytes have the longest codes.
+        let inputs = [ascii, "héllo wörld ✓ 🎉", String(ascii.reversed()), ascii + "🎉" + ascii]
+        for input in inputs {
+            for offset in 0..<8 {
+                // Shift the codes against the byte boundaries by prepending 5-bit symbols.
+                let string = String(repeating: "a", count: offset) + input
+                let encoded = string.huffmanEncodedBytes
+                #expect(encoded.count == string.withContiguousUTF8 { QPACKEncodedLength.huffman(of: $0) })
+
+                self.scratchBuffer.clear()
+                self.scratchBuffer.writeBytes(encoded)
+                let decoded = self.scratchBuffer.getHuffmanEncodedString(
+                    at: self.scratchBuffer.readerIndex,
+                    length: self.scratchBuffer.readableBytes
+                )
+                #expect(decoded == string)
+            }
+        }
+    }
+
     /// The decode buffer is sized from the assumption that no Huffman code is shorter than
     /// 5 bits, and the decode loop then writes into that buffer without bounds checks. These
     /// inputs are made entirely of 5-bit symbols, so they hit that bound exactly: `n`
     /// characters encode to exactly `5n/8` bytes, which decode back to exactly `n` bytes.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test
     mutating func maximallyCompressedInputHitsTheDecodeBoundExactly() {
         // The only symbols with a 5-bit code in the QPACK Huffman table.
@@ -164,7 +187,7 @@ struct HuffmanCodingTests {
             )
 
             self.scratchBuffer.clear()
-            let encodedLength = self.scratchBuffer.writeHuffmanEncoded(bytes: string.utf8)
+            let encodedLength = self.scratchBuffer.writeBytes(string.huffmanEncodedBytes)
             #expect(encodedLength == characterCount * 5 / 8, "Input was not maximally compressed")
 
             let decoded = self.scratchBuffer.getHuffmanEncodedString(
@@ -176,13 +199,13 @@ struct HuffmanCodingTests {
     }
 }
 
-extension ByteBuffer {
-    @available(anyAppleOS 26.0, *)
-    @discardableResult
-    mutating func writeHuffmanEncoded(bytes stringBytes: some Collection<UInt8>) -> Int {
-        self.writeHuffmanEncoded(
-            bytes: stringBytes,
-            encodedByteLength: ByteBuffer.huffmanEncodedByteLength(of: stringBytes)
-        )
+extension String {
+    @available(anyAppleOS 27, *)
+    var huffmanEncodedBytes: [UInt8] {
+        let length = self.withContiguousUTF8 { QPACKEncodedLength.huffman(of: $0) }
+        let buffer = ByteBuffer(initialCapacity: length) { output in
+            self.withContiguousUTF8 { output.appendHuffmanEncoded($0, encodedByteLength: length) }
+        }
+        return Array(buffer.readableBytesView)
     }
 }

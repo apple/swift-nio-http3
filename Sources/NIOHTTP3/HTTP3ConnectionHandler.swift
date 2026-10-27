@@ -20,6 +20,7 @@ public import NIOCore
 public import NIOQUICHelpers
 
 /// What to do when a new stream comes inbound.
+@available(anyAppleOS 27, *)
 enum H3InboundStreamInitializer {
     /// Call yield on a multiplexer to give it the new stream channel.
     case multiplexer(any StreamMultiplexerContinuation)
@@ -32,7 +33,7 @@ enum H3InboundStreamInitializer {
 /// This handler should be in a QUIC connection channel pipeline, and thus there should be one instance of this handler per connection.
 /// It expects to be told about any incoming stream channels by calling ``HTTP3ConnectionHandler/inboundStreamReceived(_:)``.
 /// The handler is also able to make outbound streams, see ``HTTP3ConnectionHandler/createRequestStream(streamInitializer:)``.
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & SendableMetatype>:
     ChannelInboundHandler,
     ChannelOutboundHandler
@@ -175,7 +176,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - logger: A logger.
     ///   - connection: An instance of ``HTTP3ServerConnection`` which inbound connections can be vended to.
     /// - Returns: A ``HTTP3ConnectionHandler``.
-    @available(anyAppleOS 26, *)
+    @available(anyAppleOS 27, *)
     @_spi(HTTP3AsyncInterface)
     public static func server<Output: Sendable>(
         eventLoop: any EventLoop,
@@ -635,7 +636,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     }
 }
 
-@available(anyAppleOS 26, *)
+@available(anyAppleOS 27, *)
 extension HTTP3ConnectionHandler {
     func emitDatagrams(_ datagrams: Deque<HTTP3Datagram>) {
         guard let context = self.context else { return }
@@ -672,6 +673,7 @@ extension HTTP3ConnectionHandler {
 extension HTTP3ConnectionHandler: Sendable {}
 
 /// Specify config options for a HTTP/3 server.
+@available(anyAppleOS 27, *)
 public struct HTTP3ServerConfiguration: Sendable {
     /// If true, the inbound and output type of all stream channels of all connections on this server will be HTTP3Frame.
     /// Otherwise, the inbound will be HTTPRequestPart and the outbound will be HTTPResponsePart.
@@ -706,6 +708,7 @@ public struct HTTP3ServerConfiguration: Sendable {
 }
 
 /// Specify config options for a HTTP/3 client.
+@available(anyAppleOS 27, *)
 public struct HTTP3ClientConfiguration: Sendable {
     /// If true, the inbound and output type of all stream channels of all connections from this client will be HTTP3Frame.
     /// Otherwise, the inbound will be HTTPResponsePart and the outbound will be HTTPRequestPart.

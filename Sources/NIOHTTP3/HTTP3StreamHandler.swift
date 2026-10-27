@@ -17,9 +17,11 @@ import HTTPTypes
 import Logging
 import NIOCore
 import NIOQUICHelpers
+@_spi(PackageInternal) import QPACK
 
 /// This is an internal protocol that shall only be implemented by HTTP3ConnectionCoordinator
 /// It exists to enable testing of `HTTP3StreamHandler` in isolation.
+@available(anyAppleOS 27, *)
 protocol HTTP3StreamDelegate {
     /// Tell the connection state when this stream becomes inactive.
     ///
@@ -36,8 +38,8 @@ protocol HTTP3StreamDelegate {
 /// This handler should be added to every incoming and outgoing HTTP/3 stream which carries HTTP frames.
 /// It handles encoding and decoding of these frames.
 /// It will only pass through valid frames, and handles things such as QPACK header decoding.
-@available(anyAppleOS 26.0, *)
-final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate: HTTP3.QPACKConnectionDelegate>:
+@available(anyAppleOS 27, *)
+final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate: QPACK.QPACKConnectionDelegate>:
     ChannelDuplexHandler
 {
     typealias InboundIn = ByteBuffer
@@ -216,7 +218,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
                 didFireChannelRead = true
             case .decodeHeader(let partialHeader):
                 self.logger.trace("HTTP3StreamHandler waiting for QPACK decode")
-                self.qpackCoder.decodeHeaders(partialHeader, streamID: self.streamID, decodeReceiver: self)
+                self.qpackCoder.decodeFields(partialHeader.fieldSection, streamID: self.streamID, decodeReceiver: self)
             case .emitStreamError(let error):
                 context.triggerUserOutboundEvent(
                     QUICStopSendingEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
@@ -267,7 +269,9 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
             context.fireErrorCaught(error)
             promise?.fail(error)
         case .encodeHeaders(let fields):
-            let encoded = self.qpackCoder.encodeHeaders(fields, streamID: self.streamID)
+            let encoded = HTTP3PartialFrame.Headers(
+                fieldSection: self.qpackCoder.encodeHeaders(fields, streamID: self.streamID)
+            )
             let action = self.stateMachine.gotHeaderEncodeResult(encoded, into: &self.pendingBytes!)
 
             switch action {
@@ -367,14 +371,14 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
     }
 
     /// Call this if an error is encountered whilst trying to decode `header`.
-    func onQPACKDecodeError(_ error: HTTP3Error) {
+    func onQPACKDecodeError(_ error: HTTP3Error, isConnectionError: Bool) {
         guard let context = self.context else {
             // The stream must have been created an registered to get QPACK events and thus already have
             // the context available. Since pending decodes are dropped when the stream closes it must
             // still be open and active.
             fatalError("Tried to deliver QPACK error before handler was set")
         }
-        self.stateMachine.gotHeaderDecodeError(error)
+        self.stateMachine.gotHeaderDecodeError(error, isConnectionError: isConnectionError)
         // Call self.channelReadComplete which will decode and fire reads as much as possible before firing a read complete
         self.channelReadComplete(context: context)
     }
@@ -388,6 +392,11 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
             // Pass it through
             context.fireUserInboundEventTriggered(event)
         }
+    }
+
+    /// Fires a ``ReceivedSettings`` event down the pipeline.
+    func peerSettingsReceived(_ settings: ReceivedSettings) {
+        self.context?.fireUserInboundEventTriggered(settings)
     }
 
     /// A GOAWAY frame was sent with an ID lower than or equal to that of this stream.
@@ -472,14 +481,17 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 extension HTTP3StreamHandler: QPACKDecodeReceiver {
-    func decodeResult(_ result: Result<[HTTPField], HTTP3Error>) {
+    func decodeResult(_ result: Result<[HTTPField], QPACKError>) {
         switch result {
         case .success(let fields):
             self.onQPACKDecodeResult(fields: fields)
         case .failure(let error):
-            self.onQPACKDecodeError(error)
+            self.onQPACKDecodeError(
+                HTTP3Error(error, streamID: self.streamID, location: .here()),
+                isConnectionError: error.isConnectionError
+            )
         }
     }
 }

@@ -17,7 +17,7 @@ public import HTTPTypes
 public import struct NIOCore.ByteBuffer
 public import struct NIOQUICHelpers.QUICApplicationErrorCode
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct HTTP3StreamStateMachine: ~Copyable {
     /// This state machine handles the reading side of the stream only.
@@ -73,6 +73,8 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
             struct HeaderDecodeError {
                 let error: HTTP3Error
+                /// Whether the error is fatal to the connection, rather than only to this stream.
+                let isConnectionError: Bool
                 /// If we receive a close whilst waiting for a decode, we buffer it here. We must maintain the order of closes relative to reads.
                 var seenEOF: Bool
             }
@@ -188,7 +190,11 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                 return .returnFrame(bufferState.frame)
             case .headerDecodeError(let error):
                 self = .init(state: .headerDecodeError(error))
-                return .emitStreamError(error.error)
+                if error.isConnectionError {
+                    return .emitConnectionError(error.error)
+                } else {
+                    return .emitStreamError(error.error)
+                }
             case .inputClosed:
                 self = .init(state: .inputClosed)
                 return .alreadyClosed
@@ -221,7 +227,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
         /// Inform the state machine of a qpack decode error for a header that the machine previously asked to decode.
         /// It is an error to call this function with a result for a partial header which wasn't asked for.
-        mutating func gotHeaderDecodeError(_ error: HTTP3Error) {
+        mutating func gotHeaderDecodeError(_ error: HTTP3Error, isConnectionError: Bool) {
             switch consume self.state {
             case .idle:
                 fatalError("Unexpected header decode")
@@ -232,7 +238,11 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             case .inputClosed:
                 fatalError("Unexpected header decode")
             case .waitingForDecode(let waitingState):
-                self = .init(state: .headerDecodeError(.init(error: error, seenEOF: waitingState.seenEOF)))
+                self = .init(
+                    state: .headerDecodeError(
+                        .init(error: error, isConnectionError: isConnectionError, seenEOF: waitingState.seenEOF)
+                    )
+                )
             }
         }
 
@@ -712,15 +722,16 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 
     /// Inform the state machine of a qpack decode error for a header that the machine previously asked to decode.
     /// It is an error to call this function with a result for a partial header which wasn't asked for.
-    /// This error will fail the stream. Connection-level errors should not be sent here.
+    /// The error is emitted from ``decodeNext()``, in order with the frames read before it: as a connection error if
+    /// `isConnectionError` is true, and as a stream error otherwise.
     @_spi(PackageInternal)
-    public mutating func gotHeaderDecodeError(_ error: HTTP3Error) {
+    public mutating func gotHeaderDecodeError(_ error: HTTP3Error, isConnectionError: Bool) {
         switch self.state {
         case .finished:
             // Ignore it, we don't care anymore
             self = .init(state: .finished)
         case .idle(var idleState):
-            idleState.readState.gotHeaderDecodeError(error)
+            idleState.readState.gotHeaderDecodeError(error, isConnectionError: isConnectionError)
             self = .init(state: .idle(idleState))
         case .previousError(let error):
             self = .init(state: .previousError(error))
@@ -818,6 +829,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
 }
 
 /// A HTTP3Frame can be made into a HTTP3PartialFrame trivially, if it is not headers or push promise. This enum represents those 3 possibilities.
+@available(anyAppleOS 27, *)
 private enum MaybePartialFrame {
     /// The frame is headers.
     case headers(HTTP3Frame.Headers)
@@ -839,6 +851,7 @@ private enum MaybePartialFrame {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3PartialFrame {
     /// Turn a partial frame into a full frame as long as it's not a header or push promise frame.
     ///

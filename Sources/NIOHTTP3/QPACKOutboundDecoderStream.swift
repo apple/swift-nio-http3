@@ -16,7 +16,8 @@
 import NIOCore
 @_spi(PackageInternal) import QPACK
 
-struct QPACKOutboundDecoderStream: ~Copyable, HTTP3.QPACKOutboundDecoderStream {
+@available(anyAppleOS 27, *)
+struct QPACKOutboundDecoderStream: ~Copyable, QPACK.QPACKOutboundDecoderStream {
     private let channel: any Channel
     private let encoder: QPACKDecoderInstructionEncoder
     private var byteBuffer: ByteBuffer

@@ -105,6 +105,7 @@ struct StreamTracker {
     }
 }
 
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct QPACKEncodeResult: Sendable, Hashable {
     @_spi(PackageInternal)
@@ -120,7 +121,8 @@ public struct QPACKEncodeResult: Sendable, Hashable {
 }
 
 /// A bit like ``FieldLine`` but without caring about wire representation.
-private enum HeaderRepresentation {
+@available(anyAppleOS 27, *)
+enum HeaderRepresentation {
     case literal(requireLiteralRepresentation: Bool, name: HTTPField.Name, value: String)
     case staticTableReference(index: Int)
     case staticTableNameReference(requireLiteralRepresentation: Bool, index: Int, value: String)
@@ -186,6 +188,7 @@ private enum HeaderRepresentation {
 }
 
 /// The result of encoding a single line. Contains the encoded form of the line + the instruction needed, if any.
+@available(anyAppleOS 27, *)
 private struct QPACKEncodeSingleResult {
     let headerRepresentation: HeaderRepresentation
     let instruction: QPACKEncoderInstruction?
@@ -197,6 +200,7 @@ private struct QPACKEncodeSingleResult {
 }
 
 /// A full QPACK encoder which may use the dynamic table and may emit instructions.
+@available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public struct DynamicQPACKEncoder {
     /// The actual header table.
@@ -509,67 +513,6 @@ public struct DynamicQPACKEncoder {
             }
         } else {
             assertionFailure("Stream tracker should not track messages which don't use dynamic table")
-        }
-    }
-}
-
-/// Can encode field sections but only statically (can't use dynamic table and can't send instructions).
-@_spi(PackageInternal)
-public struct StaticQPACKEncoder {
-    @_spi(PackageInternal)
-    public init() {}
-
-    @_spi(PackageInternal)
-    public func encode(headers: [HTTPField]) -> FieldSection {
-        let base = 0  // base 0 is the cheapest way when no dynamic entries
-        var lines = [FieldLine]()
-        lines.reserveCapacity(headers.count)
-        for header in headers {
-            let requireLiteralRepresentation =
-                switch header.indexingStrategy {
-                case .prefer, .automatic, .avoid: false
-                case .disallow: true
-                default: false
-                }
-            lines.append(
-                self.encodeSingleHeader(
-                    header,
-                    requireLiteralRepresentation: requireLiteralRepresentation
-                ).asFieldLine(base: base)
-            )
-        }
-        let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: base)
-        let encodedPrefix = prefix.encode(maxCapacity: 0)
-
-        return .init(prefix: encodedPrefix, lines: lines)
-    }
-
-    /// - Parameters
-    ///     - header: The header to be encoded.
-    ///     - requireLiteralRepresentation: If true, a flag will be set requiring intermediates to keep this header as a literal.
-    /// - Returns: The encoded header.
-    fileprivate func encodeSingleHeader(
-        _ header: HTTPField,
-        requireLiteralRepresentation: Bool
-    ) -> HeaderRepresentation {
-        let staticTableEntry = StaticHeaderTable.find(name: header.name, value: header.value)
-        if let staticTableEntry, staticTableEntry.containsValue {
-            // Exact match in static table
-            return .staticTableReference(index: staticTableEntry.index)
-        } else if let staticTableEntry {
-            // Partial match in static table
-            return .staticTableNameReference(
-                requireLiteralRepresentation: requireLiteralRepresentation,
-                index: staticTableEntry.index,
-                value: header.value
-            )
-        } else {
-            // We already checked static table, and there's no dynamic table, so it's a literal
-            return .literal(
-                requireLiteralRepresentation: requireLiteralRepresentation,
-                name: header.name,
-                value: header.value
-            )
         }
     }
 }

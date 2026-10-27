@@ -12,7 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOQUICHelpers
+
 /// A struct representing an HTTP3 push ID.
+@available(anyAppleOS 27, *)
 public struct HTTP3PushID: Sendable, Hashable {
     /// The underlying raw push ID.
     public var rawValue: UInt64
@@ -25,12 +28,14 @@ public struct HTTP3PushID: Sendable, Hashable {
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3PushID: CustomStringConvertible {
     public var description: String {
         "HTTP3PushID(\(self.rawValue))"
     }
 }
 
+@available(anyAppleOS 27, *)
 extension HTTP3PushID: CustomDebugStringConvertible {
     public var debugDescription: String {
         "HTTP3PushID(\(self.rawValue))"

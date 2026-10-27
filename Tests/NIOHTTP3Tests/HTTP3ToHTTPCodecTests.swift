@@ -24,23 +24,50 @@ import Testing
 @_spi(PackageInternal) @testable import HTTP3
 
 struct HTTP3ToHTTPCodecTests {
-    private let validRequestHead: HTTP3Frame = .headers([
-        .init(name: .method, value: "GET"),
-        .init(name: .scheme, value: "https"),
-        .init(name: .authority, value: "test"),
-        .init(name: .path, value: "/"),
-    ])
+    @available(anyAppleOS 27, *)
+    private var validRequestHead: HTTP3Frame {
+        .headers([
+            .init(name: .method, value: "GET"),
+            .init(name: .scheme, value: "https"),
+            .init(name: .authority, value: "test"),
+            .init(name: .path, value: "/"),
+        ])
+    }
 
-    private let validFinalResponseHead: HTTP3Frame = .headers([
-        .init(name: .status, value: "200")
-    ])
+    @available(anyAppleOS 27, *)
+    private var extendedConnectRequestHead: HTTP3Frame {
+        .headers([
+            .init(name: .method, value: "CONNECT"),
+            .init(name: .protocol, value: "websocket"),
+            .init(name: .scheme, value: "https"),
+            .init(name: .authority, value: "test"),
+            .init(name: .path, value: "/"),
+        ])
+    }
 
-    private let validInterimResponseHead: HTTP3Frame = .headers([
-        .init(name: .status, value: "103")
-    ])
+    @available(anyAppleOS 27, *)
+    private var extendedConnectRequest: HTTPRequest {
+        var request = HTTPRequest(method: .connect, scheme: "https", authority: "test", path: "/")
+        request.extendedConnectProtocol = "websocket"
+        return request
+    }
 
-    @Test
-    func testClientCodecWrite() throws {
+    @available(anyAppleOS 27, *)
+    private var validFinalResponseHead: HTTP3Frame {
+        .headers([
+            .init(name: .status, value: "200")
+        ])
+    }
+
+    @available(anyAppleOS 27, *)
+    private var validInterimResponseHead: HTTP3Frame {
+        .headers([
+            .init(name: .status, value: "103")
+        ])
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testClientCodecWrite() throws {
         let handler = HTTP3ToHTTPClientCodec()
         let eventLoop = EmbeddedEventLoop()
         let framesPromise = eventLoop.makePromise(of: [WriteOrClose<HTTP3Frame>].self)
@@ -85,8 +112,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(events[4] == .close)
     }
 
-    @Test
-    func testClientCodecRead() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testClientCodecRead() throws {
         let handler = HTTP3ToHTTPClientCodec()
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
@@ -106,8 +133,106 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[2] == .body(.init(bytes: [1, 2, 3])))
     }
 
-    @Test
-    func testServerCodecWrite() throws {
+    @available(anyAppleOS 27, *)
+    @Test func clientCodecRefusesExtendedConnectRequestWhenSettingNotEnabled() throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
+
+        // Sending an Extended CONNECT request is only allowed once the server has sent SETTINGS_ENABLE_CONNECT_PROTOCOL.
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeOutbound(HTTPRequestPart.head(self.extendedConnectRequest))
+        }
+        #expect(error.code == .extendedConnectNotEnabled)
+
+        // Nothing should be written.
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [true, false])
+    func clientCodecRefusesProtocolPseudoHeaderOnNonConnectRequest(extendedConnectSupported: Bool) throws {
+        let channel = EmbeddedChannel(
+            handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: extendedConnectSupported)
+        )
+
+        var request = HTTPRequest(method: .get, scheme: "https", authority: "test", path: "/")
+        request.extendedConnectProtocol = "websocket"
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeOutbound(HTTPRequestPart.head(request))
+        }
+
+        // A :protocol pseudo-header on a non-CONNECT request is invalid, whether or not the server supports Extended
+        // CONNECT.
+        #expect(error.code == .malformedMessage)
+
+        // Nothing should be written.
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func clientCodecSendsExtendedConnectRequestWhenSettingEnabled() throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: false))
+
+        // Simulate the server's SETTINGS arriving.
+        channel.pipeline.fireUserInboundEventTriggered(
+            ReceivedSettings(datagramsSupported: false, extendedConnectSupported: true)
+        )
+        try channel.writeOutbound(HTTPRequestPart.head(self.extendedConnectRequest))
+        guard case .headers(let headers) = try channel.readOutbound(as: HTTP3Frame.self) else {
+            Issue.record("Expected a headers frame")
+            return
+        }
+        #expect(headers.fields.contains(HTTPField(name: .protocol, value: "websocket")))
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [true, false])
+    func clientCodecCanSendConnectRequestIndependentOfExtendedConnectSetting(settingValue: Bool) throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec(extendedConnectSupported: settingValue))
+
+        // This is just a normal CONNECT request, not an Extended CONNECT request.
+        try channel.writeOutbound(
+            HTTPRequestPart.head(HTTPRequest(method: .connect, scheme: nil, authority: "test:443", path: nil))
+        )
+        guard case .headers = try channel.readOutbound(as: HTTP3Frame.self) else {
+            Issue.record("Expected a headers frame")
+            return
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func clientCodecRefusesExtendedConnectRequestWhenServerDoesNotSupport() throws {
+        let channel = EmbeddedChannel(handler: HTTP3ToHTTPClientCodec())
+
+        // Simulate the server's SETTINGS arriving.
+        channel.pipeline.fireUserInboundEventTriggered(
+            // The server does *not* support Extended CONNECT.
+            ReceivedSettings(datagramsSupported: false, extendedConnectSupported: false)
+        )
+        // As such, the client should see an error when attempting to write an Extended CONNECT request head.
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeOutbound(HTTPRequestPart.head(self.extendedConnectRequest))
+        }
+        #expect(error.code == .extendedConnectNotEnabled)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func clientCodecDoesNotForwardReceivedSettings() throws {
+        let events = NIOLockedValueBox<[ReceivedSettings]>([])
+        let recorder = DebugInboundEventsHandler { event, _ in
+            if case .userInboundEventTriggered(let event) = event, let settings = event as? ReceivedSettings {
+                events.withLockedValue { $0.append(settings) }
+            }
+        }
+        let channel = EmbeddedChannel(handlers: [HTTP3ToHTTPClientCodec(), recorder])
+
+        channel.pipeline.fireUserInboundEventTriggered(
+            ReceivedSettings(datagramsSupported: false, extendedConnectSupported: true)
+        )
+        #expect(events.withLockedValue { $0 } == [])
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testServerCodecWrite() throws {
         let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
         let framesPromise = eventLoop.makePromise(of: [WriteOrClose<HTTP3Frame>].self)
@@ -146,8 +271,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(events[4] == .close)
     }
 
-    @Test
-    func testServerCodecRead() throws {
+    @available(anyAppleOS 27, *)
+    @Test func testServerCodecRead() throws {
         let handler = HTTP3ToHTTPServerCodec()
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
@@ -167,8 +292,82 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[2] == .body(.init(bytes: [1, 2, 3])))
     }
 
-    @Test
-    func serverCodecGeneratesEndPartForCompleteRequestUponInputClosed() throws {
+    @available(anyAppleOS 27, *)
+    @Test func serverCodecRejectsExtendedConnectRequestWhenSettingNotEnabled() throws {
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: false)
+        let channel = EmbeddedChannel(handler: handler)
+
+        // Receiving an Extended CONNECT request without having sent SETTINGS_ENABLE_CONNECT_PROTOCOL = 1 should result
+        // in a malformed message error.
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeInbound(self.extendedConnectRequestHead)
+        }
+        #expect(error.code == .extendedConnectNotEnabled)
+        #expect(error.h3ErrorCode == .messageError)
+
+        // No part of the rejected request should reach the user.
+        try channel.writeInbound(HTTP3Frame.data(.init(bytes: [1, 2, 3])))
+        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+        #expect(try channel.readInbound(as: HTTPRequestPart.self) == nil)
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func serverCodecAcceptsExtendedConnectRequestWhenSettingEnabled() throws {
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: true)
+        let channel = EmbeddedChannel(handler: handler)
+
+        try channel.writeInbound(self.extendedConnectRequestHead)
+
+        var expectedRequest = HTTPRequest(method: .connect, scheme: "https", authority: "test", path: "/")
+        expectedRequest.extendedConnectProtocol = "websocket"
+        #expect(try channel.readInbound(as: HTTPRequestPart.self) == .head(expectedRequest))
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [true, false])
+    func serverCodecRejectsProtocolPseudoHeaderOnNonConnectRequest(extendedConnectSupported: Bool) throws {
+        let channel = EmbeddedChannel(
+            handler: HTTP3ToHTTPServerCodec(extendedConnectSupported: extendedConnectSupported)
+        )
+
+        let error = try #require(throws: HTTP3Error.self) {
+            try channel.writeInbound(
+                HTTP3Frame.headers([
+                    .init(name: .method, value: "GET"),
+                    .init(name: .protocol, value: "websocket"),
+                    .init(name: .scheme, value: "https"),
+                    .init(name: .authority, value: "test"),
+                    .init(name: .path, value: "/"),
+                ])
+            )
+        }
+        #expect(error.code == .malformedMessage)
+        #expect(error.h3ErrorCode == .messageError)
+        #expect(try channel.readInbound(as: HTTPRequestPart.self) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func serverCodecAcceptsConnectWhenExtendedConnectSettingNotEnabled() throws {
+        let handler = HTTP3ToHTTPServerCodec(extendedConnectSupported: false)
+        let channel = EmbeddedChannel(handler: handler)
+
+        // This is just a normal CONNECT request, not an Extended CONNECT request.
+        try channel.writeInbound(
+            HTTP3Frame.headers([
+                .init(name: .method, value: "CONNECT"),
+                .init(name: .authority, value: "test:443"),
+            ])
+        )
+
+        let expectedRequest = HTTPRequest(method: .connect, scheme: nil, authority: "test:443", path: nil)
+        #expect(try channel.readInbound(as: HTTPRequestPart.self) == .head(expectedRequest))
+        #expect(try channel.readOutbound(as: HTTP3Frame.self) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func serverCodecGeneratesEndPartForCompleteRequestUponInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPRequestPart].self)
         let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
@@ -187,8 +386,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[1] == .end(nil))
     }
 
-    @Test
-    func clientCodecGeneratesEndPartForCompleteResponseUponInputClosed() throws {
+    @available(anyAppleOS 27, *)
+    @Test func clientCodecGeneratesEndPartForCompleteResponseUponInputClosed() throws {
         let eventLoop = EmbeddedEventLoop()
         let partsPromise = eventLoop.makePromise(of: [HTTPResponsePart].self)
         let dataRecorder = InboundDataRecorder(promise: partsPromise, targetCount: 2)
@@ -207,8 +406,8 @@ struct HTTP3ToHTTPCodecTests {
         #expect(parts[1] == .end(nil))
     }
 
-    @Test
-    func serverCodecDoesNotFireChannelReadWhenNoRequest() throws {
+    @available(anyAppleOS 27, *)
+    @Test func serverCodecDoesNotFireChannelReadWhenNoRequest() throws {
         let eventLoop = EmbeddedEventLoop()
         let promise = eventLoop.makePromise(of: [Void].self)
         let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
@@ -235,6 +434,7 @@ struct HTTP3ToHTTPCodecTests {
     }
 
     @Test(arguments: [true, false])
+    @available(anyAppleOS 27, *)
     func clientCodecDoesNotEmitEndWhenResponseIncomplete(includeInterimResponses: Bool) throws {
         let eventLoop = EmbeddedEventLoop()
         let promise = eventLoop.makePromise(of: [HTTPResponsePart].self)

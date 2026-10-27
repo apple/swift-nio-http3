@@ -19,6 +19,7 @@ import NIOCore
 import NIOExtras
 import Testing
 
+@available(anyAppleOS 27, *)
 extension HTTP3GoawayID: ExpressibleByIntegerLiteral {
     public init(integerLiteral value: UInt64) {
         self.init(rawValue: value)

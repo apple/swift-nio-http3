@@ -25,6 +25,7 @@ import struct NIOCore.ByteBuffer
 /// Once you know the type, and have set up downstream handlers accordingly, you must call `unbufferElement` to get the bytes out from this state machines buffers.
 /// `unbufferElement` must be called repeatedly until it returns nil.
 /// Once it returns nil, no method on this state machine should ever be called again, and the handler holding it should be removed from the pipeline.
+@available(anyAppleOS 27, *)
 struct HTTP3UnidirectionalStreamTypeDecoderStateMachine: ~Copyable {
     private enum State: ~Copyable {
         /// Nothing has happened yet. We don't know the stream type.

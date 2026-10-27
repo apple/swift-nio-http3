@@ -44,6 +44,7 @@ struct DynamicTableLookupResult: Sendable, Hashable {
 /// Implements the dynamic part of the QPACK header table, as defined in
 /// [RFC 9204 § 3.2](https://httpwg.org/specs/rfc9204.html#header-table-dynamic).
 @usableFromInline
+@available(anyAppleOS 27, *)
 struct DynamicHeaderTable: Sendable {
     /// The actual table, with items looked up by index.
     private var storage: HeaderTableStorage

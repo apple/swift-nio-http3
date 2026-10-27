@@ -20,25 +20,26 @@ import Testing
 struct StringCodingTests {
     private var scratchBuffer = ByteBufferAllocator().buffer(capacity: 11)
 
-    @available(anyAppleOS 26.0, *)
-    private mutating func encodeStringToArray(_ value: String, preferHuffmanEncoding: Bool, prefix: Int) -> [UInt8] {
-        self.scratchBuffer.clear()
-        let len = self.scratchBuffer.writeQPACKEncodedString(
-            value,
-            preferHuffmanEncoding: preferHuffmanEncoding,
-            prefix: prefix
-        )
-        return Array(self.scratchBuffer.viewBytes(at: 0, length: len)!)
+    @available(anyAppleOS 27, *)
+    private func encodeStringToArray(_ value: String, preferHuffmanEncoding: Bool, prefix: Int) -> [UInt8] {
+        let bound = QPACKEncodedLength.maxString(byteCount: value.utf8.count, prefix: prefix)
+        let buffer = ByteBuffer(initialCapacity: bound) { output in
+            value.withContiguousUTF8 {
+                output.appendQPACKEncodedString($0, preferHuffmanEncoding: preferHuffmanEncoding, prefix: prefix)
+            }
+        }
+        #expect(buffer.readableBytes <= bound)
+        return Array(buffer.readableBytesView)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     private mutating func decodeString(from array: [UInt8], withPrefix prefix: Int) throws -> String? {
         self.scratchBuffer.clear()
         self.scratchBuffer.writeBytes(array)
         return try self.scratchBuffer.readQPACKEncodedString(withPrefix: prefix)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: 2...8)
     mutating func stringDecodingEmptyInput(prefix: Int) throws {
         // RFC 9204 § 4.1.2: The prefix size, N, can have a value between 2 and 8, inclusive
@@ -48,7 +49,7 @@ struct StringCodingTests {
 
     // MARK: Encoding with Huffman
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringEncodingWithHuffmanNoPrefix() {
         #expect(
             self.encodeStringToArray("www.example.com", preferHuffmanEncoding: true, prefix: 8)
@@ -60,7 +61,7 @@ struct StringCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringEncodingWithHuffmanWithPrefix() {
         #expect(
             self.encodeStringToArray("www.example.com", preferHuffmanEncoding: true, prefix: 5)
@@ -74,7 +75,7 @@ struct StringCodingTests {
 
     // MARK: Encoding with Huffman preferred but not used
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringEncodingNoHuffmanDespitePreferredNoPrefixBecauseShort() {
         #expect(
             // A single character can't possibly be compressed
@@ -87,7 +88,7 @@ struct StringCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringEncodingNoHuffmanDespitePreferredNoPrefixBecauseNotASCII() {
         #expect(
             // Non ASCII characters don't compress well
@@ -102,7 +103,7 @@ struct StringCodingTests {
 
     // MARK: Decoding with Huffman
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func testStringDecodingWithHuffmanNoPrefix() throws {
         let result = try self.decodeString(
             // The first byte is used from the start because prefix is 8
@@ -115,7 +116,7 @@ struct StringCodingTests {
         #expect(result == "www.example.com")
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func testStringDecodingWithHuffmanWithPrefix() throws {
         let result = try self.decodeString(
             // The first byte is used from the 3rd bit because prefix is 5
@@ -130,7 +131,7 @@ struct StringCodingTests {
 
     // MARK: Encoding without Huffman
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringEncodingNoPrefix() {
         #expect(
             self.encodeStringToArray("test", preferHuffmanEncoding: false, prefix: 8)
@@ -142,7 +143,7 @@ struct StringCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringEncodingWithPrefix() {
         #expect(
             self.encodeStringToArray("test", preferHuffmanEncoding: false, prefix: 5)
@@ -154,7 +155,7 @@ struct StringCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringEncodingWhenLengthFillsThePrefix() {
         #expect(
             self.encodeStringToArray("testing", preferHuffmanEncoding: false, prefix: 4)
@@ -168,7 +169,7 @@ struct StringCodingTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringEncodingWhenLengthLong() {
         #expect(
             self.encodeStringToArray("testingtesting", preferHuffmanEncoding: false, prefix: 4)
@@ -184,7 +185,7 @@ struct StringCodingTests {
 
     // MARK: Decoding without Huffman
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringDecodingNoPrefix() throws {
         let result = try self.decodeString(
             // The first byte is used from the start because prefix is 8
@@ -197,7 +198,7 @@ struct StringCodingTests {
         #expect(result == "test")
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringDecodingWithPrefix() throws {
         let result = try self.decodeString(
             // prefix is 5 so we only use the last 5 bits of the first byte
@@ -210,7 +211,7 @@ struct StringCodingTests {
         #expect(result == "test")
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringDecodingWhenLengthFillsThePrefix() throws {
         let result = try self.decodeString(
             // prefix is 4 so we only use the last 4 bits of the first byte
@@ -225,7 +226,7 @@ struct StringCodingTests {
         #expect(result == "testing")
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func stringDecodingWhenLengthLong() throws {
         let result = try self.decodeString(
             // prefix is 4 so we only use the last 4 bits of the first byte
@@ -242,7 +243,7 @@ struct StringCodingTests {
 
     // MARK: Misc
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func decodeMalformed() throws {
         // This is malformed because the first byte suggests a length of 2, but there is only 1 further byte
         var buffer = ByteBuffer(bytes: [2, 0])
@@ -252,7 +253,7 @@ struct StringCodingTests {
         #expect(buffer.readableBytes == 2)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test mutating func decodeMalformedMidBuffer() throws {
         // This is malformed because the first byte suggests a length of 2, but there is only 1 further byte.
         // This is testing for a specific bug in the implementation of getQPACKEncodedString.
@@ -265,7 +266,7 @@ struct StringCodingTests {
         #expect(buffer.readableBytes == 3)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test(arguments: (1...50).flatMap { x in (2...8).map { y in (x, y) } })
     mutating func roundtrips(testStringLength: Int, testPrefix: Int) throws {
         let testString = String(repeating: "x", count: testStringLength)
@@ -283,7 +284,7 @@ struct StringCodingTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func lengthOverflow() {
         // The readQPACKEncodedString function reads the length as an int. UInt.max > Int.max so this should throw.
         let length: UInt = .max

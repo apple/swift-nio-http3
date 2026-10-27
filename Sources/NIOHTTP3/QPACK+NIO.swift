@@ -17,17 +17,41 @@ public import NIOCore
 import NIOQUICHelpers
 @_spi(PackageInternal) public import QPACK
 
+@available(anyAppleOS 27, *)
 extension QPACKDecoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 extension QPACKEncoderInstructionDecoder: NIOSingleStepByteToMessageDecoder {}
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27, *)
 typealias NIOQPACKCoder<
-    ConnectionDelegate: HTTP3.QPACKConnectionDelegate,
+    ConnectionDelegate: QPACK.QPACKConnectionDelegate,
     StreamDelegate: HTTP3StreamDelegate
-> = HTTP3.QPACKCoder<
+> = QPACK.QPACKCoder<
     QPACKOutboundEncoderStream,
     QPACKOutboundDecoderStream,
     ConnectionDelegate,
     HTTP3StreamHandler<StreamDelegate, ConnectionDelegate>
 >
+
+/// Gives the instructions read from the peer's QPACK streams to the ``QPACKCoder``, and reports any failure to read
+/// or apply them to the connection.
+@available(anyAppleOS 27, *)
+struct QPACKInboundStreamDelegate<
+    ConnectionDelegate: QPACK.QPACKConnectionDelegate,
+    StreamDelegate: HTTP3StreamDelegate
+>: QPACKInboundEncoderStreamDelegate, QPACKInboundDecoderStreamDelegate {
+    let qpackCoder: NIOQPACKCoder<ConnectionDelegate, StreamDelegate>
+    let connection: StreamDelegate
+
+    func onReceivedInstruction(_ instruction: QPACKEncoderInstruction) throws(QPACKError) {
+        try self.qpackCoder.receivedIncomingEncoderInstruction(instruction)
+    }
+
+    func onReceivedInstruction(_ instruction: QPACKDecoderInstruction) throws(QPACKError) {
+        try self.qpackCoder.receivedIncomingDecoderInstruction(instruction)
+    }
+
+    func onError(_ error: HTTP3Error) {
+        self.connection.onConnectionError(error)
+    }
+}

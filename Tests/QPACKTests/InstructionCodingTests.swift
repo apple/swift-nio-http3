@@ -13,12 +13,13 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
+import NIOQUICHelpers
 import Testing
 
 @_spi(PackageInternal) @testable import QPACK
 
 struct InstructionCodingTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func setDynamicTableCapacity() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(.setDynamicTableCapacity(20), preferHuffmanEncoding: false)
@@ -36,7 +37,7 @@ struct InstructionCodingTests {
         #expect(decoded == .setDynamicTableCapacity(20))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func setDynamicTableCapacityTooBig() throws {
         var buffer = ByteBuffer()
         /// 0x20 followed by UInt.max means set the dynamic table size to UInt.max.
@@ -48,7 +49,7 @@ struct InstructionCodingTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func insertWithNameReferenceToDynamicTable() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(
@@ -71,7 +72,7 @@ struct InstructionCodingTests {
         #expect(decoded == .insertWithNameReference(.dynamicTable, relativeIndex: 10, value: "test"))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func insertWithNameReferenceToStaticTable() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(
@@ -94,7 +95,7 @@ struct InstructionCodingTests {
         #expect(decoded == .insertWithNameReference(.staticTable, relativeIndex: 30, value: "test"))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func insertWithLiteralName() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(
@@ -119,7 +120,7 @@ struct InstructionCodingTests {
         #expect(decoded == .insertWithLiteralName(name: "Name", value: "Value"))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func duplicateEntry() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKEncoderInstruction(
@@ -138,7 +139,7 @@ struct InstructionCodingTests {
         #expect(decoded == .duplicateEntry(relativeIndex: 28))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func sectionAcknowledgement() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKDecoderInstruction(.sectionAcknowledgement(streamID: 8))
@@ -154,7 +155,7 @@ struct InstructionCodingTests {
         #expect(decoded == .sectionAcknowledgement(streamID: 8))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func streamCancellation() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKDecoderInstruction(.streamCancellation(streamID: 17))
@@ -170,7 +171,7 @@ struct InstructionCodingTests {
         #expect(decoded == .streamCancellation(streamID: 17))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27, *)
     @Test func insertCountIncrement() throws {
         var buffer = ByteBuffer()
         buffer.writeQPACKDecoderInstruction(.insertCountIncrement(increment: 55))
@@ -184,5 +185,27 @@ struct InstructionCodingTests {
 
         let decoded = try buffer.readQPACKDecoderInstruction()
         #expect(decoded == .insertCountIncrement(increment: 55))
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [(prefix: 7, prefixBits: UInt8(0x80)), (prefix: 6, prefixBits: UInt8(0x40))])
+    func streamIDAboveQUICLimitIsUnrepresentable(prefix: Int, prefixBits: UInt8) throws {
+        // A QPACK prefixed integer isn't bounded by the QUIC limit of 2^62 - 1 that stream IDs have.
+        var buffer = ByteBuffer()
+        buffer.writeQPACKPrefixedInteger(UInt64(1) << 62, prefix: prefix, prefixBits: prefixBits)
+
+        #expect(throws: IntegerReadingError.unrepresentable) {
+            try buffer.readQPACKDecoderInstruction()
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func largestStreamIDDecodes() throws {
+        let streamID = QUICStreamID(rawValue: (UInt64(1) << 62) - 1)
+        var buffer = ByteBuffer()
+        buffer.writeQPACKDecoderInstruction(.streamCancellation(streamID: streamID))
+
+        let decoded = try buffer.readQPACKDecoderInstruction()
+        #expect(decoded == .streamCancellation(streamID: streamID))
     }
 }

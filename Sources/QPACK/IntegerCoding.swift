@@ -12,60 +12,30 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import struct NIOCore.ByteBuffer
+import struct NIOCore.ByteBuffer
 
 private let valueMask: UInt8 = 127
 private let continuationMask: UInt8 = 128
 
 extension ByteBuffer {
-    /// Encodes an integer value into a provided memory location, using the format defined in RFC 9204 § 4.1.1.
+    /// Encodes an integer value into this buffer, using the format defined in RFC 9204 § 4.1.1.
     ///
     /// - Parameters:
     ///   - value: The integer value to encode.
-    ///   - prefix: The number of bits available for use in the first byte at `buffer`.
-    ///   - prefixBits: Existing bits to place in that first byte of `buffer` before encoding `value`.
+    ///   - prefix: The number of bits available for use in the first byte.
+    ///   - prefixBits: Existing bits to place in that first byte before encoding `value`.
     /// - Returns: Returns the number of bytes used to encode the integer.
+    @available(anyAppleOS 27, *)
     @discardableResult
-    @inlinable
     mutating func writeQPACKPrefixedInteger<Integer: FixedWidthInteger>(
         _ value: Integer,
         prefix: Int,
         prefixBits: UInt8 = 0
     ) -> Int {
-        assert(prefix <= 8)
-        assert(prefix >= 1)
-        precondition(value >= 0, "Negative integers cannot be encoded in QPACK.")
-
         let start = self.writerIndex
-
-        // The prefix is always hard-coded, and must fit within 8, so unchecked math here is definitely safe.
-        let k = (1 &<< prefix) &- 1
-        var initialByte = prefixBits
-
-        if value < k {
-            // it fits already!
-            initialByte |= UInt8(truncatingIfNeeded: value)
-            self.writeInteger(initialByte)
-            return 1
+        self.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.maxPrefixedInteger(Integer.self)) {
+            $0.appendQPACKPrefixedInteger(value, prefix: prefix, prefixBits: prefixBits)
         }
-
-        // if it won't fit in this byte altogether, fill in all the remaining bits and move
-        // to the next byte.
-        initialByte |= UInt8(truncatingIfNeeded: k)
-        self.writeInteger(initialByte)
-
-        // deduct the initial [prefix] bits from the value, then encode it seven bits at a time into
-        // the remaining bytes.
-        // We can safely use unchecked subtraction here: we know that `k` is zero or greater, and that `value` is
-        // either the same value or greater. As a result, this can be unchecked: it's always safe.
-        var n = value &- Integer(k)
-        while n >= 128 {
-            let nextByte = (1 << 7) | UInt8(truncatingIfNeeded: n & 0x7f)
-            self.writeInteger(nextByte)
-            n >>= 7
-        }
-
-        self.writeInteger(UInt8(truncatingIfNeeded: n))
         return self.writerIndex &- start
     }
 
@@ -74,6 +44,7 @@ extension ByteBuffer {
     /// If no integer can be read, returns nil and leaves the index as it was.
     /// - Precondition: The prefix MUST be between 1 and 8 inclusive.
     /// - Throws: IntegerReadingError if the result doesn't fit in the requested type.
+    @available(anyAppleOS 27, *)
     mutating func readQPACKPrefixedInteger<Integer: FixedWidthInteger & Sendable>(
         as: Integer.Type = Integer.self,
         withPrefix prefix: Int
@@ -90,6 +61,7 @@ extension ByteBuffer {
     /// Does not affect the reader index.
     /// - Precondition: The prefix MUST be between 1 and 8 inclusive.
     /// - Throws: IntegerReadingError if the result doesn't fit in the requested type.
+    @available(anyAppleOS 27, *)
     func getQPACKPrefixedInteger<Integer: FixedWidthInteger>(
         as: Integer.Type = Integer.self,
         at startIndex: Int,
@@ -156,5 +128,79 @@ extension ByteBuffer {
         } while byte & continuationMask == continuationMask
 
         return Decoded(value: accumulator, bytesRead: index - startIndex)
+    }
+}
+
+extension OutputRawSpan {
+    /// Appends an integer, using the format defined in RFC 9204 § 4.1.1.
+    ///
+    /// - Parameters:
+    ///   - value: The integer value to encode.
+    ///   - prefix: The number of bits available for use in the first byte.
+    ///   - prefixBits: Existing bits to place in that first byte before encoding `value`.
+    /// - Precondition: The span has room for ``QPACKEncodedLength/prefixedInteger(_:prefix:)`` more bytes.
+    mutating func appendQPACKPrefixedInteger<Integer: FixedWidthInteger>(
+        _ value: Integer,
+        prefix: Int,
+        prefixBits: UInt8 = 0
+    ) {
+        assert(prefix <= 8)
+        assert(prefix >= 1)
+        precondition(value >= 0, "Negative integers cannot be encoded in QPACK.")
+
+        // The prefix is always hard-coded, and must fit within 8, so unchecked math here is definitely safe.
+        let k = (1 &<< prefix) &- 1
+        var initialByte = prefixBits
+
+        if value < k {
+            // it fits already!
+            initialByte |= UInt8(truncatingIfNeeded: value)
+            self.append(initialByte)
+            return
+        }
+
+        // if it won't fit in this byte altogether, fill in all the remaining bits and move
+        // to the next byte.
+        initialByte |= UInt8(truncatingIfNeeded: k)
+        self.append(initialByte)
+
+        // deduct the initial [prefix] bits from the value, then encode it seven bits at a time into
+        // the remaining bytes.
+        // We can safely use unchecked subtraction here: we know that `k` is zero or greater, and that `value` is
+        // either the same value or greater. As a result, this can be unchecked: it's always safe.
+        var n = value &- Integer(k)
+        while n >= 128 {
+            let nextByte = (1 << 7) | UInt8(truncatingIfNeeded: n & 0x7f)
+            self.append(nextByte)
+            n >>= 7
+        }
+
+        self.append(UInt8(truncatingIfNeeded: n))
+    }
+}
+
+/// The number of bytes the QPACK representations take on the wire, so that an `OutputRawSpan` with enough room for them
+/// can be allocated up front.
+enum QPACKEncodedLength {
+    /// The number of bytes ``OutputRawSpan/appendQPACKPrefixedInteger(_:prefix:prefixBits:)`` appends for `value`.
+    static func prefixedInteger<Integer: FixedWidthInteger>(_ value: Integer, prefix: Int) -> Int {
+        assert(prefix <= 8)
+        assert(prefix >= 1)
+        let k = (1 &<< prefix) &- 1
+        if value < k {
+            return 1
+        }
+        // One byte for the prefix, then seven bits per byte for the rest, and at least one byte of it.
+        let rest = value &- Integer(k)
+        let significantBits = Integer.bitWidth &- rest.leadingZeroBitCount
+        return 1 &+ max(1, (significantBits &+ 6) / 7)
+    }
+
+    /// The largest number of bytes ``OutputRawSpan/appendQPACKPrefixedInteger(_:prefix:prefixBits:)`` appends for any
+    /// value of `Integer`, whatever its prefix.
+    static func maxPrefixedInteger<Integer: FixedWidthInteger>(_: Integer.Type) -> Int {
+        // One byte for the prefix, and the value spread over seven bits per byte. Subtracting the prefix can only
+        // make it shorter.
+        1 &+ (Integer.bitWidth &+ 6) / 7
     }
 }
