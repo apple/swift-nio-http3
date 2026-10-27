@@ -105,21 +105,6 @@ struct StreamTracker {
     }
 }
 
-@available(anyAppleOS 27, *)
-@_spi(PackageInternal)
-public struct QPACKEncodeResult: Sendable, Hashable {
-    @_spi(PackageInternal)
-    public let fieldSection: FieldSection
-    @_spi(PackageInternal)
-    public let instructions: [QPACKEncoderInstruction]
-
-    @_spi(PackageInternal)
-    public init(fieldSection: FieldSection, instructions: [QPACKEncoderInstruction]) {
-        self.fieldSection = fieldSection
-        self.instructions = instructions
-    }
-}
-
 /// A bit like ``FieldLine`` but without caring about wire representation.
 @available(anyAppleOS 27, *)
 enum HeaderRepresentation {

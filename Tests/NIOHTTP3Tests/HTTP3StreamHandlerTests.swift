@@ -102,6 +102,15 @@ func makeTestQPACKCoder(
     return coder
 }
 
+extension ByteBuffer {
+    /// Write a HEADERS frame whose payload is `fieldSection`, a QPACK encoded field section.
+    @available(anyAppleOS 27, *)
+    fileprivate mutating func writeHeadersFrame(fieldSection: ByteBuffer) {
+        self.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
+        self.writeLengthPrefixedBuffer(fieldSection, strategy: .quic)
+    }
+}
+
 extension EmbeddedChannel {
     /// Drain everything a ``QPACKOutboundDecoderStream`` has written to this channel, decoded back into
     /// instructions.
@@ -144,28 +153,29 @@ struct NIOHTTP3StreamHandlerTests {
         .headers(self.testRequestHeaderFields)
     }
 
+    /// The field section the static encoder writes for `testRequestHeaderFields`.
     @available(anyAppleOS 27, *)
-    private var testRequestPartialHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
+    private var testRequestFieldSectionBytes: ByteBuffer {
+        let encoder = StaticQPACKEncoder()
+        return ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: self.testRequestHeaderFields)) {
+            encoder.encode(headers: self.testRequestHeaderFields, into: &$0, preferHuffmanEncoding: false)
+        }
     }
 
     @available(anyAppleOS 27, *)
     private var testRequestPartialHeaderBytes: ByteBuffer {
         var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(.headers(self.testRequestPartialHeader), preferHuffmanEncoding: false)
+        buffer.writeHeadersFrame(fieldSection: self.testRequestFieldSectionBytes)
         return buffer
     }
 
     @available(anyAppleOS 27, *)
     private var testUndecodableRequestPartialHeaderBytes: ByteBuffer {
-        var fieldSection = StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields)
+        var fieldSection = self.testRequestFieldSectionBytes
         // A relative index of 0 against a base of 0 is absolute index -1, which is never in the table.
-        fieldSection.lines.append(.indexed(.dynamicTable, index: 0))
+        fieldSection.writeFieldLine(.indexed(.dynamicTable, index: 0), preferHuffmanEncoding: false)
         var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(
-            .headers(.init(fieldSection: fieldSection)),
-            preferHuffmanEncoding: false
-        )
+        buffer.writeHeadersFrame(fieldSection: fieldSection)
         return buffer
     }
 

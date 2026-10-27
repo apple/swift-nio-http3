@@ -140,33 +140,6 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
             }
         }
 
-        mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
-            switch consume self.state {
-            case .initial(let initial):
-                let result = QPACKEncodeResult(fieldSection: initial.encoder.encode(headers: headers), instructions: [])
-                self = .init(state: .initial(initial))
-                return result
-            case .awaitingStream(let awaiting):
-                let result = QPACKEncodeResult(
-                    fieldSection: awaiting.encoder.encode(headers: headers),
-                    instructions: []
-                )
-                self = .init(state: .awaitingStream(awaiting))
-                return result
-            case .withoutDynamic(let woDynamic):
-                let result = QPACKEncodeResult(
-                    fieldSection: woDynamic.encoder.encode(headers: headers),
-                    instructions: []
-                )
-                self = .init(state: .withoutDynamic(woDynamic))
-                return result
-            case .withDynamic(var withDynamic):
-                let result = withDynamic.encoder.encode(headers: headers, forStream: streamID)
-                self = .init(state: .withDynamic(withDynamic))
-                return result
-            }
-        }
-
         func maxEncodedLength(of headers: [HTTPField]) -> Int {
             switch self.state {
             case .initial(let initial):
@@ -367,10 +340,6 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
         case .none:
             return .none
         }
-    }
-
-    mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
-        self.encoderState.encodeHeaders(headers, forStream: streamID)
     }
 
     func maxEncodedLength(of headers: [HTTPField]) -> Int {

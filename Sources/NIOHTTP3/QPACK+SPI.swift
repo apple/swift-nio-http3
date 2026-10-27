@@ -20,19 +20,21 @@ public import NIOQUICHelpers
 @available(anyAppleOS 27, *)
 @_spi(Benchmarks)
 public enum QPACKBenchmarks {
-    /// Encode `headers` with the static-only encoder. Returns the number of field lines
-    /// produced.
+    /// Encode `headers` with the static-only encoder. Returns the number of bytes the field
+    /// section takes.
     ///
     /// The return value doesn't matter, but needs to be there so the calling benchmark
     /// can stop the function call from being optimised away.
     @_spi(Benchmarks)
     public static func staticEncode(headers: [HTTPField]) -> Int {
         let encoder = StaticQPACKEncoder()
-        return encoder.encode(headers: headers).lines.count
+        return Self.withOutputRawSpan(capacity: encoder.maxEncodedLength(of: headers)) { output in
+            encoder.encode(headers: headers, into: &output, preferHuffmanEncoding: true)
+        }
     }
 
     /// Create a dynamic encoder and encode `headers` on `streamID`. Returns the number
-    /// of field lines produced.
+    /// of bytes the field section takes.
     ///
     /// The return value doesn't matter, but needs to be there so the calling benchmark
     /// can stop the function call from being optimised away.
@@ -52,6 +54,17 @@ public enum QPACKBenchmarks {
             maxBlockedStreams: maxBlockedStreams,
             targetEvictableFraction: targetEvictableFraction
         )
-        return encoder.encode(headers: headers, forStream: streamID).fieldSection.lines.count
+        return Self.withOutputRawSpan(capacity: encoder.maxEncodedLength(of: headers)) { output in
+            _ = encoder.encode(headers: headers, forStream: streamID, into: &output, preferHuffmanEncoding: true)
+        }
+    }
+
+    /// Calls `body` with an `OutputRawSpan` over stack memory, and returns the number of bytes it appended.
+    private static func withOutputRawSpan(capacity: Int, _ body: (inout OutputRawSpan) -> Void) -> Int {
+        withUnsafeTemporaryAllocation(byteCount: capacity, alignment: 1) { buffer in
+            var output = OutputRawSpan(buffer: buffer, initializedCount: 0)
+            body(&output)
+            return output.finalize(for: buffer)
+        }
     }
 }

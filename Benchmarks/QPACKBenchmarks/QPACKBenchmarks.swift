@@ -38,7 +38,7 @@ let requestHeaders: [HTTPField] = [
 ]
 
 let benchmarks: @Sendable () -> Void = {
-    // Exercises StaticHeaderTable.find on every header, with no dynamic table.
+    // Exercises StaticHeaderTable.find on every header and writes the field section, with no dynamic table.
     Benchmark(
         "QPACKStaticEncode_BrowserGET",
         configuration: .init(
@@ -52,8 +52,7 @@ let benchmarks: @Sendable () -> Void = {
         }
     }
 
-    // Exercises the static-table lookup plus serialization: string coding and
-    // Huffman encoding, which the two benchmarks above never reach.
+    // Exercises serialization alone: string coding and Huffman encoding of literal field lines.
     Benchmark(
         "QPACKEncode",
         configuration: .init(
@@ -78,7 +77,7 @@ let benchmarks: @Sendable () -> Void = {
         }
     }
 
-    // Exercises the static-table lookup plus the dynamic table on every header.
+    // Exercises the static-table lookup plus the dynamic table on every header and writes the field section.
     Benchmark(
         "QPACKDynamicEncode_BrowserGET",
         configuration: .init(

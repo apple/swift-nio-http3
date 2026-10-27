@@ -585,17 +585,16 @@ struct QPACKCoderTests {
 extension QPACKCoder {
     /// Encodes `fields` into as much room as the coder asks for, sends the encoder instructions, and reads the field
     /// section back.
-    fileprivate func encodeFieldSection(_ fields: [HTTPField], streamID: QUICStreamID) -> FieldSection {
-        let bound = self.maxEncodedLength(of: fields)
-        var instructions: [QPACKEncoderInstruction] = []
-        var buffer = ByteBuffer(initialCapacity: bound) { output in
-            instructions = self.encodeHeaders(fields, streamID: streamID, into: &output, preferHuffmanEncoding: false)
+    fileprivate func encodeFieldSection(
+        _ fields: [HTTPField],
+        streamID: QUICStreamID,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) -> FieldSection {
+        let (buffer, instructions) = encodeWithExactRoom(self.maxEncodedLength(of: fields)) { output in
+            self.encodeHeaders(fields, streamID: streamID, into: &output, preferHuffmanEncoding: false)
         }
         self.sendEncoderInstructions(instructions)
-        #expect(buffer.readableBytes <= bound)
-        let fieldSection = try! buffer.readFieldSection()!
-        #expect(buffer.readableBytes == 0)
-        return fieldSection
+        return FieldSection(readingAll: buffer, sourceLocation: sourceLocation)
     }
 }
 
