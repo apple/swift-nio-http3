@@ -15,13 +15,11 @@
 import NIOQUICHelpers
 
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public enum HTTP3StreamType: Sendable {
     case unidirectional(Unidirectional)
     case request  // Bidirectional streams must be request streams
 
     /// Unidirectional stream types.
-    @_spi(PackageInternal)
     public enum Unidirectional: Hashable, RawRepresentable, CustomStringConvertible, Sendable {
         /// Type 0x00. Carries HTTP3 frames such as settings, goaway, etc.
         case control
