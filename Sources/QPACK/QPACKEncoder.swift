@@ -24,7 +24,7 @@ enum QPACKEncoderError: Error, Sendable, Hashable {
 struct StreamTrackerMessage {
     /// All the dynamic table indices referenced by this message. Must not be empty.
     var dynamicTableIndices: [Int]
-    /// The required insert count for the decoder to be able to decode this message. This will typically be 1 lower (because of 0-based indexing) than the highest index in the array above.
+    /// The required insert count for the decoder to be able to decode this message. This is 1 higher (because of 0-based indexing) than the highest index in the array above.
     var requiredInsertCount: Int
 }
 
