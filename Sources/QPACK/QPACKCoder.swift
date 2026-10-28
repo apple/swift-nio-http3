@@ -180,7 +180,8 @@ public final class QPACKCoder<
     ) throws(QPACKError) {
         let action = self.stateMachine.receivedRemoteSettings(
             maxQueueSize: maxQueueSize,
-            effectiveDynamicTableSize: min(self.encoderMaxTableSize, peersDynamicTableSize)
+            encoderMaxTableSize: self.encoderMaxTableSize,
+            peersMaxTableCapacity: peersDynamicTableSize
         )
 
         switch action {

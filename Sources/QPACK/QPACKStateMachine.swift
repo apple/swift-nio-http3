@@ -44,6 +44,7 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
                 var encoder: StaticQPACKEncoder
                 let maxQueueSize: Int
                 let dynamicTableSize: Int
+                let peersMaxTableCapacity: Int
             }
 
             struct WithDynamic: ~Copyable {
@@ -67,12 +68,16 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
 
         mutating func receivedRemoteSettings(
             maxQueueSize: Int,
-            effectiveDynamicTableSize: Int
+            encoderMaxTableSize: Int,
+            peersMaxTableCapacity: Int
         ) -> GotRemoteSettingsAction? {
             switch consume self.state {
             case .initial(let initial):
+                // RFC 9204 § 3.2.3: The encoder's table can't be larger than the peer's decoder allows, and this
+                // endpoint may want it smaller still.
+                let dynamicTableSize = min(encoderMaxTableSize, peersMaxTableCapacity)
                 // RFC 9204 § 4.2: An endpoint MAY avoid creating an encoder stream if it will not be used
-                if effectiveDynamicTableSize == 0 {
+                if dynamicTableSize == 0 {
                     self = .init(
                         state: .withoutDynamic(
                             .init(encoder: initial.encoder)
@@ -85,7 +90,8 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
                             .init(
                                 encoder: initial.encoder,
                                 maxQueueSize: maxQueueSize,
-                                dynamicTableSize: effectiveDynamicTableSize
+                                dynamicTableSize: dynamicTableSize,
+                                peersMaxTableCapacity: peersMaxTableCapacity
                             )
                         )
                     )
@@ -117,6 +123,7 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
                 fatalError("Encoder stream created when not needed or already made")
             case .awaitingStream(let awaitingStream):
                 let (dynamicEncoder, instruction) = DynamicQPACKEncoder.create(
+                    decoderMaxTableCapacity: awaitingStream.peersMaxTableCapacity,
                     dynamicTableMaxCapacity: awaitingStream.dynamicTableSize,
                     dynamicTableInitialCapacity: awaitingStream.dynamicTableSize,
                     maxBlockedStreams: awaitingStream.maxQueueSize,
@@ -276,13 +283,19 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
     ///
     /// The peer may only send SETTINGS once: a second call returns ``GotRemoteSettingsAction/emitConnectionError(_:)``
     /// and leaves the encoder state untouched.
+    ///
+    /// The encoder's dynamic table takes the smaller of `encoderMaxTableSize`, the most this endpoint is willing to
+    /// use, and `peersMaxTableCapacity`, the peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`. Field section prefixes are
+    /// encoded with the peer's, whatever the table's.
     mutating func receivedRemoteSettings(
         maxQueueSize: Int,
-        effectiveDynamicTableSize: Int
+        encoderMaxTableSize: Int,
+        peersMaxTableCapacity: Int
     ) -> GotRemoteSettingsAction? {
         self.encoderState.receivedRemoteSettings(
             maxQueueSize: maxQueueSize,
-            effectiveDynamicTableSize: effectiveDynamicTableSize
+            encoderMaxTableSize: encoderMaxTableSize,
+            peersMaxTableCapacity: peersMaxTableCapacity
         )
     }
 

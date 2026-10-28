@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import HTTPTypes
 import NIOQUICHelpers
 import Testing
 
@@ -36,7 +37,11 @@ struct QPACKStateMachineTests {
     @available(anyAppleOS 27, *)
     @Test func testSettingsWithoutDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
-        let action = stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0)
+        let action = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 0,
+            encoderMaxTableSize: 0,
+            peersMaxTableCapacity: 0
+        )
         switch action {
         case .makeEncoderInstructionStream:
             Issue.record("Expected no outbound encoder stream")
@@ -52,11 +57,19 @@ struct QPACKStateMachineTests {
     @available(anyAppleOS 27, *)
     @Test func secondSettingsIsAConnectionError() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
-        let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
+        let action1 = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: 300,
+            peersMaxTableCapacity: 300
+        )
         #expect(isMakeEncoderInstructionStream(action1))
 
         // RFC 9114 § 7.2.4: the peer may only send SETTINGS once.
-        let action2 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 4096)
+        let action2 = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: 4096,
+            peersMaxTableCapacity: 4096
+        )
         guard case .emitConnectionError(let error) = action2 else {
             Issue.record("Expected a connection error, got \(String(describing: action2))")
             return
@@ -71,10 +84,17 @@ struct QPACKStateMachineTests {
     @available(anyAppleOS 27, *)
     @Test func secondSettingsWithoutDynamicTableIsAConnectionError() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
-        #expect(stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0) == nil)
+        #expect(
+            stateMachine.receivedRemoteSettings(maxQueueSize: 0, encoderMaxTableSize: 0, peersMaxTableCapacity: 0)
+                == nil
+        )
 
         // The peer can't change its mind about the dynamic table by sending SETTINGS again.
-        let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
+        let action = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: 300,
+            peersMaxTableCapacity: 300
+        )
         guard case .emitConnectionError(let error) = action else {
             Issue.record("Expected a connection error, got \(String(describing: action))")
             return
@@ -106,7 +126,11 @@ struct QPACKStateMachineTests {
     @available(anyAppleOS 27, *)
     @Test func testEncodeHeadersInWaitingForStreamState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
-        let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 100)
+        let action = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: 100,
+            peersMaxTableCapacity: 100
+        )
         #expect(isMakeEncoderInstructionStream(action))
         // We have received remote settings, and been asked to create outbound encoder stream
         // However, the outbound stream isn't ready yet, so the dynamic table should not be used
@@ -116,16 +140,82 @@ struct QPACKStateMachineTests {
     @available(anyAppleOS 27, *)
     @Test func testEncodeHeadersInWithoutDynamicState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
-        let action = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 0)
+        let action = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: 0,
+            peersMaxTableCapacity: 0
+        )
         #expect(action == nil)  // No outbound stream because 0 size
         // We have received remote settings, but they specify 0 table size. Therefore we should not use dynamic table
         stateMachine.assertEncodesWithoutUsingDynamicTable()
     }
 
+    /// The encoder's table takes the smaller of this endpoint's limit and the peer's.
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [(4096, 300), (300, 4096)])
+    func encoderTableTakesTheSmallerLimit(encoderMaxTableSize: Int, peersMaxTableCapacity: Int) {
+        var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
+        let action = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: encoderMaxTableSize,
+            peersMaxTableCapacity: peersMaxTableCapacity
+        )
+        #expect(isMakeEncoderInstructionStream(action))
+        #expect(stateMachine.outboundEncoderStreamReady() == .sendEncoderInstruction(.setDynamicTableCapacity(300)))
+    }
+
+    /// RFC 9204 § 4.5.1.1: Field section prefixes are encoded with the peer's maximum table capacity, even when the
+    /// encoder's own table is smaller. With the MaxEntries of the encoder's table, 9, the encoded Required Insert
+    /// Count wraps around after 18 inserts, where the peer's decoder expects it to wrap around after 256.
+    @available(anyAppleOS 27, *)
+    @Test func prefixesAreEncodedWithThePeersMaxTableCapacity() throws {
+        var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
+        let action = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: 300,
+            peersMaxTableCapacity: 4096
+        )
+        #expect(isMakeEncoderInstructionStream(action))
+        let ready = stateMachine.outboundEncoderStreamReady()
+        guard case .sendEncoderInstruction(let setCapacity) = ready else {
+            Issue.record("Unexpected action \(ready)")
+            return
+        }
+        var decoder = QPACKDecoder(dynamicTableMaxCapacity: 4096)
+        _ = try decoder.processInstruction(try #require(setCapacity))
+
+        var highestRequiredInsertCount = 0
+        for round in 0..<40 {
+            let streamID = QUICStreamID(rawValue: UInt64(round) * 4)
+            let result = stateMachine.encodeHeaders(
+                [HTTPField(name: .init("x-round-\(round)")!, value: "\(round)")],
+                forStream: streamID
+            )
+            for instruction in result.instructions {
+                _ = try decoder.processInstruction(instruction)
+            }
+            let prefix = try #require(decoder.decodeFieldSectionPrefix(result.fieldSection.prefix), "round \(round)")
+            highestRequiredInsertCount = max(highestRequiredInsertCount, prefix.requiredInsertCount)
+
+            // Acknowledge the section, so its entries can be evicted to make room for the next ones.
+            if prefix.requiredInsertCount != 0 {
+                let ack = stateMachine.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: streamID))
+                if case .emitConnectionError(let error) = ack {
+                    Issue.record("Unexpected connection error \(error)")
+                }
+            }
+        }
+        #expect(highestRequiredInsertCount > 18)
+    }
+
     @available(anyAppleOS 27, *)
     @Test func testEncodeHeadersInWithDynamicState() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
-        let action1 = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 300)
+        let action1 = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: 300,
+            peersMaxTableCapacity: 300
+        )
         #expect(isMakeEncoderInstructionStream(action1))
         let action2 = stateMachine.outboundEncoderStreamReady()
         // The stream is ready so we should immediately start using the table at max capacity
@@ -482,7 +572,7 @@ struct QPACKStateMachineTests {
     @available(anyAppleOS 27, *)
     @Test func testGotDecoderInstructionWhenExplicitlyNoDynamicTable() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
-        _ = stateMachine.receivedRemoteSettings(maxQueueSize: 0, effectiveDynamicTableSize: 0)
+        _ = stateMachine.receivedRemoteSettings(maxQueueSize: 0, encoderMaxTableSize: 0, peersMaxTableCapacity: 0)
         // This instruction is invalid because remote explicitly told us no dynamic table capacity
         let action = stateMachine.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: 1))
         guard case .emitConnectionError(let error) = action else {
@@ -495,7 +585,11 @@ struct QPACKStateMachineTests {
     @available(anyAppleOS 27, *)
     @Test func testGotDecoderInstructionWhenAwaitingStream() {
         var stateMachine = QPACKStateMachine<Void>(decoderMaxTableSize: 1024, decoderMaxBlockedStreams: 100)
-        _ = stateMachine.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: 100)
+        _ = stateMachine.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: 100,
+            peersMaxTableCapacity: 100
+        )
         // We can't receive instructions from the remote decoder until we ourselves have sent an instruction to indicate support of the dynamic table
         let action = stateMachine.receivedIncomingDecoderInstruction(.sectionAcknowledgement(streamID: 1))
         guard case .emitConnectionError(let error) = action else {
@@ -659,7 +753,11 @@ extension QPACKStateMachine {
     /// Simulate receiving settings from the remote which allows the local encoder to use the dynamic table.
     fileprivate mutating func setupRemoteDynamicTable(maxSize: Int) {
         // remote sends us settings saying we may use the dynamic table
-        let actions1 = self.receivedRemoteSettings(maxQueueSize: 100, effectiveDynamicTableSize: maxSize)
+        let actions1 = self.receivedRemoteSettings(
+            maxQueueSize: 100,
+            encoderMaxTableSize: maxSize,
+            peersMaxTableCapacity: maxSize
+        )
         switch actions1 {
         // We open an encoder stream
         case .makeEncoderInstructionStream:

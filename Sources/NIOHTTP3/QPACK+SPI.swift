@@ -46,6 +46,7 @@ public enum QPACKBenchmarks {
         targetEvictableFraction: Double
     ) -> Int {
         var (encoder, _) = DynamicQPACKEncoder.create(
+            decoderMaxTableCapacity: dynamicTableMaxCapacity,
             dynamicTableMaxCapacity: dynamicTableMaxCapacity,
             dynamicTableInitialCapacity: dynamicTableInitialCapacity,
             maxBlockedStreams: maxBlockedStreams,

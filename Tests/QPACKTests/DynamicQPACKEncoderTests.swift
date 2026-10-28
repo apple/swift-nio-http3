@@ -39,6 +39,7 @@ struct DynamicQPACKEncoderTests {
     @Test(arguments: [true, false])
     func encoderWritesItsFieldSection(preferHuffmanEncoding: Bool) throws {
         var reference = DynamicQPACKEncoder.create(
+            decoderMaxTableCapacity: 4096,
             dynamicTableMaxCapacity: 4096,
             dynamicTableInitialCapacity: 4096,
             maxBlockedStreams: 100,
@@ -88,9 +89,54 @@ struct DynamicQPACKEncoderTests {
         #expect(sectionsWithLongDeltaBase > 0)
     }
 
+    /// RFC 9204 § 4.5.1.1: The Required Insert Count is encoded with the MaxEntries of the decoder, 2048 here, not
+    /// the 128 of the encoder's smaller table. With the encoder's, the encoded Required Insert Count wraps around at
+    /// 256 inserts, and the decoder rejects it.
+    @available(anyAppleOS 27, *)
+    @Test func requiredInsertCountIsEncodedWithTheDecodersMaxEntries() throws {
+        var (encoder, setCapacity) = DynamicQPACKEncoder.create(
+            decoderMaxTableCapacity: 65536,
+            dynamicTableMaxCapacity: 4096,
+            dynamicTableInitialCapacity: 4096,
+            maxBlockedStreams: 100,
+            targetEvictableFraction: 0.5
+        )
+        var decoder = QPACKDecoder(dynamicTableMaxCapacity: 65536)
+        _ = try decoder.processInstruction(try #require(setCapacity))
+
+        for round in 0..<300 {
+            let streamID = QUICStreamID(rawValue: UInt64(round) * 4)
+            let headers = [HTTPField(name: .init("x-round-\(round)")!, value: "\(round)")]
+            var (buffer, instructions) = encoder.encodeIntoExactBound(
+                headers: headers,
+                forStream: streamID,
+                preferHuffmanEncoding: true
+            )
+            for instruction in instructions {
+                _ = try decoder.processInstruction(instruction)
+            }
+
+            let fieldSection = try #require(try buffer.readFieldSection(), "round \(round)")
+            let prefix = try #require(decoder.decodeFieldSectionPrefix(fieldSection.prefix), "round \(round)")
+            let decoded = try decoder.decodeFieldSection(
+                prefix: prefix,
+                lines: fieldSection.lines,
+                streamID: streamID
+            ).unwrap()
+            let (fields, acknowledgement) = try #require(decoded, "round \(round)")
+            #expect(fields.map(\.value) == headers.map(\.value), "round \(round)")
+
+            // Acknowledge the section, so its entries can be evicted to make room for the next ones.
+            if let acknowledgement {
+                try encoder.processInstruction(acknowledgement)
+            }
+        }
+    }
+
     @available(anyAppleOS 27, *)
     @Test func writesNothingButThePrefixForNoFields() {
         var encoder = DynamicQPACKEncoder.create(
+            decoderMaxTableCapacity: 4096,
             dynamicTableMaxCapacity: 4096,
             dynamicTableInitialCapacity: 4096,
             maxBlockedStreams: 100,
