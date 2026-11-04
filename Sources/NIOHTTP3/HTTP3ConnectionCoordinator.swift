@@ -64,8 +64,8 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.datagramBuffer = HTTP3DatagramBuffer(maxAllowedSize: maxBufferedDatagramBytes)
 
         self.qpackCoder = QPACKCoder(
-            encoderMaxTableSize: Int(clamping: localSettings.qpackMaximumTableCapacity),
-            decoderMaxTableSize: Int(clamping: localSettings.qpackMaximumTableCapacity),
+            encoderTableMaxCapacity: Int(clamping: localSettings.qpackMaximumTableCapacity),
+            decoderTableMaxCapacity: Int(clamping: localSettings.qpackMaximumTableCapacity),
             decoderMaxBlockedStreams: Int(clamping: localSettings.qpackBlockedStreams),
             errorDelegate: self
         )
@@ -613,7 +613,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             do {
                 try qpackCoder.receivedRemoteSettings(
                     maxQueueSize: Int(clamping: onSettings.qpackBlockedStreams),
-                    peersDynamicTableSize: Int(clamping: onSettings.qpackMaximumTableCapacity)
+                    peersDecoderTableMaxCapacity: Int(clamping: onSettings.qpackMaximumTableCapacity)
                 )
             } catch {
                 assert(error.isConnectionError)

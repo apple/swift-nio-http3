@@ -84,15 +84,15 @@ final class TestQPACKConnectionDelegate: QPACK.QPACKConnectionDelegate {
 /// the resulting acknowledgements to that channel, and traps if it has no outbound decoder stream at all.
 @available(anyAppleOS 27, *)
 func makeTestQPACKCoder(
-    encoderMaxTableSize: Int = 4096,
-    decoderMaxTableSize: Int = 4096,
+    encoderTableMaxCapacity: Int = 4096,
+    decoderTableMaxCapacity: Int = 4096,
     decoderMaxBlockedStreams: Int = 16,
     connectionDelegate: TestQPACKConnectionDelegate = TestQPACKConnectionDelegate(),
     decoderStreamChannel: EmbeddedChannel? = nil
 ) -> NIOQPACKCoder<TestQPACKConnectionDelegate, TestDelegate> {
     let coder = NIOQPACKCoder<TestQPACKConnectionDelegate, TestDelegate>(
-        encoderMaxTableSize: encoderMaxTableSize,
-        decoderMaxTableSize: decoderMaxTableSize,
+        encoderTableMaxCapacity: encoderTableMaxCapacity,
+        decoderTableMaxCapacity: decoderTableMaxCapacity,
         decoderMaxBlockedStreams: decoderMaxBlockedStreams,
         errorDelegate: connectionDelegate
     )
