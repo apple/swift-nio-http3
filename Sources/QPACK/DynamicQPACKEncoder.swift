@@ -35,7 +35,7 @@ public struct DynamicQPACKEncoder {
     private var table: DynamicHeaderTable
     /// The peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`. RFC 9204 § 4.5.1.1: the Required Insert Count is encoded with
     /// the MaxEntries of the decoder, which may exceed that of the table the encoder uses.
-    private let decoderMaxTableCapacity: Int
+    private let peersDecoderTableMaxCapacity: Int
     /// The maximum number of streams we'll risk blocking. The peers decoder chooses this.
     private let maxBlockedStreams: Int
     /// For tracking which streams use which table entries, for eviction purposes and for monitoring which streams might be blocked.
@@ -43,10 +43,10 @@ public struct DynamicQPACKEncoder {
     /// For when the dynamic table can't be used (e.g. it's full).
     private let staticEncoder: StaticQPACKEncoder
 
-    /// `decoderMaxTableCapacity` is the peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`, at least `dynamicTableMaxCapacity`.
+    /// `peersDecoderTableMaxCapacity` is the peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`, at least `dynamicTableMaxCapacity`.
     @_spi(PackageInternal)
     public static func create(
-        decoderMaxTableCapacity: Int,
+        peersDecoderTableMaxCapacity: Int,
         dynamicTableMaxCapacity: Int,
         dynamicTableInitialCapacity: Int,
         maxBlockedStreams: Int,
@@ -54,8 +54,8 @@ public struct DynamicQPACKEncoder {
     ) -> (Self, QPACKEncoderInstruction?) {
         assert(dynamicTableMaxCapacity >= 0)
         // RFC 9204 § 3.2.3: The encoder's table can't be larger than the decoder allows.
-        assert(dynamicTableMaxCapacity <= decoderMaxTableCapacity)
-        let dynamicTableMaxCapacity = min(max(dynamicTableMaxCapacity, 0), decoderMaxTableCapacity)
+        assert(dynamicTableMaxCapacity <= peersDecoderTableMaxCapacity)
+        let dynamicTableMaxCapacity = min(max(dynamicTableMaxCapacity, 0), peersDecoderTableMaxCapacity)
         // In debug mode, we'll enforce the constraint, otherwise we'll correct the mistake
         assert(dynamicTableInitialCapacity <= dynamicTableMaxCapacity)
         assert(dynamicTableInitialCapacity >= 0)
@@ -74,7 +74,7 @@ public struct DynamicQPACKEncoder {
         }
         let encoder = Self(
             table: table,
-            decoderMaxTableCapacity: decoderMaxTableCapacity,
+            peersDecoderTableMaxCapacity: peersDecoderTableMaxCapacity,
             maxBlockedStreams: maxBlockedStreams,
             streamTracker: .init(),
             staticEncoder: .init()
@@ -143,7 +143,7 @@ public struct DynamicQPACKEncoder {
         QPACKEncodedLength.maxFieldSectionPrefix(
             maxRequiredInsertCount: self.table.insertCount &+ fieldCount,
             maxDeltaBase: max(self.table.insertCount, fieldCount),
-            maxTableCapacity: self.decoderMaxTableCapacity
+            maxTableCapacity: self.peersDecoderTableMaxCapacity
         )
     }
 
@@ -153,7 +153,7 @@ public struct DynamicQPACKEncoder {
     private func expectedPrefixLength() -> Int {
         let insertCount = self.table.insertCount
         let prefix = FieldSectionPrefix(requiredInsertCount: insertCount, base: insertCount)
-        return QPACKEncodedLength.fieldSectionPrefix(prefix.encode(maxCapacity: self.decoderMaxTableCapacity))
+        return QPACKEncodedLength.fieldSectionPrefix(prefix.encode(maxCapacity: self.peersDecoderTableMaxCapacity))
     }
 
     /// What the encoder needs to remember while it encodes the fields of a section.
@@ -218,7 +218,7 @@ public struct DynamicQPACKEncoder {
             )
         }
         let prefix = FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: section.base)
-        return prefix.encode(maxCapacity: self.decoderMaxTableCapacity)
+        return prefix.encode(maxCapacity: self.peersDecoderTableMaxCapacity)
     }
 
     /// - Parameters:

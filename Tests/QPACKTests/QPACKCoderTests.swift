@@ -28,14 +28,14 @@ struct QPACKCoderTests {
     /// Make a coder with limits that are large enough not to matter. Override only what a test is about.
     @available(anyAppleOS 27, *)
     private static func makeTestCoder(
-        encoderMaxTableSize: Int = 1024,
-        decoderMaxTableSize: Int = 1024,
+        encoderTableMaxCapacity: Int = 1024,
+        decoderTableMaxCapacity: Int = 1024,
         decoderMaxBlockedStreams: Int = 100,
         errorDelegate: TestConnection
     ) -> TestCoder {
         TestCoder(
-            encoderMaxTableSize: encoderMaxTableSize,
-            decoderMaxTableSize: decoderMaxTableSize,
+            encoderTableMaxCapacity: encoderTableMaxCapacity,
+            decoderTableMaxCapacity: decoderTableMaxCapacity,
             decoderMaxBlockedStreams: decoderMaxBlockedStreams,
             errorDelegate: errorDelegate
         )
@@ -48,7 +48,7 @@ struct QPACKCoderTests {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 1024)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 1024)
 
         #expect(connection.madeOutboundEncoderStreamCount == 1)
     }
@@ -59,7 +59,7 @@ struct QPACKCoderTests {
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
         // RFC 9204 § 4.2: An endpoint MAY avoid creating an encoder stream if it will not be used.
-        try coder.receivedRemoteSettings(maxQueueSize: 0, peersDynamicTableSize: 0)
+        try coder.receivedRemoteSettings(maxQueueSize: 0, peersDecoderTableMaxCapacity: 0)
 
         #expect(connection.madeOutboundEncoderStreamCount == 0)
     }
@@ -68,9 +68,9 @@ struct QPACKCoderTests {
     @Test func remoteSettingsAreCappedByTheLocalEncoderTableSize() throws {
         let connection = TestConnection()
         // The peer offers a bigger table than this endpoint is willing to keep for its own encoder.
-        let coder = Self.makeTestCoder(encoderMaxTableSize: 300, errorDelegate: connection)
+        let coder = Self.makeTestCoder(encoderTableMaxCapacity: 300, errorDelegate: connection)
 
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 4096)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
         let encoderStream = TestOutboundEncoderStream()
@@ -84,9 +84,9 @@ struct QPACKCoderTests {
     @Test func remoteSettingsWithoutALocalEncoderTableDoesNotAskForEncoderStream() throws {
         let connection = TestConnection()
         // This endpoint refuses the dynamic table for its own encoder, whatever the peer offers.
-        let coder = Self.makeTestCoder(encoderMaxTableSize: 0, errorDelegate: connection)
+        let coder = Self.makeTestCoder(encoderTableMaxCapacity: 0, errorDelegate: connection)
 
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 4096)
 
         #expect(connection.madeOutboundEncoderStreamCount == 0)
 
@@ -110,12 +110,12 @@ struct QPACKCoderTests {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 300)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
         // RFC 9114 § 7.2.4: the peer may only send SETTINGS once.
         #expect(throws: QPACKError.duplicateSettings) {
-            try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
+            try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 4096)
         }
 
         // The first settings still stand: no second encoder stream, and the table keeps its original size.
@@ -130,12 +130,12 @@ struct QPACKCoderTests {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
-        try coder.receivedRemoteSettings(maxQueueSize: 0, peersDynamicTableSize: 0)
+        try coder.receivedRemoteSettings(maxQueueSize: 0, peersDecoderTableMaxCapacity: 0)
         #expect(connection.madeOutboundEncoderStreamCount == 0)
 
         // The peer can't change its mind about the dynamic table by sending SETTINGS again.
         #expect(throws: QPACKError.duplicateSettings) {
-            try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+            try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 300)
         }
 
         #expect(connection.madeOutboundEncoderStreamCount == 0)
@@ -148,7 +148,7 @@ struct QPACKCoderTests {
         let connection = TestConnection()
         let coder = Self.makeTestCoder(errorDelegate: connection)
 
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 300)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
         let encoderStream = TestOutboundEncoderStream()
@@ -187,7 +187,7 @@ struct QPACKCoderTests {
 
         // The peer permits the dynamic table, so an encoder stream has been requested, but it isn't here yet. The
         // coder must stay on the static encoder: it holds no stream to write instructions to, and would trap.
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 300)
         #expect(connection.madeOutboundEncoderStreamCount == 1)
 
         let headers = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: 1)
@@ -210,7 +210,7 @@ struct QPACKCoderTests {
         let coder = Self.makeTestCoder(errorDelegate: connection)
         let encoderStream = TestOutboundEncoderStream()
 
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 300)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 300)
         coder.outboundEncoderStreamReady(encoderStream)
         #expect(encoderStream.instructions == [.setDynamicTableCapacity(300)])
         encoderStream.instructions.removeAll()
@@ -504,7 +504,7 @@ struct QPACKCoderTests {
         let encoderStream = TestOutboundEncoderStream()
         let streamID = QUICStreamID(4)
 
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 1024)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 1024)
         coder.outboundEncoderStreamReady(encoderStream)
         _ = coder.encodeHeaders([.init(name: .cookie, value: "test")], streamID: streamID)
 

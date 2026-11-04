@@ -155,7 +155,7 @@ struct EncodeDecodeTests {
 
         var encoderInstructions = [QPACKEncoderInstruction]()
         var (encoder, instruction1) = DynamicQPACKEncoder.create(
-            decoderMaxTableCapacity: dynamicTableMaxCapacity,
+            peersDecoderTableMaxCapacity: dynamicTableMaxCapacity,
             dynamicTableMaxCapacity: dynamicTableMaxCapacity,
             dynamicTableInitialCapacity: dynamicTableInitialCapacity,
             maxBlockedStreams: 100,  // We're not testing the max behaviour, so we set it high

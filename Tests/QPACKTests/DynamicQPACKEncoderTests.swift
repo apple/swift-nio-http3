@@ -39,7 +39,7 @@ struct DynamicQPACKEncoderTests {
     @Test(arguments: [true, false])
     func encoderWritesItsFieldSection(preferHuffmanEncoding: Bool) throws {
         var reference = DynamicQPACKEncoder.create(
-            decoderMaxTableCapacity: 4096,
+            peersDecoderTableMaxCapacity: 4096,
             dynamicTableMaxCapacity: 4096,
             dynamicTableInitialCapacity: 4096,
             maxBlockedStreams: 100,
@@ -95,7 +95,7 @@ struct DynamicQPACKEncoderTests {
     @available(anyAppleOS 27, *)
     @Test func requiredInsertCountIsEncodedWithTheDecodersMaxEntries() throws {
         var (encoder, setCapacity) = DynamicQPACKEncoder.create(
-            decoderMaxTableCapacity: 65536,
+            peersDecoderTableMaxCapacity: 65536,
             dynamicTableMaxCapacity: 4096,
             dynamicTableInitialCapacity: 4096,
             maxBlockedStreams: 100,
@@ -136,7 +136,7 @@ struct DynamicQPACKEncoderTests {
     @available(anyAppleOS 27, *)
     @Test func writesNothingButThePrefixForNoFields() {
         var encoder = DynamicQPACKEncoder.create(
-            decoderMaxTableCapacity: 4096,
+            peersDecoderTableMaxCapacity: 4096,
             dynamicTableMaxCapacity: 4096,
             dynamicTableInitialCapacity: 4096,
             maxBlockedStreams: 100,

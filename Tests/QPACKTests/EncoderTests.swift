@@ -758,7 +758,7 @@ extension DynamicQPACKEncoder {
         sourceLocation: SourceLocation = #_sourceLocation
     ) -> Self {
         let (decoder, instructions) = Self.create(
-            decoderMaxTableCapacity: dynamicTableMaxCapacity,
+            peersDecoderTableMaxCapacity: dynamicTableMaxCapacity,
             dynamicTableMaxCapacity: dynamicTableMaxCapacity,
             dynamicTableInitialCapacity: dynamicTableInitialCapacity,
             maxBlockedStreams: maxBlockedStreams,

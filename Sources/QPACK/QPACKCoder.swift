@@ -84,10 +84,10 @@ public protocol QPACKDecodeReceiver {
 ///    imposes on its own encoder.
 /// 2. Call ``outboundDecoderStreamReady(_:)`` once that stream exists. Instructions produced before this are
 ///    buffered and flushed then.
-/// 3. Call ``receivedRemoteSettings(maxQueueSize:peersDynamicTableSize:)`` when the peer's SETTINGS arrive. If
+/// 3. Call ``receivedRemoteSettings(maxQueueSize:peersDecoderTableMaxCapacity:)`` when the peer's SETTINGS arrive. If
 ///    the peer permits the dynamic table, and this endpoint is willing to use one, the coder asks for an encoder
 ///    stream via ``ConnectionDelegate/makeOutboundEncoderStream()``; supply it with
-///    ``outboundEncoderStreamReady(_:)``. Until then — and forever, if either side put the table size at zero —
+///    ``outboundEncoderStreamReady(_:)``. Until then — and forever, if either side put the table capacity at zero —
 ///    encoding uses the static table only.
 ///
 /// Failures are reported to whoever caused them: methods called for input from the peer's control, encoder and
@@ -125,15 +125,16 @@ public final class QPACKCoder<
 
     private let connection: ConnectionDelegate
 
-    private let encoderMaxTableSize: Int
+    private let encoderTableMaxCapacity: Int
 
     /// Create a new ``QPACKCoder``.
     ///
     /// - Parameters:
-    ///   - encoderMaxTableSize: Maximum size in bytes this endpoint is willing to use for its own encoder's
+    ///   - encoderTableMaxCapacity: Maximum capacity in bytes this endpoint is willing to use for its own encoder's
     ///     dynamic table. `0` means the encoder never uses the dynamic table, however large a table the peer
     ///     offers, and therefore never asks for an encoder stream.
-    ///   - decoderMaxTableSize: Maximum size in bytes of this endpoint's dynamic table. `0` refuses it entirely.
+    ///   - decoderTableMaxCapacity: Maximum capacity in bytes of this endpoint's dynamic table. `0` refuses it
+    ///     entirely.
     ///   - decoderMaxBlockedStreams: How many streams may be blocked at once waiting for entries which haven't
     ///     arrived on the peer's encoder stream yet. Exceeding this is a connection error.
     ///   - errorDelegate: Receives the request for an outbound encoder stream.
@@ -144,16 +145,16 @@ public final class QPACKCoder<
     ///   advertises when sending its own SETTINGS frame.
     @_spi(PackageInternal)
     public init(
-        encoderMaxTableSize: Int,
-        decoderMaxTableSize: Int,
+        encoderTableMaxCapacity: Int,
+        decoderTableMaxCapacity: Int,
         decoderMaxBlockedStreams: Int,
         errorDelegate: ConnectionDelegate
     ) {
         self.stateMachine = QPACKStateMachine(
-            decoderMaxTableSize: decoderMaxTableSize,
+            decoderTableMaxCapacity: decoderTableMaxCapacity,
             decoderMaxBlockedStreams: decoderMaxBlockedStreams
         )
-        self.encoderMaxTableSize = encoderMaxTableSize
+        self.encoderTableMaxCapacity = encoderTableMaxCapacity
         self.connection = errorDelegate
     }
 
@@ -161,9 +162,9 @@ public final class QPACKCoder<
     /// settings stream. When receiving settings for the first time, the QPACKCoder will
     /// call its ``ConnectionDelegate``, to open the outbound encoder stream.
     ///
-    /// The table the encoder ends up using is the smaller of `peersDynamicTableSize` and the
-    /// `encoderMaxTableSize` given at init. If that is zero — because the peer advertised a zero sized dynamic
-    /// table, or because this endpoint refuses to use one — no encoder stream is requested, since it would never
+    /// The table the encoder ends up using is the smaller of `peersDecoderTableMaxCapacity` and the
+    /// `encoderTableMaxCapacity` given at init. If that is zero — because the peer advertised a zero capacity
+    /// dynamic table, or because this endpoint refuses to use one — no encoder stream is requested, since it would never
     /// be used. See RFC 9204 § 4.2.
     ///
     /// - Important: The peer may only send SETTINGS once. Calling this a second time leaves the coder's state
@@ -171,17 +172,17 @@ public final class QPACKCoder<
     ///
     /// - Parameters:
     ///   - maxQueueSize: The peer's `SETTINGS_QPACK_BLOCKED_STREAMS`.
-    ///   - peersDynamicTableSize: The peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`.
+    ///   - peersDecoderTableMaxCapacity: The peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`.
     /// - Throws: A connection error.
     @_spi(PackageInternal)
     public func receivedRemoteSettings(
         maxQueueSize: Int,
-        peersDynamicTableSize: Int
+        peersDecoderTableMaxCapacity: Int
     ) throws(QPACKError) {
         let action = self.stateMachine.receivedRemoteSettings(
             maxQueueSize: maxQueueSize,
-            encoderMaxTableSize: self.encoderMaxTableSize,
-            peersMaxTableCapacity: peersDynamicTableSize
+            encoderTableMaxCapacity: self.encoderTableMaxCapacity,
+            peersDecoderTableMaxCapacity: peersDecoderTableMaxCapacity
         )
 
         switch action {
