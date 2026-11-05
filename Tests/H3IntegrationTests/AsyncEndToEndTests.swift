@@ -18,6 +18,7 @@ import Logging
 import NIOCore
 import NIOHTTPTypes
 import NIOPosix
+import NIOQUICHelpers
 import Testing
 import X509
 
@@ -462,6 +463,99 @@ struct AsyncEndToEndTests {
 
                     // The stream should close now that we have received a RESET_STREAM.
                     try await outboundStream.channel.closeFuture.get()
+                }
+            }
+
+            try await group.waitForAll()
+        }
+
+        // cleanup
+        try await clientChannel.close()
+        try await serverChannel.close()
+    }
+
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 27, *)
+    func responseSurvivesStopSendingOfAnUnfinishedRequest(
+        authenticationConfiguration: AuthenticationConfiguration
+    ) async throws {
+        // RFC 9114 § 4.1: a server which doesn't need the rest of a request may abort reading the request stream, send
+        // a complete response, and cleanly close its sending part. Clients must not discard that response.
+        let serverLogger = Logger(label: "Server")
+        let clientLogger = Logger(label: "Client")
+
+        let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
+        let serverName: String
+        switch credentials {
+        case .rawKeys(let name, _, _, _):
+            serverName = name
+        case .certificates(let name, _, _, _):
+            serverName = name
+        }
+
+        let (serverChannel, serverMultiplexer) = try await makeHTTP3Server(
+            credentials: credentials,
+            settings: .init(),
+            logger: serverLogger
+        )
+        let (clientChannel, clientMultiplexer) = try await makeHTTP3Client(
+            credentials: credentials,
+            settings: .init(),
+            logger: clientLogger
+        )
+
+        let testRequest = HTTPRequest(method: .post, scheme: "https", authority: "test", path: "/")
+        let testResponse = HTTPResponse(status: .forbidden)
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            // Server: answers the request head alone, without reading the request body.
+            group.addTask {
+                var inboundConnections = serverMultiplexer.inboundConnections.makeAsyncIterator()
+                let inboundConnection = try #require(await inboundConnections.next())
+
+                var inboundStreams = inboundConnection.inboundStreams.makeAsyncIterator()
+                let inboundStream = try #require(await inboundStreams.next())
+
+                try await inboundStream.executeThenClose { inboundParts, outbound in
+                    var inboundPartIterator = inboundParts.makeAsyncIterator()
+                    try await #expect(inboundPartIterator.next() == .head(testRequest))
+
+                    // Stop reading before responding, so the client sees the STOP_SENDING before the response.
+                    inboundStream.channel.triggerUserOutboundEvent(
+                        QUICStopSendingEvent(code: QUICApplicationErrorCode(HTTP3ErrorCode.noError.rawValue)!),
+                        promise: nil
+                    )
+                    try await outbound.write(.head(testResponse))
+                    outbound.finish()
+                }
+            }
+
+            // Client: sends the request head and leaves the request body unfinished.
+            group.addTask {
+                let clientConnection = try await clientMultiplexer.concurrencyView.createConnection(
+                    serverName: serverName,
+                    remoteAddress: serverChannel.localAddress!,
+                    inboundPushStreamInitializer: { _ in
+                        fatalError("Push streams not supported")
+                    }
+                )
+
+                let requestStream = try await clientConnection.concurrencyView.createRequestStream {
+                    let streamChannel = $0.channel
+                    return streamChannel.eventLoop.makeCompletedFuture {
+                        try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
+                            wrappingChannelSynchronously: streamChannel,
+                            configuration: .init(isOutboundHalfClosureEnabled: true)
+                        )
+                    }
+                }
+
+                try await requestStream.executeThenClose { inboundParts, outbound in
+                    try await outbound.write(.head(testRequest))
+                    var inboundPartIterator = inboundParts.makeAsyncIterator()
+                    try await #expect(inboundPartIterator.next() == .head(testResponse))
+                    try await #expect(inboundPartIterator.next() == .end(nil))
+                    try await #expect(inboundPartIterator.next() == nil)
                 }
             }
 
