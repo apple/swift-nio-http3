@@ -16,6 +16,7 @@ import Logging
 import NIOConcurrencyHelpers
 import NIOCore
 import NIOEmbedded
+import NIOExtras
 import NIOQUICHelpers
 import Testing
 
@@ -133,6 +134,65 @@ struct HTTP3GracefulShutdownTests {
         #expect(throws: Never.self) {
             try connectionChannel.throwIfErrorCaught()
         }
+    }
+
+    @Test
+    @available(anyAppleOS 27, *)
+    func rejectedRequestStreamIsAbortedInBothDirections() throws {
+        var configuration = HTTP3ServerConfiguration.defaults
+        configuration.rttProvider = { .milliseconds(20) }
+
+        let (connectionChannel, handler, streamChannel) = try self.makeServerHandler(configuration: configuration)
+        defer { try? connectionChannel.close().wait() }
+
+        let connectPromise = connectionChannel.eventLoop.makePromise(of: Void.self)
+        try connectionChannel.connect(to: .init(ipAddress: "127.0.0.1", port: 8000), promise: connectPromise)
+        try connectPromise.futureResult.wait()
+
+        // Accept stream 0 between the two GOAWAYs, so that the second one carries ID 4.
+        try handler.initiateGracefulShutdown()
+        let acceptedStreamChannel = EmbeddedChannel()
+        try acceptedStreamChannel.syncOptions?.setOption(.quicStreamID, value: 0)
+        try handler.inboundStreamReceived(acceptedStreamChannel).wait()
+        connectionChannel.embeddedEventLoop.advanceTime(by: .milliseconds(20))
+
+        var decoder = HTTP3FrameDecoder()
+        _ = try streamChannel.readOutbound(as: ByteBuffer.self)
+        _ = try streamChannel.readOutbound(as: ByteBuffer.self)
+        var firstGOAWAY = try #require(try streamChannel.readOutbound(as: ByteBuffer.self))
+        #expect(try decoder.decode(buffer: &firstGOAWAY) == .known(.goaway(.maxServerValue)))
+        var secondGOAWAY = try #require(try streamChannel.readOutbound(as: ByteBuffer.self))
+        #expect(try decoder.decode(buffer: &secondGOAWAY) == .known(.goaway(4)))
+
+        // Stream 4 is above the GOAWAY ID, so it is rejected.
+        let outboundEvents = NIOLockedValueBox<[DebugOutboundEventsHandler.Event]>([])
+        let rejectedStreamChannel = EmbeddedChannel(
+            handler: DebugOutboundEventsHandler { event, _ in
+                outboundEvents.withLockedValue { $0.append(event) }
+            }
+        )
+        try rejectedStreamChannel.syncOptions?.setOption(.quicStreamID, value: 4)
+        try rejectedStreamChannel.connect(to: .init(ipAddress: "127.0.0.1", port: 8000)).wait()
+        try handler.inboundStreamReceived(rejectedStreamChannel).wait()
+
+        let recordedOutboundEvents = outboundEvents.withLockedValue { $0 }
+        let stopSendingIndex = try #require(recordedOutboundEvents.firstIndex { $0.isStopSendingEvent != nil })
+        let resetStreamIndex = try #require(recordedOutboundEvents.firstIndex { $0.isResetStreamEvent != nil })
+        #expect(stopSendingIndex < resetStreamIndex)
+        #expect(
+            recordedOutboundEvents[stopSendingIndex].isStopSendingEvent?.code
+                == QUICApplicationErrorCode(.requestRejected)
+        )
+        #expect(
+            recordedOutboundEvents[resetStreamIndex].isResetStreamEvent?.code
+                == QUICApplicationErrorCode(.requestRejected)
+        )
+
+        // A rejected stream counts as open until it closes, and graceful shutdown waits for it.
+        // Read the flag first: on failure, `#expect` would describe the channel, and that traps in
+        // `ChannelPipeline.debugDescription`.
+        let rejectedStreamIsActive = rejectedStreamChannel.isActive
+        #expect(!rejectedStreamIsActive)
     }
 
     @Test
