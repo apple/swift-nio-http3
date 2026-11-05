@@ -111,6 +111,15 @@ public struct HTTP3ClientConnection<
         }
     }
 
+    /// The QUIC stream creator associated with this connection.
+    ///
+    /// > Note: WebTransport API
+    public var streamCreator: EventLoopFuture<StreamCreator> {
+        self.h3Handler.eventLoop.submit {
+            self.h3Handler.value.coordinator.streamCreator
+        }
+    }
+
     /// Provides an async interface for interacting with this connection.
     @_spi(HTTP3AsyncInterface)
     public struct ConcurrencyView: Sendable {
@@ -125,6 +134,15 @@ public struct HTTP3ClientConnection<
                 @escaping @Sendable (HTTP3StreamInitializerParameters) -> EventLoopFuture<InitializerOutput>
         ) async throws -> InitializerOutput {
             try await self.underlying.createRequestStream(streamInitializer: streamInitializer).get()
+        }
+
+        /// The QUIC stream creator associated with this connection.
+        ///
+        /// > Note: WebTransport API
+        public var streamCreator: StreamCreator {
+            get async throws {
+                try await self.underlying.streamCreator.get()
+            }
         }
     }
 

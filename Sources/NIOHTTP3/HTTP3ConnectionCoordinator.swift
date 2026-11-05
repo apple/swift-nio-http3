@@ -33,7 +33,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     private var qpackCoder: QPACKCoder?
     private var connectionStateMachine: HTTP3ConnectionStateMachine
     private let outboundControlStreamHandler: HTTP3OutboundControlStreamHandler
-    private let streamCreator: QUICStreamCreator
+    let streamCreator: QUICStreamCreator
     /// The connection handler.
     ///
     /// Setting this creates a strong retain cycle which is broken by the connection handler when
@@ -474,6 +474,9 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 streamType: .unidirectional(streamType)
             )
             throw error
+        case .doNothing:
+            // WebTransport stream
+            break
         }
 
     }
