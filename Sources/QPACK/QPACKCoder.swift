@@ -220,6 +220,59 @@ public final class QPACKCoder<
         return result.fieldSection
     }
 
+    /// The largest number of bytes ``encodeHeaders(_:streamID:into:preferHuffmanEncoding:)`` appends for `fields`.
+    ///
+    /// - Important: The bound only holds for the next encode: every encode changes the state of the dynamic table.
+    @_spi(PackageInternal)
+    public func maxEncodedLength(of fields: [HTTPField]) -> Int {
+        self.stateMachine.maxEncodedLength(of: fields)
+    }
+
+    /// QPACK encode your HTTP fields into `output`, as the payload of a HEADERS frame.
+    ///
+    /// Use this method for headers and trailers. The fields are written as they are encoded: no intermediate
+    /// ``FieldSection`` is built.
+    ///
+    /// The encode may produce instructions for the peer's decoder. Pass them to ``sendEncoderInstructions(_:)`` once
+    /// you're done with `output`. They aren't sent from here because sending writes to the encoder stream, and that
+    /// mustn't happen while the caller is still writing into `output`.
+    ///
+    /// - Important: The field section references the dynamic table as it stands now, so it must be written to the
+    ///   stream in the order it was encoded. Otherwise the peer's decoder sees references it can't resolve.
+    ///
+    /// - Parameters:
+    ///   - fields: The fields to encode.
+    ///   - streamID: The stream the field section is sent on.
+    ///   - output: The span to append the field section to.
+    ///   - preferHuffmanEncoding: Whether to Huffman encode strings, where that makes them shorter.
+    /// - Precondition: `output` has room for ``maxEncodedLength(of:)`` more bytes, asked for right before.
+    /// - Returns: The encoder instructions to pass to ``sendEncoderInstructions(_:)``.
+    @_spi(PackageInternal)
+    public func encodeHeaders(
+        _ fields: [HTTPField],
+        streamID: QUICStreamID,
+        into output: inout OutputRawSpan,
+        preferHuffmanEncoding: Bool
+    ) -> [QPACKEncoderInstruction] {
+        self.stateMachine.encodeHeaders(
+            fields,
+            forStream: streamID,
+            into: &output,
+            preferHuffmanEncoding: preferHuffmanEncoding
+        )
+    }
+
+    /// Send the instructions returned by ``encodeHeaders(_:streamID:into:preferHuffmanEncoding:)`` to the peer, via
+    /// the ``QPACKOutboundEncoderStream/sendInstructions(_:)`` method call. Call this before the field section is sent.
+    @_spi(PackageInternal)
+    public func sendEncoderInstructions(_ instructions: [QPACKEncoderInstruction]) {
+        if !instructions.isEmpty {
+            // Safe to unwrap: instructions imply the encoder is using the dynamic table, which it only does once
+            // the stream is set. See `outboundEncoderStream`.
+            self.outboundEncoderStream!.sendInstructions(instructions)
+        }
+    }
+
     /// Call this method as a response to the ``ConnectionDelegate/makeOutboundEncoderStream()``
     /// invocation with a stream that conforms to the ``QPACKOutboundEncoderStream``
     /// protocol.

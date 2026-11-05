@@ -167,6 +167,50 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
             }
         }
 
+        func maxEncodedLength(of headers: [HTTPField]) -> Int {
+            switch self.state {
+            case .initial(let initial):
+                initial.encoder.maxEncodedLength(of: headers)
+            case .awaitingStream(let awaiting):
+                awaiting.encoder.maxEncodedLength(of: headers)
+            case .withoutDynamic(let woDynamic):
+                woDynamic.encoder.maxEncodedLength(of: headers)
+            case .withDynamic(let withDynamic):
+                withDynamic.encoder.maxEncodedLength(of: headers)
+            }
+        }
+
+        mutating func encodeHeaders(
+            _ headers: [HTTPField],
+            forStream streamID: QUICStreamID,
+            into output: inout OutputRawSpan,
+            preferHuffmanEncoding: Bool
+        ) -> [QPACKEncoderInstruction] {
+            switch consume self.state {
+            case .initial(let initial):
+                initial.encoder.encode(headers: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+                self = .init(state: .initial(initial))
+                return []
+            case .awaitingStream(let awaiting):
+                awaiting.encoder.encode(headers: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+                self = .init(state: .awaitingStream(awaiting))
+                return []
+            case .withoutDynamic(let woDynamic):
+                woDynamic.encoder.encode(headers: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+                self = .init(state: .withoutDynamic(woDynamic))
+                return []
+            case .withDynamic(var withDynamic):
+                let instructions = withDynamic.encoder.encode(
+                    headers: headers,
+                    forStream: streamID,
+                    into: &output,
+                    preferHuffmanEncoding: preferHuffmanEncoding
+                )
+                self = .init(state: .withDynamic(withDynamic))
+                return instructions
+            }
+        }
+
         enum IncomingDecoderInstructionAction {
             case emitConnectionError(QPACKError)
         }
@@ -327,6 +371,24 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
 
     mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
         self.encoderState.encodeHeaders(headers, forStream: streamID)
+    }
+
+    func maxEncodedLength(of headers: [HTTPField]) -> Int {
+        self.encoderState.maxEncodedLength(of: headers)
+    }
+
+    mutating func encodeHeaders(
+        _ headers: [HTTPField],
+        forStream streamID: QUICStreamID,
+        into output: inout OutputRawSpan,
+        preferHuffmanEncoding: Bool
+    ) -> [QPACKEncoderInstruction] {
+        self.encoderState.encodeHeaders(
+            headers,
+            forStream: streamID,
+            into: &output,
+            preferHuffmanEncoding: preferHuffmanEncoding
+        )
     }
 
     enum DecodeHeaderAction {
