@@ -726,6 +726,70 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(error.code == .peerTerminatedInboundStream)
         #expect(recordedInboundEvents[2].isInputClosedEvent)
     }
+
+    /// A stream error aborts both directions of the stream, so the peer doesn't wait for a response either.
+    @available(anyAppleOS 27, *)
+    @Test func streamErrorAbortsBothDirections() throws {
+        let eventLoop = EmbeddedEventLoop()
+
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: true, preferHuffmanEncoding: false),
+            streamID: 5,
+            streamType: .request,
+            qpackCoder: makeTestQPACKCoder(),
+            delegate: TestDelegate(
+                onStreamClosed: { _, _, _ in },
+            ),
+            logger: self.logger
+        )
+
+        let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
+        let inboundEventRecorder = DebugInboundEventsHandler { event, _ in
+            inboundEvents.withLockedValue { $0.append(event) }
+        }
+
+        let outboundEvents = NIOLockedValueBox<[DebugOutboundEventsHandler.Event]>([])
+        let outboundEventRecorder = DebugOutboundEventsHandler { event, _ in
+            outboundEvents.withLockedValue { $0.append(event) }
+        }
+
+        let channel = EmbeddedChannel(
+            handlers: [outboundEventRecorder, handler, inboundEventRecorder],
+            loop: eventLoop
+        )
+
+        // Uppercase field names make the request malformed: a stream error of type H3_MESSAGE_ERROR.
+        var malformedRequestHeaderBytes = ByteBuffer()
+        malformedRequestHeaderBytes.writeHTTP3PartialFrame(
+            .headers(
+                .init(
+                    fieldSection: .init(
+                        prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+                        lines: [.literal(requireLiteralRepresentation: false, name: "A", value: "B")]
+                    )
+                )
+            ),
+            preferHuffmanEncoding: false
+        )
+        expectH3Error(code: .qpackDecoderError, h3ErrorCode: .messageError) {
+            try channel.writeInbound(malformedRequestHeaderBytes)
+        }
+
+        let recordedInboundEvents = inboundEvents.withLockedValue { $0 }
+        let recordedOutboundEvents = outboundEvents.withLockedValue { $0 }
+
+        try #require(recordedInboundEvents.count == 2)
+        #expect(recordedInboundEvents[0].isChannelRegistered)
+        let error = try #require(recordedInboundEvents[1].isHTTP3Error)
+        #expect(error.h3ErrorCode == .messageError)
+
+        try #require(recordedOutboundEvents.count == 3)
+        #expect(recordedOutboundEvents[0].isChannelRegistered)
+        let stopSendingEvent = try #require(recordedOutboundEvents[1].isStopSendingEvent)
+        #expect(stopSendingEvent.code == QUICApplicationErrorCode(.messageError))
+        let resetStreamEvent = try #require(recordedOutboundEvents[2].isResetStreamEvent)
+        #expect(resetStreamEvent.code == QUICApplicationErrorCode(.messageError))
+    }
 }
 
 extension DebugInboundEventsHandler.Event {
@@ -766,6 +830,16 @@ extension DebugOutboundEventsHandler.Event {
     var isResetStreamEvent: NIOQUICHelpers.QUICResetStreamEvent? {
         switch self {
         case .triggerUserOutboundEvent(let event as NIOQUICHelpers.QUICResetStreamEvent):
+            return event
+
+        default:
+            return nil
+        }
+    }
+
+    var isStopSendingEvent: NIOQUICHelpers.QUICStopSendingEvent? {
+        switch self {
+        case .triggerUserOutboundEvent(let event as NIOQUICHelpers.QUICStopSendingEvent):
             return event
 
         default:
