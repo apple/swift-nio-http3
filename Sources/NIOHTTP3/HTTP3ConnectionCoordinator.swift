@@ -685,6 +685,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             delegate: self,
             logger: logger
         )
+        switch streamType {
+        case .request:
+            // A peer's STOP_SENDING only ends our sending side, so keep reading: for example the complete response a
+            // server sends after it stopped reading the request (RFC 9114 § 4.1).
+            try streamChannel.syncOptions?.setOption(.halfCloseOnStopSending, value: true)
+        case .push, .control:
+            break
+        }
         try streamChannel.pipeline.syncOperations.addHandler(streamHandler)
         self.streamHandlers[streamID] = streamHandler
     }
