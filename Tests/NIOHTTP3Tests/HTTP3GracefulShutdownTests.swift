@@ -225,6 +225,27 @@ struct HTTP3GracefulShutdownTests {
             try connectionChannel.throwIfErrorCaught()
         }
     }
+
+    @Test
+    @available(anyAppleOS 27, *)
+    func inboundRequestStreamOptsIntoHalfCloseOnStopSending() throws {
+        let (connectionChannel, handler, _) = try self.makeServerHandler()
+        defer { try? connectionChannel.close().wait() }
+
+        let connectPromise = connectionChannel.eventLoop.makePromise(of: Void.self)
+        try connectionChannel.connect(to: .init(ipAddress: "127.0.0.1", port: 8000), promise: connectPromise)
+        try connectPromise.futureResult.wait()
+
+        // A client's STOP_SENDING must only end the response, not the request (RFC 9000 § 3.5). By default, QUIC
+        // implementations close the whole stream.
+        let requestStreamChannel = EmbeddedChannel()
+        try requestStreamChannel.syncOptions?.setOption(.quicStreamID, value: 0)
+        try requestStreamChannel.syncOptions?.setOption(.halfCloseOnStopSending, value: false)
+        try handler.inboundStreamReceived(requestStreamChannel).wait()
+
+        let halfCloseOnStopSending = try requestStreamChannel.syncOptions?.getOption(.halfCloseOnStopSending)
+        #expect(halfCloseOnStopSending == true)
+    }
 }
 
 @available(anyAppleOS 27, *)
