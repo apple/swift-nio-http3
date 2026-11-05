@@ -449,6 +449,8 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             var validator: HTTP3FrameValidator
             var readState: ReadState
             var writeState: WriteState
+            /// Set once the peer asked us to stop sending (STOP_SENDING). Later writes fail with this error.
+            var outputClosedError: HTTP3Error? = nil
         }
 
         /// The state contained in ``State/previousError(_:)``.
@@ -494,6 +496,8 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         case alreadyClosed
         /// This frame can't be written because we already encountered an error on this stream.
         case previousError
+        /// This frame can't be written because the peer asked us to stop sending (STOP_SENDING).
+        case outputClosed(HTTP3Error)
     }
 
     /// Write out a frame by appending its encoded bytes to `buffer`.
@@ -504,6 +508,11 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             guard idleState.readState.checkCanWrite() else {
                 self = .init(state: .idle(idleState))
                 return .previousError
+            }
+            if let error = idleState.outputClosedError {
+                // The frame would never be sent: neither validate it nor run it through QPACK.
+                self = .init(state: .idle(idleState))
+                return .outputClosed(error)
             }
             let validationResult = idleState.validator.processOutboundFrame(frame)
             switch validationResult {
@@ -792,6 +801,99 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             // Errors are irrelevant now
             self = .init(state: .finished)
             return nil
+        }
+    }
+
+    @_spi(PackageInternal)
+    public enum StopSendingReceivedAction {
+        /// Fail pending and later writes with this error, and tell the pipeline that its output is closed.
+        case closeOutput(HTTP3Error)
+    }
+
+    /// Inform the state machine that the peer asked us to stop sending (STOP_SENDING).
+    ///
+    /// This only ends our sending side (RFC 9000 § 3.5): later writes fail, and the read side carries on.
+    @_spi(PackageInternal)
+    public mutating func stopSendingReceived(errorCode: QUICApplicationErrorCode) -> StopSendingReceivedAction? {
+        @inline(never)
+        func remoteStoppedReadingError(
+            errorCode: HTTP3ErrorCode,
+            location: HTTP3Error.SourceLocation
+        ) -> HTTP3Error {
+            HTTP3Error(
+                code: .remoteStreamError,
+                message: "The remote peer stopped reading the stream",
+                cause: nil,
+                errorCode: errorCode,
+                location: location
+            )
+        }
+        switch consume self.state {
+        case .idle(var idleState):
+            if idleState.outputClosedError != nil {
+                // The output is already closed.
+                self = .init(state: .idle(idleState))
+                return nil
+            }
+            let error = remoteStoppedReadingError(
+                errorCode: HTTP3ErrorCode(rawValue: errorCode.rawValue),
+                location: .here()
+            )
+            idleState.outputClosedError = error
+            self = .init(state: .idle(idleState))
+            return .closeOutput(error)
+        case .previousError(let previousError):
+            // Writes already fail because of the previous error.
+            self = .init(state: .previousError(previousError))
+            return nil
+        case .finished:
+            self = .init(state: .finished)
+            return nil
+        }
+    }
+
+    @_spi(PackageInternal)
+    public enum StopSendingErrorCaughtAction {
+        /// The read side had already seen the end of the stream, so nothing is lost: only close the output, as for
+        /// ``StopSendingReceivedAction/closeOutput(_:)``.
+        case closeOutput(HTTP3Error)
+        /// Inbound data is lost: report this stream error, like any other.
+        case emitStreamError(HTTP3Error)
+    }
+
+    /// Inform the state machine that the stream closes because the peer asked us to stop sending.
+    ///
+    /// QUIC implementations report STOP_SENDING as an error when they close the whole stream because of it. Once the
+    /// read side has seen the end of the stream, that only ends our sending side. Before that, inbound data is lost,
+    /// and this is a stream error like any other.
+    @_spi(PackageInternal)
+    public mutating func stopSendingErrorCaught(errorCode: QUICApplicationErrorCode) -> StopSendingErrorCaughtAction? {
+        if self.hasSeenEOF {
+            switch self.stopSendingReceived(errorCode: errorCode) {
+            case .closeOutput(let error):
+                return .closeOutput(error)
+            case .none:
+                return nil
+            }
+        } else {
+            switch self.streamErrorCaught(errorCode: errorCode) {
+            case .emitStreamError(let error):
+                return .emitStreamError(error)
+            case .none:
+                return nil
+            }
+        }
+    }
+
+    /// Whether the read side has seen the end of the stream and surfaced it.
+    private var hasSeenEOF: Bool {
+        switch self.state {
+        case .idle(let idleState):
+            return idleState.readState.hasSeenEOF
+        case .previousError(let previousError):
+            return previousError.seenEOF
+        case .finished:
+            return true
         }
     }
 

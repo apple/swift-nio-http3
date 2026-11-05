@@ -268,6 +268,9 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         case .wouldBeConnectionError(let error):
             context.fireErrorCaught(error)
             promise?.fail(error)
+        case .outputClosed(let error):
+            // Only fail the write: an error in the pipeline would also end the response for NIOAsyncChannel users.
+            promise?.fail(error)
         case .encodeHeaders(let fields):
             let encoded = HTTP3PartialFrame.Headers(
                 fieldSection: self.qpackCoder.encodeHeaders(fields, streamID: self.streamID)
@@ -333,8 +336,10 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
             }
         case let error as QUICStopSendingError:
             self.logger.trace("Caught STOP_SENDING")
-            let action = self.stateMachine.streamErrorCaught(errorCode: error.code)
+            let action = self.stateMachine.stopSendingErrorCaught(errorCode: error.code)
             switch action {
+            case .closeOutput(let newError):
+                self.closeOutput(failingWith: newError, context: context)
             case .emitStreamError(let newError):
                 context.fireErrorCaught(newError)
             case .none:
@@ -388,10 +393,29 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
             // We don't pass this through immediately, we buffer it behind any buffered reads to prevent overtaking.
             self.logger.trace("HTTP3StreamHandler intercepted inputClosed")
             self.stateMachine.inputClosed()
+        } else if let stopSending = event as? QUICStopSendingEvent {
+            // The peer stopped reading. That only ends our sending side, so keep reading.
+            self.logger.trace("HTTP3StreamHandler received STOP_SENDING")
+            let action = self.stateMachine.stopSendingReceived(errorCode: stopSending.code)
+            switch action {
+            case .closeOutput(let error):
+                self.closeOutput(failingWith: error, context: context)
+            case .none:
+                break
+            }
+            context.fireUserInboundEventTriggered(event)
         } else {
             // Pass it through
             context.fireUserInboundEventTriggered(event)
         }
+    }
+
+    /// The peer asked us to stop sending: fail the write which is still pending, and tell the pipeline that its output
+    /// is closed.
+    private func closeOutput(failingWith error: HTTP3Error, context: ChannelHandlerContext) {
+        self.pendingBytes = nil
+        self.pendingPromise.take()?.fail(error)
+        context.fireUserInboundEventTriggered(ChannelEvent.outputClosed)
     }
 
     /// Fires a ``ReceivedSettings`` event down the pipeline.
