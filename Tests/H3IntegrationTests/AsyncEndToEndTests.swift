@@ -567,6 +567,115 @@ struct AsyncEndToEndTests {
         try await serverChannel.close()
     }
 
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    @available(anyAppleOS 27, *)
+    func requestBodyWritesFailAfterReceivingStopSending(
+        authenticationConfiguration: AuthenticationConfiguration
+    ) async throws {
+        let serverLogger = Logger(label: "Server")
+        let clientLogger = Logger(label: "Client")
+
+        let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
+        let serverName: String
+        switch credentials {
+        case .rawKeys(let name, _, _, _):
+            serverName = name
+        case .certificates(let name, _, _, _):
+            serverName = name
+        }
+
+        let (serverChannel, serverMultiplexer) = try await makeHTTP3Server(
+            credentials: credentials,
+            settings: .init(),
+            logger: serverLogger
+        )
+        let (clientChannel, clientMultiplexer) = try await makeHTTP3Client(
+            credentials: credentials,
+            settings: .init(),
+            logger: clientLogger
+        )
+
+        let testRequest = HTTPRequest(method: .post, scheme: "https", authority: "test", path: "/")
+        let testResponse = HTTPResponse(status: .forbidden)
+
+        // The server holds back the end of the response until the client saw a write fail.
+        let (clientSawWriteFail, clientSawWriteFailContinuation) = AsyncStream<Never>.makeStream()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            // Server: answers the request head alone, without reading the request body.
+            group.addTask {
+                var inboundConnections = serverMultiplexer.inboundConnections.makeAsyncIterator()
+                let inboundConnection = try #require(await inboundConnections.next())
+
+                var inboundStreams = inboundConnection.inboundStreams.makeAsyncIterator()
+                let inboundStream = try #require(await inboundStreams.next())
+
+                try await inboundStream.executeThenClose { inboundParts, outbound in
+                    var inboundPartIterator = inboundParts.makeAsyncIterator()
+                    try await #expect(inboundPartIterator.next() == .head(testRequest))
+
+                    inboundStream.channel.triggerUserOutboundEvent(
+                        QUICStopSendingEvent(code: QUICApplicationErrorCode(HTTP3ErrorCode.noError.rawValue)!),
+                        promise: nil
+                    )
+                    try await outbound.write(.head(testResponse))
+                    for await _ in clientSawWriteFail {}
+                    outbound.finish()
+                }
+            }
+
+            // Client: keeps uploading the request body until it is told to stop.
+            group.addTask {
+                defer { clientSawWriteFailContinuation.finish() }
+                let clientConnection = try await clientMultiplexer.concurrencyView.createConnection(
+                    serverName: serverName,
+                    remoteAddress: serverChannel.localAddress!,
+                    inboundPushStreamInitializer: { _ in
+                        fatalError("Push streams not supported")
+                    }
+                )
+
+                let requestStream = try await clientConnection.concurrencyView.createRequestStream {
+                    let streamChannel = $0.channel
+                    return streamChannel.eventLoop.makeCompletedFuture {
+                        try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
+                            wrappingChannelSynchronously: streamChannel,
+                            configuration: .init(isOutboundHalfClosureEnabled: true)
+                        )
+                    }
+                }
+
+                try await requestStream.executeThenClose { inboundParts, outbound in
+                    try await outbound.write(.head(testRequest))
+                    var inboundPartIterator = inboundParts.makeAsyncIterator()
+                    try await #expect(inboundPartIterator.next() == .head(testResponse))
+
+                    // Writes only enqueue, so pause between them to give the STOP_SENDING time to arrive.
+                    var writeError: (any Error)?
+                    for _ in 0..<50 where writeError == nil {
+                        do {
+                            try await outbound.write(.body(ByteBuffer(string: "more body")))
+                            try await Task.sleep(for: .milliseconds(10))
+                        } catch {
+                            writeError = error
+                        }
+                    }
+                    #expect(writeError as? NIOAsyncWriterError == .alreadyFinished())
+                    clientSawWriteFailContinuation.finish()
+
+                    try await #expect(inboundPartIterator.next() == .end(nil))
+                    try await #expect(inboundPartIterator.next() == nil)
+                }
+            }
+
+            try await group.waitForAll()
+        }
+
+        // cleanup
+        try await clientChannel.close()
+        try await serverChannel.close()
+    }
+
     // MARK: - Helper Functions
 
     @available(anyAppleOS 27, *)
