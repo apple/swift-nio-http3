@@ -82,18 +82,6 @@ public struct DynamicQPACKEncoder {
         return (encoder, result)
     }
 
-    @_spi(PackageInternal)
-    public mutating func encode(headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
-        var section = SectionState(base: self.table.insertCount, fieldCount: headers.count)
-        var lines = [FieldLine]()
-        lines.reserveCapacity(headers.count)
-        for header in headers {
-            lines.append(self.fieldLine(for: header, forStream: streamID, section: &section))
-        }
-        let prefix = self.finishSection(section, forStream: streamID)
-        return .init(fieldSection: .init(prefix: prefix, lines: lines), instructions: section.instructions)
-    }
-
     /// The largest number of bytes ``encode(headers:forStream:into:preferHuffmanEncoding:)`` appends for `headers`,
     /// if it is called next.
     @_spi(PackageInternal)
@@ -104,7 +92,7 @@ public struct DynamicQPACKEncoder {
             &+ QPACKEncodedLength.maxFieldLines(headers, indexLimit: max(StaticHeaderTable.raw.count, maxEntries))
     }
 
-    /// Encodes `headers` into a field section, and appends it to `output`. No intermediate ``FieldSection`` is built.
+    /// Encodes `headers` into a field section, and appends it to `output`.
     ///
     /// - Precondition: `output` has room for ``maxEncodedLength(of:)`` more bytes.
     /// - Returns: The instructions the peer's decoder needs to decode the field section. They must be sent on the

@@ -65,19 +65,13 @@ struct HTTP3StreamStateMachineTests {
         ]
     }
 
+    /// The field section the static encoder writes for `testRequestHeaderFields`.
     @available(anyAppleOS 27, *)
-    private var testRequestHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
-    }
-
-    @available(anyAppleOS 27, *)
-    private var testResponseHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testResponseHeaderFields))
-    }
-
-    @available(anyAppleOS 27, *)
-    private var testTrailer: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testTrailerFields))
+    private var testRequestFieldSectionBytes: ByteBuffer {
+        let encoder = StaticQPACKEncoder()
+        return ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: self.testRequestHeaderFields)) {
+            encoder.encode(headers: self.testRequestHeaderFields, into: &$0, preferHuffmanEncoding: false)
+        }
     }
 
     /// The bytes of the HEADERS frame the machine writes for `fields`.
@@ -91,25 +85,22 @@ struct HTTP3StreamStateMachineTests {
         return .init(buffer: buffer)
     }
 
-    /// These bytes encode `testRequestHeader`.
+    /// These bytes are the HEADERS frame of `testRequestHeaderFields`.
     @available(anyAppleOS 27, *)
     private var testRequestHeaderFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testRequestHeader))
-        return .init(buffer: buffer)
+        self.writtenHeadersFrameBytes(self.testRequestHeaderFields)
     }
 
-    /// These bytes encode `testResponseHeader`.
+    /// These bytes are the HEADERS frame of `testResponseHeaderFields`.
     @available(anyAppleOS 27, *)
     private var testResponseHeaderFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testResponseHeader))
-        return .init(buffer: buffer)
+        self.writtenHeadersFrameBytes(self.testResponseHeaderFields)
     }
 
-    /// These bytes encode `testTrailerFrameBytes`.
+    /// These bytes are the HEADERS frame of `testTrailerFields`.
     @available(anyAppleOS 27, *)
     private var testTrailerFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testTrailer))
-        return .init(buffer: buffer)
+        self.writtenHeadersFrameBytes(self.testTrailerFields)
     }
 
     @available(anyAppleOS 27, *)
@@ -171,7 +162,7 @@ struct HTTP3StreamStateMachineTests {
         machine.assertNoNext()
 
         // The header we've been asked to decode should match the one we put in
-        #expect(partialHeader == self.testRequestHeader)
+        #expect(ByteBuffer(fieldSection: partialHeader.fieldSection) == self.testRequestFieldSectionBytes)
 
         let decodeResult = self.testRequestHeaderFields
         machine.gotHeaderDecodeResult(decodeResult)
@@ -216,7 +207,7 @@ struct HTTP3StreamStateMachineTests {
         machine.assertNoNext()
 
         // The header we've been asked to decode should match the one we put in
-        #expect(partialHeader == self.testRequestHeader)
+        #expect(ByteBuffer(fieldSection: partialHeader.fieldSection) == self.testRequestFieldSectionBytes)
 
         // Put in the decode result
         let decodeResult = self.testRequestHeaderFields
@@ -250,7 +241,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
-        #expect(partialHeader == self.testRequestHeader)
+        #expect(ByteBuffer(fieldSection: partialHeader.fieldSection) == self.testRequestFieldSectionBytes)
         machine.assertNoNext()
         // We tell it we got an error
         let testError = HTTP3Error(
@@ -331,7 +322,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
-        #expect(partialHeader == self.testRequestHeader)
+        #expect(ByteBuffer(fieldSection: partialHeader.fieldSection) == self.testRequestFieldSectionBytes)
         machine.assertNoNext()
         // We tell it we got an error
         let testError = HTTP3Error(
@@ -1112,5 +1103,15 @@ extension ByteBuffer {
     fileprivate init(frame: HTTP3PartialFrame) {
         self.init()
         self.writeHTTP3PartialFrame(frame, preferHuffmanEncoding: false)
+    }
+
+    /// Create a buffer and write `fieldSection` into it.
+    @available(anyAppleOS 27, *)
+    fileprivate init(fieldSection: FieldSection) {
+        self.init()
+        self.writeFieldSectionPrefix(fieldSection.prefix)
+        for line in fieldSection.lines {
+            self.writeFieldLine(line, preferHuffmanEncoding: false)
+        }
     }
 }

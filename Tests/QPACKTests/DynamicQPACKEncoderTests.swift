@@ -31,22 +31,21 @@ struct DynamicQPACKEncoderTests {
         return header
     }
 
-    /// Two encoders in the same state encode the same fields, one into a ``FieldSection`` and one into an
-    /// `OutputRawSpan`. Over enough sections the Base and the Required Insert Count outgrow a byte, and the prefix
-    /// sometimes takes a different length than expected. Every fourth section references no dynamic table entry, so
-    /// its Delta Base is the whole Base.
+    /// Field sections written by the dynamic encoder decode to the fields they were encoded from. Over enough sections
+    /// the Base and the Required Insert Count outgrow a byte, and the prefix sometimes takes a different length than
+    /// expected. Every fourth section references no dynamic table entry, so its Delta Base is the whole Base.
     @available(anyAppleOS 27, *)
     @Test(arguments: [true, false])
     func encoderWritesItsFieldSection(preferHuffmanEncoding: Bool) throws {
-        var reference = DynamicQPACKEncoder.create(
+        var (encoder, setCapacity) = DynamicQPACKEncoder.create(
             peersDecoderTableMaxCapacity: 4096,
             dynamicTableMaxCapacity: 4096,
             dynamicTableInitialCapacity: 4096,
             maxBlockedStreams: 100,
             targetEvictableFraction: 0.5
-        ).0
-        // A copy: the encoder holds no references.
-        var encoder = reference
+        )
+        var decoder = QPACKDecoder(dynamicTableMaxCapacity: 4096)
+        _ = try decoder.processInstruction(try #require(setCapacity))
         var sectionsWithLongDeltaBase = 0
 
         for round in 0..<400 {
@@ -60,30 +59,46 @@ struct DynamicQPACKEncoderTests {
                 headers =
                     StaticQPACKEncoderTests.headers + [HTTPField(name: .init("x-round-\(round)")!, value: "\(round)")]
             }
-            let expected = reference.encode(headers: headers, forStream: streamID)
-            if expected.fieldSection.prefix.encodedRequiredInsertCount == 0
-                && QPACKEncodedLength.prefixedInteger(expected.fieldSection.prefix.deltaBase, prefix: 7) > 1
+
+            let (buffer, instructions) = encodeWithExactRoom(encoder.maxEncodedLength(of: headers)) {
+                encoder.encode(
+                    headers: headers,
+                    forStream: streamID,
+                    into: &$0,
+                    preferHuffmanEncoding: preferHuffmanEncoding
+                )
+            }
+            let fieldSection = FieldSection(readingAll: buffer)
+            // Reading undoes the Huffman coding, so check it by writing the lines back.
+            #expect(
+                buffer == ByteBuffer(fieldSection: fieldSection, preferHuffmanEncoding: preferHuffmanEncoding),
+                "round \(round)"
+            )
+            if fieldSection.prefix.encodedRequiredInsertCount == 0
+                && QPACKEncodedLength.prefixedInteger(fieldSection.prefix.deltaBase, prefix: 7) > 1
             {
                 sectionsWithLongDeltaBase += 1
             }
 
-            let (buffer, instructions) = encoder.encodeIntoExactBound(
-                headers: headers,
-                forStream: streamID,
-                preferHuffmanEncoding: preferHuffmanEncoding
-            )
-
-            // Comparing bytes, not decoded field sections, checks the Huffman coding too.
+            for instruction in instructions {
+                _ = try decoder.processInstruction(instruction)
+            }
+            let prefix = try #require(decoder.decodeFieldSectionPrefix(fieldSection.prefix), "round \(round)")
+            let decoded = try decoder.decodeFieldSection(
+                prefix: prefix,
+                lines: fieldSection.lines,
+                streamID: streamID
+            ).unwrap()
+            let (fields, acknowledgement) = try #require(decoded, "round \(round)")
+            // Only the canonical names and the values go over the wire.
             #expect(
-                buffer == ByteBuffer(fieldSection: expected.fieldSection, preferHuffmanEncoding: preferHuffmanEncoding),
+                fields.map { [$0.name.canonicalName, $0.value] } == headers.map { [$0.name.canonicalName, $0.value] },
                 "round \(round)"
             )
-            #expect(instructions == expected.instructions, "round \(round)")
 
             // Acknowledge the section, so its entries can be evicted to make room for the next ones.
-            if expected.fieldSection.prefix.encodedRequiredInsertCount != 0 {
-                try reference.processInstruction(.sectionAcknowledgement(streamID: streamID))
-                try encoder.processInstruction(.sectionAcknowledgement(streamID: streamID))
+            if let acknowledgement {
+                try encoder.processInstruction(acknowledgement)
             }
         }
         #expect(sectionsWithLongDeltaBase > 0)
@@ -107,11 +122,9 @@ struct DynamicQPACKEncoderTests {
         for round in 0..<300 {
             let streamID = QUICStreamID(rawValue: UInt64(round) * 4)
             let headers = [HTTPField(name: .init("x-round-\(round)")!, value: "\(round)")]
-            var (buffer, instructions) = encoder.encodeIntoExactBound(
-                headers: headers,
-                forStream: streamID,
-                preferHuffmanEncoding: true
-            )
+            var (buffer, instructions) = encodeWithExactRoom(encoder.maxEncodedLength(of: headers)) {
+                encoder.encode(headers: headers, forStream: streamID, into: &$0, preferHuffmanEncoding: true)
+            }
             for instruction in instructions {
                 _ = try decoder.processInstruction(instruction)
             }
@@ -142,37 +155,11 @@ struct DynamicQPACKEncoderTests {
             maxBlockedStreams: 100,
             targetEvictableFraction: 0.5
         ).0
-        let (buffer, instructions) = encoder.encodeIntoExactBound(
-            headers: [],
-            forStream: QUICStreamID(rawValue: 0),
-            preferHuffmanEncoding: true
-        )
+        let (buffer, instructions) = encodeWithExactRoom(encoder.maxEncodedLength(of: [])) {
+            encoder.encode(headers: [], forStream: QUICStreamID(rawValue: 0), into: &$0, preferHuffmanEncoding: true)
+        }
         // Required Insert Count 0, then Base 0
         #expect(Array(buffer.readableBytesView) == [0, 0])
         #expect(instructions.isEmpty)
-    }
-}
-
-@available(anyAppleOS 27, *)
-extension DynamicQPACKEncoder {
-    /// Encodes `headers` into a span of exactly ``maxEncodedLength(of:)`` bytes, so that a bound that's too small
-    /// traps. A `ByteBuffer` rounds its capacity up, which would hide it.
-    fileprivate mutating func encodeIntoExactBound(
-        headers: [HTTPField],
-        forStream streamID: QUICStreamID,
-        preferHuffmanEncoding: Bool
-    ) -> (ByteBuffer, [QPACKEncoderInstruction]) {
-        var bytes = [UInt8](repeating: 0, count: self.maxEncodedLength(of: headers))
-        let (length, instructions) = bytes.withUnsafeMutableBytes { buffer in
-            var output = OutputRawSpan(buffer: buffer, initializedCount: 0)
-            let instructions = self.encode(
-                headers: headers,
-                forStream: streamID,
-                into: &output,
-                preferHuffmanEncoding: preferHuffmanEncoding
-            )
-            return (output.finalize(for: buffer), instructions)
-        }
-        return (ByteBuffer(bytes: bytes.prefix(length)), instructions)
     }
 }
