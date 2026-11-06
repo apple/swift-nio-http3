@@ -114,6 +114,18 @@ extension EmbeddedChannel {
         }
         return instructions
     }
+
+    /// Drain everything a ``QPACKOutboundEncoderStream`` has written to this channel, decoded back into
+    /// instructions.
+    @available(anyAppleOS 27, *)
+    fileprivate func readAllEncoderInstructions() throws -> [QPACKEncoderInstruction] {
+        let processor = NIOSingleStepByteToMessageProcessor(QPACKEncoderInstructionDecoder())
+        var instructions = [QPACKEncoderInstruction]()
+        while let buffer = try self.readOutbound(as: ByteBuffer.self) {
+            try processor.process(buffer: buffer) { instructions.append($0) }
+        }
+        return instructions
+    }
 }
 
 struct NIOHTTP3StreamHandlerTests {
@@ -336,6 +348,50 @@ struct NIOHTTP3StreamHandlerTests {
         let writtenBytes = try recorderPromise.futureResult.wait()
         // The type is 4, the length is 0, but the 0 is encoded in 2 bytes because of how `ByteBuffer/writeLengthPrefixed` works
         #expect(writtenBytes == [.init(bytes: [4, 0x40, 0])])
+    }
+
+    /// Write headers which the encoder inserts into its dynamic table. The peer's decoder must learn of the entry on
+    /// the encoder stream.
+    @available(anyAppleOS 27, *)
+    @Test func writeHeadersWhichNeedInstructions() throws {
+        let qpackCoder = makeTestQPACKCoder()
+        try qpackCoder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 4096)
+        let encoderStreamChannel = EmbeddedChannel()
+        qpackCoder.outboundEncoderStreamReady(
+            QPACKOutboundEncoderStream(channel: encoderStreamChannel, preferHuffmanEncoding: false)
+        )
+        #expect(try encoderStreamChannel.readAllEncoderInstructions() == [.setDynamicTableCapacity(4096)])
+
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
+            streamID: 4,
+            streamType: .request,
+            qpackCoder: qpackCoder,
+            delegate: TestDelegate(),
+            logger: self.logger
+        )
+        let channel = EmbeddedChannel(handlers: [handler])
+
+        try channel.writeOutbound(self.testRequestHeaderFrame)
+
+        // `:authority: test` is the only field the static table doesn't hold exactly.
+        #expect(
+            try encoderStreamChannel.readAllEncoderInstructions() == [
+                .insertWithNameReference(.staticTable, relativeIndex: 0, value: "test")
+            ]
+        )
+        // The HEADERS frame references the entry the instruction inserts.
+        var frameBytes = try #require(try channel.readOutbound(as: ByteBuffer.self))
+        var frameDecoder = HTTP3FrameDecoder()
+        let frame = try frameDecoder.decode(buffer: &frameBytes)
+        #expect(frameBytes.readableBytes == 0)
+        guard case .known(.headers(let headers)) = frame else {
+            Issue.record("Expected a HEADERS frame, got \(String(describing: frame))")
+            return
+        }
+        #expect(
+            headers.fieldSection.prefix == FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 4096)
+        )
     }
 
     /// Write a frame which would result in a stream error.

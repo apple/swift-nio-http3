@@ -346,7 +346,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     /// This state machine handles the writing side of the stream only.
     /// You call `write` to give it a full frame (not qpack encoded).
     /// The resulting action will either give bytes to write out, or ask to run something through qpack.
-    /// You must call gotHeaderEncodeResult with the result of that BEFORE trying to write any different frame.
+    /// You must call writeHeadersFrame to have that encoded BEFORE trying to write any different frame.
     struct WriteState: ~Copyable {
         private enum State: ~Copyable {
             /// Nothing special is happening on the write side.
@@ -417,18 +417,18 @@ public struct HTTP3StreamStateMachine: ~Copyable {
             case wroteBytes
         }
 
-        mutating func gotHeaderEncodeResult(
-            _ result: HTTP3PartialFrame.Headers,
-            into buffer: inout ByteBuffer
+        mutating func writeHeadersFrame(
+            maxPayloadLength: Int,
+            into buffer: inout ByteBuffer,
+            encodePayload: (inout OutputRawSpan, _ preferHuffmanEncoding: Bool) -> Void
         ) -> HeaderEncodeResultAction {
             switch consume self.state {
             case .idle:
-                fatalError("Unexpected encode result")
+                fatalError("Unexpected header encode")
             case .waitingForEncode(let waitingState):
-                buffer.writeHTTP3PartialFrame(
-                    .headers(result),
-                    preferHuffmanEncoding: waitingState.preferHuffmanEncoding
-                )
+                buffer.writeHeadersFrame(maxPayloadLength: maxPayloadLength) { output in
+                    encodePayload(&output, waitingState.preferHuffmanEncoding)
+                }
                 self = .init(state: .idle(.init(preferHuffmanEncoding: waitingState.preferHuffmanEncoding)))
                 return .wroteBytes
             }
@@ -484,7 +484,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     public enum WriteFrameAction {
         /// The frame's bytes were appended to the buffer you provided.
         case wroteBytes
-        /// You should encode the given headers and call back with the result.
+        /// You should QPACK encode the given headers through ``HTTP3StreamStateMachine/writeHeadersFrame(maxPayloadLength:into:encodePayload:)``.
         case encodeHeaders([HTTPField])
         /// The frame can't be written, because doing so would be a stream error.
         case wouldBeStreamError(HTTP3Error)
@@ -546,23 +546,36 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         case alreadyClosed
     }
 
+    /// Write the HEADERS frame asked for by ``WriteFrameAction/encodeHeaders(_:)``, by appending its bytes to `buffer`.
+    ///
+    /// - Parameters:
+    ///   - maxPayloadLength: The largest number of bytes `encodePayload` appends.
+    ///   - buffer: The buffer to append the frame to.
+    ///   - encodePayload: QPACK encodes the headers into the span, which has room for `maxPayloadLength` bytes, and
+    ///     is told whether to prefer Huffman encoding. It isn't called if the frame can't be written.
+    /// - Returns: Whether the frame was written.
     @_spi(PackageInternal)
-    public mutating func gotHeaderEncodeResult(
-        _ result: HTTP3PartialFrame.Headers,
-        into buffer: inout ByteBuffer
+    public mutating func writeHeadersFrame(
+        maxPayloadLength: Int,
+        into buffer: inout ByteBuffer,
+        encodePayload: (inout OutputRawSpan, _ preferHuffmanEncoding: Bool) -> Void
     ) -> HeaderEncodeResultAction {
         switch self.state {
         case .idle(var idleState):
-            let writeAction = idleState.writeState.gotHeaderEncodeResult(result, into: &buffer)
+            let writeAction = idleState.writeState.writeHeadersFrame(
+                maxPayloadLength: maxPayloadLength,
+                into: &buffer,
+                encodePayload: encodePayload
+            )
             self = .init(state: .idle(idleState))
             switch writeAction {
             case .wroteBytes:
                 return .wroteBytes
             }
         case .finished:
-            // We shouldn't get a header decode result on a finished stream.
-            // This can only really happen if we shut down the stream during a write, whilst doing the qpack encode.
-            // But if we do, just drop it, nobody is waiting for it now.
+            // We shouldn't be asked to write the headers on a finished stream.
+            // This can only really happen if we shut down the stream during a write, before doing the qpack encode.
+            // But if we do, don't encode them at all, nobody is waiting for them now.
             self = .init(state: .finished)
             return .alreadyClosed
         case .previousError(let errorState):

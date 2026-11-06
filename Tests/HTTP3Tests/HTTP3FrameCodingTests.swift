@@ -438,6 +438,60 @@ struct HTTP3FrameCodingTests {
         )
     }
 
+    /// The payload of ``writeHeadersFrame(maxPayloadLength:encodePayload:)`` in the tests below: 13 bytes.
+    private static let literalFieldSectionBytes: [UInt8] =
+        [
+            // required insert count, delta and base are 0
+            0, 0,
+            // 001 for literal, 0 for N, 0 for H, 0100 for length of name (4)
+            0b00100100,
+        ] + "test".utf8
+        // 0 (no huffman) then length of value 0000101 (5)
+        + [0b00000101] + "value".utf8
+
+    @available(anyAppleOS 27, *)
+    @Test func writeHeadersFrame() throws {
+        var buffer = ByteBuffer()
+        buffer.writeHeadersFrame(maxPayloadLength: Self.literalFieldSectionBytes.count) { output in
+            for byte in Self.literalFieldSectionBytes {
+                output.append(byte)
+            }
+        }
+
+        // frame type 1, then the length 13, which takes one byte
+        #expect(buffer == ByteBuffer([1, 13] + Self.literalFieldSectionBytes))
+
+        var decoder = HTTP3FrameDecoder()
+        let frame = try decoder.decode(buffer: &buffer)
+        let expected = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
+        )
+        #expect(frame == .known(.headers(.init(fieldSection: expected))))
+        #expect(buffer.readableBytes == 0)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func writeHeadersFrameSizesTheLengthForTheLongestPayload() throws {
+        var buffer = ByteBuffer()
+        // The payload might have been up to 64 bytes long, which takes two bytes to encode as a QUIC integer.
+        buffer.writeHeadersFrame(maxPayloadLength: 64) { output in
+            for byte in Self.literalFieldSectionBytes {
+                output.append(byte)
+            }
+        }
+
+        // frame type 1, then the length 13, encoded across 2 bytes: 0x40 indicates the 2 byte encoding (RFC 9000)
+        #expect(buffer == ByteBuffer([1, 0x40, 13] + Self.literalFieldSectionBytes))
+
+        var decoder = HTTP3FrameDecoder()
+        guard case .known(.headers) = try decoder.decode(buffer: &buffer) else {
+            Issue.record("Expected a HEADERS frame")
+            return
+        }
+        #expect(buffer.readableBytes == 0)
+    }
+
     @available(anyAppleOS 27, *)
     @Test func encodeHeadersWithHuffman() throws {
         var buffer = ByteBuffer()
