@@ -293,16 +293,19 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
                         location: .here()
                     )
                 )
+
             case .wroteBytes:
                 self.pendingPromise.setOrCascade(to: promise)
+
+                // Sending flushes the encoder stream, so it waits until the frame and its promise are settled: anything
+                // the flush triggers may call back into this handler. The frame's bytes are only emitted on our own
+                // flush, so the instructions still reach the peer first.
+                self.qpackCoder.sendEncoderInstructions(instructions)
+
             case .alreadyClosed:
                 promise?.fail(ChannelError.ioOnClosedChannel)
             }
 
-            // Sending flushes the encoder stream, so it waits until the frame and its promise are settled: anything
-            // the flush triggers may call back into this handler. The frame's bytes are only emitted on our own
-            // flush, so the instructions still reach the peer first.
-            self.qpackCoder.sendEncoderInstructions(instructions)
         }
     }
 
