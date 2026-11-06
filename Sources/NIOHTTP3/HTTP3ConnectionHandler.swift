@@ -44,7 +44,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     public typealias OutboundOut = ByteBuffer
 
     private let addTypeHandlers: Bool
-    private let coordinator: HTTP3ConnectionCoordinator<StreamCreator>
+    let coordinator: HTTP3ConnectionCoordinator<StreamCreator>
     private let logger: Logger
     private let inboundStreamInitializer: H3InboundStreamInitializer
     private let internalInboundStreamInitializer:
@@ -184,7 +184,10 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         settings: HTTP3Settings,
         streamCreator: StreamCreator,
         logger: Logger,
-        connection: HTTP3ServerConnection<Output, StreamCreator>
+        connection: HTTP3ServerConnection<Output, StreamCreator>,
+        internalInboundStreamInitializer: (
+            (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
+        )? = nil
     ) -> Self {
         self.server(
             eventLoop: eventLoop,
@@ -193,7 +196,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             streamCreator: streamCreator,
             logger: logger,
             inboundRequestStreamInitializer: .multiplexer(connection),
-            internalInboundStreamInitializer: nil
+            internalInboundStreamInitializer: internalInboundStreamInitializer
         )
     }
 
