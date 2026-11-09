@@ -238,6 +238,31 @@ public struct HTTP3Settings: Hashable, Sendable {
     }
 }
 
+@available(anyAppleOS 27, *)
+extension HTTP3Settings {
+    /// Calls `body` with the identifier and value of each setting that doesn't have its default value.
+    func forEachNonDefaultSetting(_ body: (_ identifier: UInt64, _ value: UInt64) -> Void) {
+        if self.qpackBlockedStreams != 0 {
+            body(HTTP3Setting.Identifier.qpackBlockedStreams.rawValue, self.qpackBlockedStreams)
+        }
+        if self.qpackMaximumTableCapacity != 0 {
+            body(HTTP3Setting.Identifier.qpackMaximumTableCapacity.rawValue, self.qpackMaximumTableCapacity)
+        }
+        if let maximumFieldSectionSize = self.maximumFieldSectionSize {
+            body(HTTP3Setting.Identifier.maximumFieldSectionSize.rawValue, maximumFieldSectionSize)
+        }
+        if self.h3Datagram {
+            body(HTTP3Setting.Identifier.h3Datagram.rawValue, 1)
+        }
+        if self.enableConnectProtocol {
+            body(HTTP3Setting.Identifier.enableConnectProtocol.rawValue, 1)
+        }
+        for setting in self.other {
+            body(setting.identifier.rawValue, setting.value)
+        }
+    }
+}
+
 extension ByteBuffer {
     /// Reads the entire ByteBuffer and returns as many settings as it finds.
     ///
