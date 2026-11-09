@@ -192,15 +192,18 @@ struct NIOHTTP3StreamHandlerTests {
     /// only arrives with ``testUnblockingEncoderInstruction``. Until then the stream is blocked: RFC 9204 § 2.1.2.
     @available(anyAppleOS 27, *)
     private var testBlockedRequestPartialHeaderBytes: ByteBuffer {
-        let fieldSection = FieldSection(
-            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 4096),
-            lines: [.indexedWithPostBase(index: 0)]
-        )
+        let fieldSection = ByteBuffer(bytes: [
+            // RFC 9204 § 4.5.1.1: Required Insert Count 1 is encoded as 1 mod (2 * MaxEntries) + 1 = 2, where
+            // MaxEntries = 4096 / 32.
+            0x02,
+            // RFC 9204 § 4.5.1.2: Base 0 is less than the Required Insert Count, so the sign bit is set, and the
+            // Delta Base is Required Insert Count - Base - 1 = 0.
+            0x80,
+            // RFC 9204 § 4.5.3: an indexed field line with post-base index 0.
+            0x10,
+        ])
         var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(
-            .headers(.init(fieldSection: fieldSection)),
-            preferHuffmanEncoding: false
-        )
+        buffer.writeHeadersFrame(fieldSection: fieldSection)
         return buffer
     }
 
@@ -653,7 +656,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.popFirst()?.isChannelReadComplete == true)
 
         var dataBytes = ByteBuffer()
-        dataBytes.writeHTTP3PartialFrame(.data(.init(string: "hello world")), preferHuffmanEncoding: false)
+        dataBytes.writeHTTP3PartialFrame(.data(.init(string: "hello world")))
         channel.pipeline.fireChannelRead(dataBytes)
         // We do not fire a read complete. So the bytes get buffered, but nothing comes out.
         #expect(seenEvents.isEmpty())

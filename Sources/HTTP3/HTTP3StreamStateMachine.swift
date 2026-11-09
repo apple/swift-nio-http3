@@ -403,7 +403,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
                     // So it won't get this far.
                     fatalError("Tried to write a push promise, which is not supported")
                 case .partial(let partial):
-                    buffer.writeHTTP3PartialFrame(partial, preferHuffmanEncoding: idleState.preferHuffmanEncoding)
+                    buffer.writeHTTP3PartialFrame(partial)
                     self = .init(state: .idle(idleState))
                     return .wroteBytes
                 }

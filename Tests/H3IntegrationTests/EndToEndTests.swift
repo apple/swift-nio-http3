@@ -696,7 +696,7 @@ struct EndToEndTests {
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             var buffer = ByteBuffer()
-            buffer.writeHTTP3PartialFrame(.settings(HTTP3Settings()), preferHuffmanEncoding: false)
+            buffer.writeHTTP3PartialFrame(.settings(HTTP3Settings()))
             streamHandlerContext.writeAndFlush(NIOAny(buffer), promise: nil)
         }
 
@@ -935,19 +935,13 @@ struct EndToEndTests {
                 type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>.StreamHandler.self
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
+            // Required Insert Count 0 and Base 0, then a literal field line: 001 for literal, 0 for N, 0 for H, 0001 for
+            // the length of the name (1), then 0 for H and 0000001 for the length of the value (1).
+            // Uppercase field names are illegal
+            let fieldSection: [UInt8] = [0, 0, 0b00100001, UInt8(ascii: "A"), 0b00000001, UInt8(ascii: "B")]
             var buffer = ByteBuffer()
-            buffer.writeHTTP3PartialFrame(
-                .headers(
-                    .init(
-                        fieldSection: .init(
-                            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
-                            // Uppercase field names are illegal
-                            lines: [.literal(requireLiteralRepresentation: false, name: "A", value: "B")]
-                        )
-                    )
-                ),
-                preferHuffmanEncoding: false
-            )
+            buffer.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
+            buffer.writeLengthPrefixedBuffer(ByteBuffer(bytes: fieldSection), strategy: .quic)
             streamHandlerContext.writeAndFlush(NIOAny(buffer), promise: nil)
         }
 
