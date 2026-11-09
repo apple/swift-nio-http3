@@ -1102,7 +1102,7 @@ extension ByteBuffer {
     @available(anyAppleOS 27, *)
     fileprivate init(frame: HTTP3PartialFrame) {
         self.init()
-        self.writeHTTP3PartialFrame(frame, preferHuffmanEncoding: false)
+        self.writeTestFrame(frame)
     }
 
     /// Create a buffer and write `fieldSection` into it.

@@ -12,21 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTP3
 import NIOCore
 
-@testable import QPACK
-
-extension String {
-    @available(anyAppleOS 27, *)
-    var huffmanEncodedBytes: [UInt8] {
-        let length = self.withContiguousUTF8 { QPACKEncodedLength.huffman(of: $0) }
-        let buffer = ByteBuffer(initialCapacity: length) { output in
-            self.withContiguousUTF8 { output.appendHuffmanEncoded($0, encodedByteLength: length) }
-        }
-        return Array(buffer.readableBytesView)
-    }
-}
+@_spi(PackageInternal) @testable public import HTTP3
+@_spi(PackageInternal) @testable import QPACK
 
 @available(anyAppleOS 27, *)
 extension HTTP3PushID: ExpressibleByIntegerLiteral {
@@ -39,5 +28,40 @@ extension HTTP3PushID: ExpressibleByIntegerLiteral {
 extension HTTP3GoawayID: ExpressibleByIntegerLiteral {
     public init(integerLiteral value: UInt64) {
         self.init(rawValue: value)
+    }
+}
+
+extension ByteBuffer {
+    /// Write `frame`. `writeHTTP3PartialFrame(_:)` doesn't write HEADERS and PUSH_PROMISE frames, so this writes
+    /// their field sections line by line.
+    @available(anyAppleOS 27, *)
+    mutating func writeTestFrame(_ frame: HTTP3PartialFrame, preferHuffmanEncoding: Bool = false) {
+        switch frame {
+        case .headers(let payload):
+            self.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
+            self.writeLengthPrefixed(strategy: .quic) { tempBuffer in
+                tempBuffer.writeFieldSection(payload.fieldSection, preferHuffmanEncoding: preferHuffmanEncoding)
+            }
+        case .pushPromise(let payload):
+            self.writeEncodedInteger(HTTP3FrameType.pushPromise.rawValue, strategy: .quic)
+            self.writeLengthPrefixed(strategy: .quic) { tempBuffer in
+                tempBuffer.writeEncodedInteger(payload.pushID.rawValue, strategy: .quic)
+                    + tempBuffer.writeFieldSection(payload.fieldSection, preferHuffmanEncoding: preferHuffmanEncoding)
+            }
+        case .data, .cancelPush, .settings, .goaway, .maxPushID:
+            self.writeHTTP3PartialFrame(frame)
+        }
+    }
+
+    /// Write `fieldSection` line by line.
+    /// - Returns: The number of bytes written.
+    @available(anyAppleOS 27, *)
+    @discardableResult
+    mutating func writeFieldSection(_ fieldSection: FieldSection, preferHuffmanEncoding: Bool = false) -> Int {
+        var bytesWritten = self.writeFieldSectionPrefix(fieldSection.prefix)
+        for line in fieldSection.lines {
+            bytesWritten += self.writeFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+        return bytesWritten
     }
 }

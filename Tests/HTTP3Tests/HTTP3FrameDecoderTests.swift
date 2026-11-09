@@ -47,7 +47,7 @@ struct HTTP3FrameDecoderTests {
     @available(anyAppleOS 27, *)
     private func encode(_ frame: HTTP3PartialFrame) -> ByteBuffer {
         var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(frame, preferHuffmanEncoding: false)
+        buffer.writeTestFrame(frame)
         return buffer
     }
 
