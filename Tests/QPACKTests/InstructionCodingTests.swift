@@ -133,6 +133,8 @@ struct InstructionCodingTests {
             // prefix comes out short.
             QPACKEncoderInstruction.setDynamicTableCapacity(160),
             .insertWithNameReference(.dynamicTable, relativeIndex: 160, value: String(repeating: "a", count: 160)),
+            // 98 takes one more byte with a 6-bit prefix than with a 7-bit one, which 160 doesn't. Without Huffman
+            // encoding the length of 20,000 bytes takes three continuation bytes, more than any of the others.
             .insertWithNameReference(.staticTable, relativeIndex: 98, value: String(repeating: "b", count: 20_000)),
             .insertWithLiteralName(name: String(repeating: "n", count: 160), value: String(repeating: "v", count: 160)),
             .duplicateEntry(relativeIndex: 160),

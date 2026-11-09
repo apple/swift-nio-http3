@@ -18,27 +18,6 @@ private let valueMask: UInt8 = 127
 private let continuationMask: UInt8 = 128
 
 extension ByteBuffer {
-    /// Encodes an integer value into this buffer, using the format defined in RFC 9204 § 4.1.1.
-    ///
-    /// - Parameters:
-    ///   - value: The integer value to encode.
-    ///   - prefix: The number of bits available for use in the first byte.
-    ///   - prefixBits: Existing bits to place in that first byte before encoding `value`.
-    /// - Returns: Returns the number of bytes used to encode the integer.
-    @available(anyAppleOS 27, *)
-    @discardableResult
-    mutating func writeQPACKPrefixedInteger<Integer: FixedWidthInteger>(
-        _ value: Integer,
-        prefix: Int,
-        prefixBits: UInt8 = 0
-    ) -> Int {
-        let start = self.writerIndex
-        self.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.maxPrefixedInteger(Integer.self)) {
-            $0.appendQPACKPrefixedInteger(value, prefix: prefix, prefixBits: prefixBits)
-        }
-        return self.writerIndex &- start
-    }
-
     /// Reads an integer encoded using the format defined in RFC 9204 § 4.1.1.
     /// Moves the reader index forward by the number of bytes read.
     /// If no integer can be read, returns nil and leaves the index as it was.
