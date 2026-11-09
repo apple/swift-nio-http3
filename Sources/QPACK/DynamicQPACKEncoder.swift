@@ -152,11 +152,13 @@ public struct DynamicQPACKEncoder {
         var requiredIndices = [Int]()
         /// The instructions the peer's decoder needs to decode the section.
         var instructions = [QPACKEncoderInstruction]()
+        /// The number of fields in the section. At most, each of them references one entry and requires one
+        /// instruction.
+        let fieldCount: Int
 
         init(base: Int, fieldCount: Int) {
             self.base = base
-            // At most, each header can require one instruction
-            self.instructions.reserveCapacity(fieldCount)
+            self.fieldCount = fieldCount
         }
     }
 
@@ -181,9 +183,16 @@ public struct DynamicQPACKEncoder {
         )
         let encoded = encodeResult.headerRepresentation
         if let ins = encodeResult.instruction {
+            // Most sections need no instructions at all, so only allocate once the first one is needed.
+            if section.instructions.isEmpty {
+                section.instructions.reserveCapacity(section.fieldCount)
+            }
             section.instructions.append(ins)
         }
         if let requiredIndex = encoded.requiredIndex {
+            if section.requiredIndices.isEmpty {
+                section.requiredIndices.reserveCapacity(section.fieldCount)
+            }
             section.requiredIndices.append(requiredIndex)
         }
         return encoded.asFieldLine(base: section.base)
