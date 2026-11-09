@@ -27,6 +27,8 @@ struct EncoderInstructionCoderTests {
             QPACKEncoderInstruction.setDynamicTableCapacity(10),
             QPACKEncoderInstruction.duplicateEntry(relativeIndex: 10),
             QPACKEncoderInstruction.insertWithLiteralName(name: "bla", value: "bla"),
+            // Huffman encoding makes these shorter.
+            QPACKEncoderInstruction.insertWithLiteralName(name: "x-custom-header", value: "some value"),
         ],
         [true, false]
     )
@@ -35,8 +37,7 @@ struct EncoderInstructionCoderTests {
         preferHuffmanEncoding: Bool
     ) throws {
         // Encode "manually". We can trust the result of this because it's tested elsewhere as a unit
-        var expectedResult = ByteBuffer()
-        expectedResult.writeQPACKEncoderInstruction(instruction, preferHuffmanEncoding: false)
+        let expectedResult = encodeEncoderInstruction(instruction, preferHuffmanEncoding: preferHuffmanEncoding)
 
         // Encode via the encoder which is under test
         var testBuffer = ByteBuffer()
@@ -44,7 +45,7 @@ struct EncoderInstructionCoderTests {
         encoder.encode(data: instruction, out: &testBuffer)
 
         // Assert the results are same. This means the encoder works correctly
-        #expect(testBuffer == expectedResult)
+        #expect(Array(testBuffer.readableBytesView) == expectedResult)
 
         // Decode via the decoder under test
         let decoder = QPACKEncoderInstructionDecoder()

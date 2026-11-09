@@ -30,13 +30,26 @@ func encodeWithExactRoom<Result>(
     _ maxLength: Int,
     _ encode: (inout OutputRawSpan) -> Result
 ) -> (ByteBuffer, Result) {
+    let (bytes, result) = encodeBytesWithExactRoom(maxLength, encode)
+    return (ByteBuffer(bytes: bytes), result)
+}
+
+/// Runs `encode` on a span of exactly `maxLength` bytes, and returns the bytes it wrote alongside its result.
+///
+/// Writing more than `maxLength` bytes traps.
+@available(anyAppleOS 27, *)
+func encodeBytesWithExactRoom<Result>(
+    _ maxLength: Int,
+    _ encode: (inout OutputRawSpan) -> Result
+) -> ([UInt8], Result) {
     var bytes = [UInt8](repeating: 0, count: maxLength)
     let (length, result) = bytes.withUnsafeMutableBytes { buffer in
         var output = OutputRawSpan(buffer: buffer, initializedCount: 0)
         let result = encode(&output)
         return (output.finalize(for: buffer), result)
     }
-    return (ByteBuffer(bytes: bytes.prefix(length)), result)
+    bytes.removeLast(maxLength - length)
+    return (bytes, result)
 }
 
 /// The result of encoding a field section.

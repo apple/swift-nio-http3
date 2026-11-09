@@ -1198,10 +1198,11 @@ struct EndToEndTests {
                 switch streamType {
                 case .qpackEncoder:
                     // Write a bad instruction inbound, as if the peer has sent it
-                    var buffer = ByteBuffer()
                     /// 0x20 followed by UInt.max means set the dynamic table size to UInt.max.
                     /// This is always an error on any platform, because UInt.max is always more than Int.max and therefore we don't allow it.
-                    buffer.writeQPACKPrefixedInteger(UInt.max, prefix: 5, prefixBits: 0x20)
+                    let buffer = ByteBuffer(initialCapacity: QPACKEncodedLength.maxPrefixedInteger(UInt.self)) {
+                        $0.appendQPACKPrefixedInteger(UInt.max, prefix: 5, prefixBits: 0x20)
+                    }
                     streamChannel.pipeline.fireChannelRead(buffer)
                 case .qpackDecoder, .control:
                     break  // Not interested in these
