@@ -15,7 +15,7 @@
 import NIOCore
 
 @_spi(PackageInternal) @testable public import HTTP3
-@_spi(PackageInternal) @testable import QPACK
+@_spi(PackageInternal) import QPACK
 
 @available(anyAppleOS 27, *)
 extension HTTP3PushID: ExpressibleByIntegerLiteral {
