@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import struct NIOCore.ByteBuffer
+import struct NIOCore.ByteBuffer
 
 /// Represents a FieldSectionPrefix as per RFC 9204 § 4.5.1.
 @available(anyAppleOS 27, *)
@@ -151,8 +151,7 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
 
 /// Represents a single field line as per RFC 9204 § 4.5.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
-public enum FieldLine: Sendable, Hashable {
+enum FieldLine: Sendable, Hashable {
     /// 4.5.2. Indexed Field Line.
     case indexed(QPACKReferenceTable, index: Int)
     /// 4.5.3. Indexed Field Line with Post-Base Index.
@@ -168,24 +167,6 @@ public enum FieldLine: Sendable, Hashable {
     case literalWithNameReferenceWithPostBase(requireLiteralRepresentation: Bool, index: Int, value: String)
     /// 4.5.6. Literal Field Line with Literal Name.
     case literal(requireLiteralRepresentation: Bool, name: String, value: String)
-}
-
-/// Represents a full field section as per RFC 9204 § 4.5.
-@available(anyAppleOS 27, *)
-@_spi(PackageInternal)
-public struct FieldSection: Sendable, Hashable {
-    /// The field section prefix.
-    @_spi(PackageInternal)
-    public var prefix: EncodedFieldSectionPrefix
-    /// Each line of the field section. A line represents a header.
-    @_spi(PackageInternal)
-    public var lines: [FieldLine]
-
-    @_spi(PackageInternal)
-    public init(prefix: EncodedFieldSectionPrefix, lines: [FieldLine]) {
-        self.prefix = prefix
-        self.lines = lines
-    }
 }
 
 extension ByteBuffer {
@@ -329,20 +310,6 @@ extension ByteBuffer {
             ),
             bytesRead: bytesRead
         )
-    }
-
-    @available(anyAppleOS 27, *)
-    @_spi(PackageInternal)
-    public mutating func readFieldSection() throws(IntegerReadingError) -> FieldSection? {
-        guard let prefix = try self.readFieldSectionPrefix() else {
-            return nil
-        }
-        var lines = [FieldLine]()
-        lines.reserveCapacity(QPACKConstants.defaultFieldLinesCapacity)
-        while let l = try self.readFieldLine() {
-            lines.append(l)
-        }
-        return FieldSection(prefix: prefix, lines: lines)
     }
 }
 

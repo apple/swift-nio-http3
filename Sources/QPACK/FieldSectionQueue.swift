@@ -15,35 +15,33 @@
 import HeapModule
 import NIOQUICHelpers
 
+import struct NIOCore.ByteBuffer
+
 enum FieldSectionQueueError: Error, Hashable, Sendable {
     case reachedMaxSize
 }
 
-/// A queue of FieldSections which cannot yet be decoded.
+/// A queue of field sections which cannot yet be decoded.
 @available(anyAppleOS 27, *)
 struct FieldSectionQueue<Context> {
     /// An entry in the queue.
     /// `Comparable` and `Equatable` are implemented based on the ``FieldSectionPrefix/requiredInsertCount`` only.
     struct Entry: Comparable {
-        /// The original full field section.
-        var fieldSection: FieldSection
         /// The prefix of the message to be decoded.
         var prefix: FieldSectionPrefix
-        /// The field lines to decode.
-        var lines: [FieldLine]
+        /// The encoded field lines to decode, which followed the prefix.
+        var lines: ByteBuffer
         /// The id of the stream we received this message on.
         var streamID: QUICStreamID
         /// Additional info that shall be stored with the header fields to decode
         var context: Context
 
         init(
-            fieldSection: FieldSection,
             prefix: FieldSectionPrefix,
-            lines: [FieldLine],
+            lines: ByteBuffer,
             streamID: QUICStreamID,
             context: Context
         ) {
-            self.fieldSection = fieldSection
             self.prefix = prefix
             self.lines = lines
             self.streamID = streamID
