@@ -51,6 +51,15 @@ public struct HTTP3ServerConnection<Output: Sendable, StreamCreator: QUICStreamC
         }
     }
 
+    /// The QUIC stream creator associated with this connection.
+    ///
+    /// > Note: WebTransport API
+    public var streamCreator: EventLoopFuture<StreamCreator?> {
+        self.connectionHandler.eventLoop.submit {
+            self.connectionHandler.value?.coordinator.streamCreator
+        }
+    }
+
     /// An asynchronous sequence of inbound streams.
     public struct InboundStreams: AsyncSequence, Sendable {
         public typealias Element = Output
