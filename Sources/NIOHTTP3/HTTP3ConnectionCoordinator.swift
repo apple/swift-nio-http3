@@ -128,15 +128,13 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         return self.connectionStateMachine.sendDatagram(streamID: streamID)
     }
 
-    /// Delivers any datagrams which were buffered for the given stream.
-    ///
-    /// Must only be called once the state machine knows the stream is open and both peers have advertised support for
-    /// datagrams, i.e. once it will stop buffering datagrams for the stream, otherwise datagrams can be delivered out
-    /// of order.
-    private func emitBufferedDatagrams(forStream streamID: QUICStreamID) {
+    /// Delivers any datagrams which were buffered for the given stream, if the stream is open and if both peers have
+    /// advertised support for datagrams.
+    private func emitBufferedDatagramsIfNegotiated(forStream streamID: QUICStreamID) {
         self.eventLoop.assertInEventLoop()
+        guard self.connectionStateMachine.datagramsNegotiated else { return }
+
         assert(self.connectionStateMachine.isStreamOpen(streamID))
-        assert(self.connectionStateMachine.datagramsNegotiated)
         assert(self.connection != nil)
         if let datagrams = self.datagramBuffer.unbufferDatagrams(forStream: streamID) {
             self.connection?.emitDatagrams(datagrams)
@@ -290,9 +288,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                         )
                     }
                     // Until both peers have advertised support, datagrams stay buffered.
-                    if self.connectionStateMachine.datagramsNegotiated {
-                        self.emitBufferedDatagrams(forStream: streamID)
-                    }
+                    self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
                     return HTTP3StreamInitializerParameters(params)
                 }.assumeIsolated().flatMap {
                     streamInitializer($0)
@@ -361,9 +357,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 }
                 // State machine now considers the stream to be open. If both endpoints have advertised support, deliver
                 // the datagrams now.
-                if self.connectionStateMachine.datagramsNegotiated {
-                    self.emitBufferedDatagrams(forStream: streamID)
-                }
+                self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
                 return userInboundStreamInitializer(parameters).map(onUserStream)
             } catch {
                 self.datagramBuffer.discardDatagrams(forStream: streamID)
@@ -626,6 +620,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             } catch {
                 assert(error.isConnectionError)
                 self.emitConnectionErrorFromStream(HTTP3Error(error, location: .here()))
+                return
             }
             let receivedSettings = ReceivedSettings(
                 datagramsSupported: onSettings.datagramsNegotiated,
