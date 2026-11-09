@@ -79,6 +79,8 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             let localSettings: HTTP3Settings
             /// The type of the connection (client or server).
             let type: HTTP3ConnectionType
+            /// Whether the peer sent any datagrams before the state machine was initialized.
+            var receivedDatagrams = false
         }
 
         struct Initialized: ~Copyable {
@@ -250,7 +252,13 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 self.inboundQPACKDecoderStream = .init()
                 self.inboundQPACKEncoderStream = .init()
                 self.type = notStarted.type
-                self.settingsState = .awaiting(.init(type: notStarted.type, localSettings: notStarted.localSettings))
+                self.settingsState = .awaiting(
+                    NegotiatedSettingsState.Awaiting(
+                        type: notStarted.type,
+                        localSettings: notStarted.localSettings,
+                        receivedDatagrams: notStarted.receivedDatagrams
+                    )
+                )
                 self.quiescingState = .init(type: notStarted.type)
             }
         }
@@ -358,14 +366,15 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
     @_spi(PackageInternal)
     public mutating func receivedDatagram(streamID: QUICStreamID) -> ReceivedDatagramAction {
         switch consume self.state {
-        case .notStarted(let notStarted):
-            let localSupport = notStarted.localSettings.h3Datagram
-            self = .init(state: .notStarted(notStarted))
-            if localSupport {
-                return .buffer
-            } else {
+        case .notStarted(var notStarted):
+            guard notStarted.localSettings.h3Datagram else {
+                self = .init(state: .notStarted(notStarted))
                 return .datagramsNotNegotiated(location: .here())
             }
+
+            notStarted.receivedDatagrams = true
+            self = .init(state: .notStarted(notStarted))
+            return .buffer
 
         case .initialized(var initialized):
             // If the peer's SETTINGS frame hasn't arrived yet but we support receiving datagrams, we buffer the peer's
