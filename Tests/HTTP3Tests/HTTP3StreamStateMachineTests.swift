@@ -65,40 +65,42 @@ struct HTTP3StreamStateMachineTests {
         ]
     }
 
+    /// The field section the static encoder writes for `testRequestHeaderFields`.
     @available(anyAppleOS 27, *)
-    private var testRequestHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
+    private var testRequestFieldSectionBytes: ByteBuffer {
+        let encoder = StaticQPACKEncoder()
+        return ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: self.testRequestHeaderFields)) {
+            encoder.encode(headers: self.testRequestHeaderFields, into: &$0, preferHuffmanEncoding: false)
+        }
     }
 
+    /// The bytes of the HEADERS frame the machine writes for `fields`.
     @available(anyAppleOS 27, *)
-    private var testResponseHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testResponseHeaderFields))
+    private func writtenHeadersFrameBytes(_ fields: [HTTPField]) -> [UInt8] {
+        let encoder = StaticQPACKEncoder()
+        var buffer = ByteBuffer()
+        buffer.writeHeadersFrame(maxPayloadLength: encoder.maxEncodedLength(of: fields)) {
+            encoder.encode(headers: fields, into: &$0, preferHuffmanEncoding: false)
+        }
+        return .init(buffer: buffer)
     }
 
-    @available(anyAppleOS 27, *)
-    private var testTrailer: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testTrailerFields))
-    }
-
-    /// These bytes encode `testRequestHeader`.
+    /// These bytes are the HEADERS frame of `testRequestHeaderFields`.
     @available(anyAppleOS 27, *)
     private var testRequestHeaderFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testRequestHeader))
-        return .init(buffer: buffer)
+        self.writtenHeadersFrameBytes(self.testRequestHeaderFields)
     }
 
-    /// These bytes encode `testResponseHeader`.
+    /// These bytes are the HEADERS frame of `testResponseHeaderFields`.
     @available(anyAppleOS 27, *)
     private var testResponseHeaderFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testResponseHeader))
-        return .init(buffer: buffer)
+        self.writtenHeadersFrameBytes(self.testResponseHeaderFields)
     }
 
-    /// These bytes encode `testTrailerFrameBytes`.
+    /// These bytes are the HEADERS frame of `testTrailerFields`.
     @available(anyAppleOS 27, *)
     private var testTrailerFrameBytes: [UInt8] {
-        let buffer = ByteBuffer(frame: .headers(self.testTrailer))
-        return .init(buffer: buffer)
+        self.writtenHeadersFrameBytes(self.testTrailerFields)
     }
 
     @available(anyAppleOS 27, *)
@@ -160,7 +162,7 @@ struct HTTP3StreamStateMachineTests {
         machine.assertNoNext()
 
         // The header we've been asked to decode should match the one we put in
-        #expect(partialHeader == self.testRequestHeader)
+        #expect(ByteBuffer(fieldSection: partialHeader.fieldSection) == self.testRequestFieldSectionBytes)
 
         let decodeResult = self.testRequestHeaderFields
         machine.gotHeaderDecodeResult(decodeResult)
@@ -205,7 +207,7 @@ struct HTTP3StreamStateMachineTests {
         machine.assertNoNext()
 
         // The header we've been asked to decode should match the one we put in
-        #expect(partialHeader == self.testRequestHeader)
+        #expect(ByteBuffer(fieldSection: partialHeader.fieldSection) == self.testRequestFieldSectionBytes)
 
         // Put in the decode result
         let decodeResult = self.testRequestHeaderFields
@@ -239,7 +241,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
-        #expect(partialHeader == self.testRequestHeader)
+        #expect(ByteBuffer(fieldSection: partialHeader.fieldSection) == self.testRequestFieldSectionBytes)
         machine.assertNoNext()
         // We tell it we got an error
         let testError = HTTP3Error(
@@ -320,7 +322,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(action1)")
             return
         }
-        #expect(partialHeader == self.testRequestHeader)
+        #expect(ByteBuffer(fieldSection: partialHeader.fieldSection) == self.testRequestFieldSectionBytes)
         machine.assertNoNext()
         // We tell it we got an error
         let testError = HTTP3Error(
@@ -473,7 +475,9 @@ struct HTTP3StreamStateMachineTests {
 
         // We can send response headers, even though we're in the middle of processing incoming request data
         let writeAction = machine.writeFrameAndQPACK(frame: .headers(self.testResponseHeaderFields))
-        writeAction?.assertReturnBytes(expectedBytes: .init(bytes: self.testResponseHeaderFrameBytes))
+        writeAction?.assertReturnBytes(
+            expectedBytes: .init(bytes: self.writtenHeadersFrameBytes(self.testResponseHeaderFields))
+        )
     }
 
     @available(anyAppleOS 27, *)
@@ -495,7 +499,9 @@ struct HTTP3StreamStateMachineTests {
 
         // We can write response headers, even though we're in the middle of processing incoming request trailers
         let writeAction1 = machine.writeFrameAndQPACK(frame: .headers(self.testResponseHeaderFields))
-        writeAction1?.assertReturnBytes(expectedBytes: .init(bytes: self.testResponseHeaderFrameBytes))
+        writeAction1?.assertReturnBytes(
+            expectedBytes: .init(bytes: self.writtenHeadersFrameBytes(self.testResponseHeaderFields))
+        )
 
         // Now decode the request trailers
         let testResult = self.testTrailerFields
@@ -533,7 +539,9 @@ struct HTTP3StreamStateMachineTests {
     @Test func writeDoubleData() {
         var machine = HTTP3StreamStateMachine(streamType: .request, incoming: false, preferHuffmanEncoding: false)
         let action1 = machine.writeFrameAndQPACK(frame: .headers(self.testRequestHeaderFields))
-        action1?.assertReturnBytes(expectedBytes: .init(bytes: self.testRequestHeaderFrameBytes))
+        action1?.assertReturnBytes(
+            expectedBytes: .init(bytes: self.writtenHeadersFrameBytes(self.testRequestHeaderFields))
+        )
 
         let action2 = machine.writeFrameAndQPACK(frame: .data(.init(bytes: [1, 2, 3])))
         action2?.assertReturnBytes(expectedBytes: .init(bytes: [0, 3, 1, 2, 3]))
@@ -802,10 +810,73 @@ struct HTTP3StreamStateMachineTests {
         let action2 = machine.closed()
         #expect(action2 == .streamClosed(seenEOF: false))
 
-        // Now give the encode result
-        let action3 = machine.gotHeaderEncodeResult(self.testRequestHeader)
+        // Now ask for the headers to be written
+        var encoded = false
+        var buffer = ByteBuffer()
+        let action3 = machine.writeHeadersFrame(maxPayloadLength: 100, into: &buffer) { _, _ in encoded = true }
+        #expect(!encoded, "Headers which can't be written mustn't be encoded")
+        #expect(buffer.readableBytes == 0)
         guard case .alreadyClosed = action3 else {
             Issue.record("Unexpected action \(String(describing: action3))")
+            return
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func streamFailedDuringQPACKEncode() {
+        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: false, preferHuffmanEncoding: false)
+
+        let action1 = machine.writeFrame(frame: .headers(self.testRequestHeaderFields))
+        guard case .encodeHeaders = action1 else {
+            Issue.record("Unexpected action \(String(describing: action1))")
+            return
+        }
+
+        // The response starts with DATA rather than HEADERS, which fails the stream before the request is written.
+        machine.buffer(ByteBuffer(bytes: self.testDataFrameBytes))
+        let action2 = machine.decodeNext()
+        switch action2 {
+        case .emitConnectionError, .emitStreamError:
+            break
+        default:
+            Issue.record("Unexpected action \(String(describing: action2))")
+        }
+
+        // Now ask for the headers to be written
+        var encoded = false
+        var buffer = ByteBuffer()
+        let action3 = machine.writeHeadersFrame(maxPayloadLength: 100, into: &buffer) { _, _ in encoded = true }
+        #expect(!encoded, "Headers which can't be written mustn't be encoded")
+        #expect(buffer.readableBytes == 0)
+        guard case .previousError = action3 else {
+            Issue.record("Unexpected action \(String(describing: action3))")
+            return
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [true, false])
+    func headersAreEncodedWithTheStreamsHuffmanPreference(preferHuffmanEncoding: Bool) {
+        var machine = HTTP3StreamStateMachine(
+            streamType: .request,
+            incoming: false,
+            preferHuffmanEncoding: preferHuffmanEncoding
+        )
+
+        let action1 = machine.writeFrame(frame: .headers(self.testRequestHeaderFields))
+        guard case .encodeHeaders = action1 else {
+            Issue.record("Unexpected action \(String(describing: action1))")
+            return
+        }
+
+        var preferredHuffmanEncoding: Bool?
+        var buffer = ByteBuffer()
+        let action2 = machine.writeHeadersFrame(maxPayloadLength: 100, into: &buffer) { _, preferHuffmanEncoding in
+            preferredHuffmanEncoding = preferHuffmanEncoding
+        }
+        #expect(preferredHuffmanEncoding == preferHuffmanEncoding)
+        guard case .wroteBytes = action2 else {
+            Issue.record("Unexpected action \(String(describing: action2))")
             return
         }
     }
@@ -979,12 +1050,15 @@ extension HTTP3StreamStateMachine {
         return self.writeFrame(frame: frame, into: &buffer)
     }
 
-    /// Test convenience: deliver an encode result using a throwaway buffer.
-    fileprivate mutating func gotHeaderEncodeResult(
-        _ result: HTTP3PartialFrame.Headers
+    /// Test convenience: write the HEADERS frame of `fields` with the static encoder, into `buffer`.
+    fileprivate mutating func writeHeadersFrame(
+        _ fields: [HTTPField],
+        into buffer: inout ByteBuffer
     ) -> HeaderEncodeResultAction {
-        var buffer = ByteBuffer()
-        return self.gotHeaderEncodeResult(result, into: &buffer)
+        let encoder = StaticQPACKEncoder()
+        return self.writeHeadersFrame(maxPayloadLength: encoder.maxEncodedLength(of: fields), into: &buffer) {
+            encoder.encode(headers: fields, into: &$0, preferHuffmanEncoding: $1)
+        }
     }
 
     fileprivate enum ResolvedAction {
@@ -996,7 +1070,6 @@ extension HTTP3StreamStateMachine {
 
     /// Do a write, and do the qpack too, and return just one action.
     fileprivate mutating func writeFrameAndQPACK(frame: HTTP3Frame) -> ResolvedAction? {
-        let encoder = StaticQPACKEncoder()
         var buffer = ByteBuffer()
         let action = self.writeFrame(frame: frame, into: &buffer)
         switch action {
@@ -1011,8 +1084,7 @@ extension HTTP3StreamStateMachine {
         case .alreadyClosed:
             return .alreadyClosed
         case .encodeHeaders(let fields):
-            let qpackResult = encoder.encode(headers: fields)
-            let action2 = self.gotHeaderEncodeResult(.init(fieldSection: qpackResult), into: &buffer)
+            let action2 = self.writeHeadersFrame(fields, into: &buffer)
             switch action2 {
             case .wroteBytes:
                 return .returnBytes(buffer)
@@ -1030,6 +1102,16 @@ extension ByteBuffer {
     @available(anyAppleOS 27, *)
     fileprivate init(frame: HTTP3PartialFrame) {
         self.init()
-        self.writeHTTP3PartialFrame(frame, preferHuffmanEncoding: false)
+        self.writeTestFrame(frame)
+    }
+
+    /// Create a buffer and write `fieldSection` into it.
+    @available(anyAppleOS 27, *)
+    fileprivate init(fieldSection: FieldSection) {
+        self.init()
+        self.writeFieldSectionPrefix(fieldSection.prefix)
+        for line in fieldSection.lines {
+            self.writeFieldLine(line, preferHuffmanEncoding: false)
+        }
     }
 }

@@ -43,24 +43,63 @@ struct StaticQPACKEncoderTests {
     @Test(arguments: [true, false])
     func writesItsFieldSection(preferHuffmanEncoding: Bool) throws {
         let encoder = StaticQPACKEncoder()
-        let bound = encoder.maxEncodedLength(of: Self.headers)
-        var buffer = ByteBuffer(initialCapacity: bound) { output in
-            encoder.encode(headers: Self.headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: Self.headers)) {
+            encoder.encode(headers: Self.headers, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
         }
-        #expect(buffer.readableBytes <= bound)
 
-        let decoded = try buffer.readFieldSection()
-        #expect(buffer.readableBytes == 0)
-        #expect(decoded == encoder.encode(headers: Self.headers))
+        let expected = FieldSection(
+            prefix: EncodedFieldSectionPrefix(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+            lines: [
+                .indexed(.staticTable, index: 17),
+                .indexed(.staticTable, index: 23),
+                .literalWithNameReference(
+                    requireLiteralRepresentation: false,
+                    table: .staticTable,
+                    index: 0,
+                    value: "www.example.com"
+                ),
+                .literalWithNameReference(
+                    requireLiteralRepresentation: false,
+                    table: .staticTable,
+                    index: 1,
+                    value: "/" + String(repeating: "a", count: 300)
+                ),
+                .indexed(.staticTable, index: 29),
+                .literal(requireLiteralRepresentation: false, name: "x-custom-header", value: "some-custom-value"),
+                .literal(requireLiteralRepresentation: false, name: "x-unicode", value: "héllo wörld ✓ 🎉"),
+                .literal(requireLiteralRepresentation: false, name: "x-empty", value: ""),
+                .literalWithNameReference(
+                    requireLiteralRepresentation: true,
+                    table: .staticTable,
+                    index: 84,
+                    value: "Bearer secret"
+                ),
+            ]
+        )
+        #expect(FieldSection(readingAll: buffer) == expected)
+        // Comparing bytes too checks the Huffman coding, which reading undoes.
+        #expect(buffer == ByteBuffer(fieldSection: expected, preferHuffmanEncoding: preferHuffmanEncoding))
     }
 
     @available(anyAppleOS 27, *)
     @Test func writesNothingButThePrefixForNoFields() {
         let encoder = StaticQPACKEncoder()
-        let buffer = ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: [])) { output in
-            encoder.encode(headers: [], into: &output, preferHuffmanEncoding: true)
+        let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: [])) {
+            encoder.encode(headers: [], into: &$0, preferHuffmanEncoding: true)
         }
         // Required Insert Count 0, then Base 0
         #expect(Array(buffer.readableBytesView) == [0, 0])
+    }
+}
+
+extension ByteBuffer {
+    /// `fieldSection`, written one line at a time.
+    @available(anyAppleOS 27, *)
+    init(fieldSection: FieldSection, preferHuffmanEncoding: Bool) {
+        self.init()
+        self.writeFieldSectionPrefix(fieldSection.prefix)
+        for line in fieldSection.lines {
+            self.writeFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
     }
 }

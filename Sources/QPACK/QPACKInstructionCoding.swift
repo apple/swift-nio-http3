@@ -73,43 +73,6 @@ extension ByteBuffer {
         }
     }
 
-    /// Encode a single ``QPACKEncoderInstruction`` into this `ByteBuffer`.
-    /// - Parameters:
-    ///   - instruction: The instruction to encode.
-    ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and more efficient to do so).
-    @available(anyAppleOS 27, *)
-    mutating func writeQPACKEncoderInstruction(
-        _ instruction: QPACKEncoderInstruction,
-        preferHuffmanEncoding: Bool
-    ) {
-        switch instruction {
-        case .setDynamicTableCapacity(let capacity):
-            self.writeQPACKPrefixedInteger(capacity, prefix: 5, prefixBits: 0x20)
-        case .insertWithNameReference(let table, let relativeIndex, let value):
-            // 1st bit is 1
-            // 2nd bit represents static table (1) or dynamic table (0)
-            let prefixBits: UInt8
-            switch table {
-            case .staticTable:
-                prefixBits = 0xC0  // 11
-            case .dynamicTable:
-                prefixBits = 0x80  // 10
-            }
-            self.writeQPACKPrefixedInteger(relativeIndex, prefix: 6, prefixBits: prefixBits)
-            self.writeQPACKEncodedString(value, preferHuffmanEncoding: preferHuffmanEncoding, prefix: 8)
-        case .insertWithLiteralName(let name, let value):
-            self.writeQPACKEncodedString(
-                name,
-                preferHuffmanEncoding: preferHuffmanEncoding,
-                prefix: 6,
-                prefixBits: 0x40
-            )
-            self.writeQPACKEncodedString(value, preferHuffmanEncoding: preferHuffmanEncoding, prefix: 8)
-        case .duplicateEntry(let relativeIndex):
-            self.writeQPACKPrefixedInteger(relativeIndex, prefix: 5, prefixBits: 0)
-        }
-    }
-
     /// Read a single ``QPACKDecoderInstruction`` from this `ByteBuffer`.
     /// Moves the reader index to the end of the instruction.
     /// If a valid instruction can't be formed, returns nil and leaves the reader index as it was.
@@ -151,21 +114,91 @@ extension ByteBuffer {
             return .sectionAcknowledgement(streamID: .init(rawValue: streamID))
         }
     }
+}
 
-    /// Encode a single ``QPACKDecoderInstruction`` into this `ByteBuffer`.
-    /// - Parameter instruction: The instruction to encode.
+extension OutputRawSpan {
+    /// Appends a single ``QPACKEncoderInstruction``.
+    /// - Parameters:
+    ///   - instruction: The instruction to encode.
+    ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and more efficient to do so).
+    /// - Precondition: The span has room for ``QPACKEncodedLength/maxEncoderInstruction(_:)`` more bytes.
     @available(anyAppleOS 27, *)
-    mutating func writeQPACKDecoderInstruction(_ instruction: QPACKDecoderInstruction) {
+    mutating func appendQPACKEncoderInstruction(_ instruction: QPACKEncoderInstruction, preferHuffmanEncoding: Bool) {
+        switch instruction {
+        case .setDynamicTableCapacity(let capacity):
+            self.appendQPACKPrefixedInteger(capacity, prefix: 5, prefixBits: 0x20)
+        case .insertWithNameReference(let table, let relativeIndex, let value):
+            // 1st bit is 1
+            // 2nd bit represents static table (1) or dynamic table (0)
+            let prefixBits: UInt8
+            switch table {
+            case .staticTable:
+                prefixBits = 0xC0  // 11
+            case .dynamicTable:
+                prefixBits = 0x80  // 10
+            }
+            self.appendQPACKPrefixedInteger(relativeIndex, prefix: 6, prefixBits: prefixBits)
+            self.appendQPACKEncodedString(value, preferHuffmanEncoding: preferHuffmanEncoding, prefix: 8)
+        case .insertWithLiteralName(let name, let value):
+            self.appendQPACKEncodedString(
+                name,
+                preferHuffmanEncoding: preferHuffmanEncoding,
+                prefix: 6,
+                prefixBits: 0x40
+            )
+            self.appendQPACKEncodedString(value, preferHuffmanEncoding: preferHuffmanEncoding, prefix: 8)
+        case .duplicateEntry(let relativeIndex):
+            self.appendQPACKPrefixedInteger(relativeIndex, prefix: 5, prefixBits: 0)
+        }
+    }
+
+    /// Appends a single ``QPACKDecoderInstruction``.
+    /// - Parameter instruction: The instruction to encode.
+    /// - Precondition: The span has room for ``QPACKEncodedLength/decoderInstruction(_:)`` more bytes.
+    @available(anyAppleOS 27, *)
+    mutating func appendQPACKDecoderInstruction(_ instruction: QPACKDecoderInstruction) {
         switch instruction {
         case .sectionAcknowledgement(let streamID):
             // Start with a 1, then a 7-bit prefix integer
-            self.writeQPACKPrefixedInteger(streamID.rawValue, prefix: 7, prefixBits: 0x80)
+            self.appendQPACKPrefixedInteger(streamID.rawValue, prefix: 7, prefixBits: 0x80)
         case .streamCancellation(let streamID):
             // Start with 01, then a 6-bit prefix integer
-            self.writeQPACKPrefixedInteger(streamID.rawValue, prefix: 6, prefixBits: 0x40)
+            self.appendQPACKPrefixedInteger(streamID.rawValue, prefix: 6, prefixBits: 0x40)
         case .insertCountIncrement(let increment):
             // Start with 00, then a 6-bit prefix integer
-            self.writeQPACKPrefixedInteger(increment, prefix: 6, prefixBits: 0)
+            self.appendQPACKPrefixedInteger(increment, prefix: 6, prefixBits: 0)
+        }
+    }
+}
+
+extension QPACKEncodedLength {
+    /// The largest number of bytes ``OutputRawSpan/appendQPACKEncoderInstruction(_:preferHuffmanEncoding:)`` appends for
+    /// `instruction`.
+    @available(anyAppleOS 27, *)
+    static func maxEncoderInstruction(_ instruction: QPACKEncoderInstruction) -> Int {
+        switch instruction {
+        case .setDynamicTableCapacity(let capacity):
+            Self.prefixedInteger(capacity, prefix: 5)
+        case .insertWithNameReference(_, let relativeIndex, let value):
+            Self.prefixedInteger(relativeIndex, prefix: 6) &+ Self.maxString(byteCount: value.utf8.count, prefix: 8)
+        case .insertWithLiteralName(let name, let value):
+            Self.maxString(byteCount: name.utf8.count, prefix: 6)
+                &+ Self.maxString(byteCount: value.utf8.count, prefix: 8)
+        case .duplicateEntry(let relativeIndex):
+            Self.prefixedInteger(relativeIndex, prefix: 5)
+        }
+    }
+
+    /// The number of bytes ``OutputRawSpan/appendQPACKDecoderInstruction(_:)`` appends for `instruction`.
+    @available(anyAppleOS 27, *)
+    static func decoderInstruction(_ instruction: QPACKDecoderInstruction) -> Int {
+        switch instruction {
+        case .sectionAcknowledgement(let streamID):
+            Self.prefixedInteger(streamID.rawValue, prefix: 7)
+        case .streamCancellation(let streamID):
+            Self.prefixedInteger(streamID.rawValue, prefix: 6)
+        case .insertCountIncrement(let increment):
+            Self.prefixedInteger(increment, prefix: 6)
         }
     }
 }
@@ -186,7 +219,9 @@ public struct QPACKEncoderInstructionEncoder {
 
     @_spi(PackageInternal)
     public func encode(data: QPACKEncoderInstruction, out: inout ByteBuffer) {
-        out.writeQPACKEncoderInstruction(data, preferHuffmanEncoding: self.preferHuffmanEncoding)
+        out.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.maxEncoderInstruction(data)) {
+            $0.appendQPACKEncoderInstruction(data, preferHuffmanEncoding: self.preferHuffmanEncoding)
+        }
     }
 }
 
@@ -223,7 +258,9 @@ public struct QPACKDecoderInstructionEncoder {
 
     @_spi(PackageInternal)
     public func encode(data: QPACKDecoderInstruction, out: inout ByteBuffer) {
-        out.writeQPACKDecoderInstruction(data)
+        out.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.decoderInstruction(data)) {
+            $0.appendQPACKDecoderInstruction(data)
+        }
     }
 }
 

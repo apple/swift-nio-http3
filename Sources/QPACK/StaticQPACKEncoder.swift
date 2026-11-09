@@ -21,16 +21,6 @@ public struct StaticQPACKEncoder {
     @_spi(PackageInternal)
     public init() {}
 
-    @_spi(PackageInternal)
-    public func encode(headers: [HTTPField]) -> FieldSection {
-        var lines = [FieldLine]()
-        lines.reserveCapacity(headers.count)
-        for header in headers {
-            lines.append(self.fieldLine(for: header))
-        }
-        return .init(prefix: Self.staticPrefix, lines: lines)
-    }
-
     /// The largest number of bytes ``encode(headers:into:preferHuffmanEncoding:)`` appends for `headers`.
     @_spi(PackageInternal)
     public func maxEncodedLength(of headers: [HTTPField]) -> Int {
@@ -38,7 +28,7 @@ public struct StaticQPACKEncoder {
             &+ QPACKEncodedLength.maxFieldLines(headers, indexLimit: StaticHeaderTable.raw.count)
     }
 
-    /// Encodes `headers` into a field section, and appends it to `output`. No intermediate ``FieldSection`` is built.
+    /// Encodes `headers` into a field section, and appends it to `output`.
     ///
     /// - Precondition: `output` has room for ``maxEncodedLength(of:)`` more bytes.
     @_spi(PackageInternal)
@@ -56,7 +46,7 @@ public struct StaticQPACKEncoder {
     }
 
     /// Encodes a single field.
-    private func fieldLine(for header: HTTPField) -> FieldLine {
+    func fieldLine(for header: HTTPField) -> FieldLine {
         let requireLiteralRepresentation: Bool
         switch header.indexingStrategy {
         case .prefer, .automatic, .avoid:

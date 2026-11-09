@@ -84,15 +84,15 @@ final class TestQPACKConnectionDelegate: QPACK.QPACKConnectionDelegate {
 /// the resulting acknowledgements to that channel, and traps if it has no outbound decoder stream at all.
 @available(anyAppleOS 27, *)
 func makeTestQPACKCoder(
-    encoderMaxTableSize: Int = 4096,
-    decoderMaxTableSize: Int = 4096,
+    encoderTableMaxCapacity: Int = 4096,
+    decoderTableMaxCapacity: Int = 4096,
     decoderMaxBlockedStreams: Int = 16,
     connectionDelegate: TestQPACKConnectionDelegate = TestQPACKConnectionDelegate(),
     decoderStreamChannel: EmbeddedChannel? = nil
 ) -> NIOQPACKCoder<TestQPACKConnectionDelegate, TestDelegate> {
     let coder = NIOQPACKCoder<TestQPACKConnectionDelegate, TestDelegate>(
-        encoderMaxTableSize: encoderMaxTableSize,
-        decoderMaxTableSize: decoderMaxTableSize,
+        encoderTableMaxCapacity: encoderTableMaxCapacity,
+        decoderTableMaxCapacity: decoderTableMaxCapacity,
         decoderMaxBlockedStreams: decoderMaxBlockedStreams,
         errorDelegate: connectionDelegate
     )
@@ -102,6 +102,15 @@ func makeTestQPACKCoder(
     return coder
 }
 
+extension ByteBuffer {
+    /// Write a HEADERS frame whose payload is `fieldSection`, a QPACK encoded field section.
+    @available(anyAppleOS 27, *)
+    fileprivate mutating func writeHeadersFrame(fieldSection: ByteBuffer) {
+        self.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
+        self.writeLengthPrefixedBuffer(fieldSection, strategy: .quic)
+    }
+}
+
 extension EmbeddedChannel {
     /// Drain everything a ``QPACKOutboundDecoderStream`` has written to this channel, decoded back into
     /// instructions.
@@ -109,6 +118,18 @@ extension EmbeddedChannel {
     fileprivate func readAllDecoderInstructions() throws -> [QPACKDecoderInstruction] {
         let processor = NIOSingleStepByteToMessageProcessor(QPACKDecoderInstructionDecoder())
         var instructions = [QPACKDecoderInstruction]()
+        while let buffer = try self.readOutbound(as: ByteBuffer.self) {
+            try processor.process(buffer: buffer) { instructions.append($0) }
+        }
+        return instructions
+    }
+
+    /// Drain everything a ``QPACKOutboundEncoderStream`` has written to this channel, decoded back into
+    /// instructions.
+    @available(anyAppleOS 27, *)
+    fileprivate func readAllEncoderInstructions() throws -> [QPACKEncoderInstruction] {
+        let processor = NIOSingleStepByteToMessageProcessor(QPACKEncoderInstructionDecoder())
+        var instructions = [QPACKEncoderInstruction]()
         while let buffer = try self.readOutbound(as: ByteBuffer.self) {
             try processor.process(buffer: buffer) { instructions.append($0) }
         }
@@ -132,28 +153,29 @@ struct NIOHTTP3StreamHandlerTests {
         .headers(self.testRequestHeaderFields)
     }
 
+    /// The field section the static encoder writes for `testRequestHeaderFields`.
     @available(anyAppleOS 27, *)
-    private var testRequestPartialHeader: HTTP3PartialFrame.Headers {
-        .init(fieldSection: StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields))
+    private var testRequestFieldSectionBytes: ByteBuffer {
+        let encoder = StaticQPACKEncoder()
+        return ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: self.testRequestHeaderFields)) {
+            encoder.encode(headers: self.testRequestHeaderFields, into: &$0, preferHuffmanEncoding: false)
+        }
     }
 
     @available(anyAppleOS 27, *)
     private var testRequestPartialHeaderBytes: ByteBuffer {
         var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(.headers(self.testRequestPartialHeader), preferHuffmanEncoding: false)
+        buffer.writeHeadersFrame(fieldSection: self.testRequestFieldSectionBytes)
         return buffer
     }
 
     @available(anyAppleOS 27, *)
     private var testUndecodableRequestPartialHeaderBytes: ByteBuffer {
-        var fieldSection = StaticQPACKEncoder().encode(headers: self.testRequestHeaderFields)
+        var fieldSection = self.testRequestFieldSectionBytes
         // A relative index of 0 against a base of 0 is absolute index -1, which is never in the table.
-        fieldSection.lines.append(.indexed(.dynamicTable, index: 0))
+        fieldSection.writeFieldLine(.indexed(.dynamicTable, index: 0), preferHuffmanEncoding: false)
         var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(
-            .headers(.init(fieldSection: fieldSection)),
-            preferHuffmanEncoding: false
-        )
+        buffer.writeHeadersFrame(fieldSection: fieldSection)
         return buffer
     }
 
@@ -170,15 +192,18 @@ struct NIOHTTP3StreamHandlerTests {
     /// only arrives with ``testUnblockingEncoderInstruction``. Until then the stream is blocked: RFC 9204 § 2.1.2.
     @available(anyAppleOS 27, *)
     private var testBlockedRequestPartialHeaderBytes: ByteBuffer {
-        let fieldSection = FieldSection(
-            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 4096),
-            lines: [.indexedWithPostBase(index: 0)]
-        )
+        let fieldSection = ByteBuffer(bytes: [
+            // RFC 9204 § 4.5.1.1: Required Insert Count 1 is encoded as 1 mod (2 * MaxEntries) + 1 = 2, where
+            // MaxEntries = 4096 / 32.
+            0x02,
+            // RFC 9204 § 4.5.1.2: Base 0 is less than the Required Insert Count, so the sign bit is set, and the
+            // Delta Base is Required Insert Count - Base - 1 = 0.
+            0x80,
+            // RFC 9204 § 4.5.3: an indexed field line with post-base index 0.
+            0x10,
+        ])
         var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(
-            .headers(.init(fieldSection: fieldSection)),
-            preferHuffmanEncoding: false
-        )
+        buffer.writeHeadersFrame(fieldSection: fieldSection)
         return buffer
     }
 
@@ -336,6 +361,50 @@ struct NIOHTTP3StreamHandlerTests {
         let writtenBytes = try recorderPromise.futureResult.wait()
         // The type is 4, the length is 0, but the 0 is encoded in 2 bytes because of how `ByteBuffer/writeLengthPrefixed` works
         #expect(writtenBytes == [.init(bytes: [4, 0x40, 0])])
+    }
+
+    /// Write headers which the encoder inserts into its dynamic table. The peer's decoder must learn of the entry on
+    /// the encoder stream.
+    @available(anyAppleOS 27, *)
+    @Test func writeHeadersWhichNeedInstructions() throws {
+        let qpackCoder = makeTestQPACKCoder()
+        try qpackCoder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 4096)
+        let encoderStreamChannel = EmbeddedChannel()
+        qpackCoder.outboundEncoderStreamReady(
+            QPACKOutboundEncoderStream(channel: encoderStreamChannel, preferHuffmanEncoding: false)
+        )
+        #expect(try encoderStreamChannel.readAllEncoderInstructions() == [.setDynamicTableCapacity(4096)])
+
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
+            streamID: 4,
+            streamType: .request,
+            qpackCoder: qpackCoder,
+            delegate: TestDelegate(),
+            logger: self.logger
+        )
+        let channel = EmbeddedChannel(handlers: [handler])
+
+        try channel.writeOutbound(self.testRequestHeaderFrame)
+
+        // `:authority: test` is the only field the static table doesn't hold exactly.
+        #expect(
+            try encoderStreamChannel.readAllEncoderInstructions() == [
+                .insertWithNameReference(.staticTable, relativeIndex: 0, value: "test")
+            ]
+        )
+        // The HEADERS frame references the entry the instruction inserts.
+        var frameBytes = try #require(try channel.readOutbound(as: ByteBuffer.self))
+        var frameDecoder = HTTP3FrameDecoder()
+        let frame = try frameDecoder.decode(buffer: &frameBytes)
+        #expect(frameBytes.readableBytes == 0)
+        guard case .known(.headers(let headers)) = frame else {
+            Issue.record("Expected a HEADERS frame, got \(String(describing: frame))")
+            return
+        }
+        #expect(
+            headers.fieldSection.prefix == FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 4096)
+        )
     }
 
     /// Write a frame which would result in a stream error.
@@ -587,7 +656,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(seenEvents.popFirst()?.isChannelReadComplete == true)
 
         var dataBytes = ByteBuffer()
-        dataBytes.writeHTTP3PartialFrame(.data(.init(string: "hello world")), preferHuffmanEncoding: false)
+        dataBytes.writeHTTP3PartialFrame(.data(.init(string: "hello world")))
         channel.pipeline.fireChannelRead(dataBytes)
         // We do not fire a read complete. So the bytes get buffered, but nothing comes out.
         #expect(seenEvents.isEmpty())

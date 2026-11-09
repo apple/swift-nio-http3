@@ -13,30 +13,24 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
-@_spi(PackageInternal) import QPACK
 
 import struct NIOCore.ByteBuffer
 
 extension ByteBuffer {
     /// Write a single ``HTTP3PartialFrame`` into the ByteBuffer, and move the writer index to just after the frame.
     ///
-    /// As a reminder, if you want to encode a ``HTTP3Frame``, you must first put it through a QPACK encoder to get a ``HTTP3PartialFrame`` before you can use this function.
-    /// This function is stateless, because the frame has already been through QPACK, it just needs to be written.
+    /// The `QPACKCoder` writes HEADERS frames, through ``writeHeadersFrame(maxPayloadLength:encodePayload:)``, and
+    /// PUSH_PROMISE frames are never written. It is a fatal error to call this function with either.
     /// See also: ``HTTP3FrameDecoder``.
-    /// - Parameters:
-    /// - frame: The frame to be written to the `ByteBuffer`.
-    /// - preferHuffmanEncoding: If true, huffman coding will be preferred where applicable, e.g. header field sections. It will not be used if doing so would use more space than not.
+    /// - Parameter frame: The frame to be written to the `ByteBuffer`.
     @available(anyAppleOS 27, *)
-    mutating func writeHTTP3PartialFrame(_ frame: HTTP3PartialFrame, preferHuffmanEncoding: Bool) {
+    mutating func writeHTTP3PartialFrame(_ frame: HTTP3PartialFrame) {
         switch frame {
         case .data(let payload):
             self.writeEncodedInteger(HTTP3FrameType.data.rawValue, strategy: .quic)
             self.writeLengthPrefixedBuffer(payload.payload, strategy: .quic)
-        case .headers(let payload):
-            self.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
-            self.writeLengthPrefixed(strategy: .quic) { tempBuffer in
-                tempBuffer.writeFieldSection(payload.fieldSection, preferHuffmanEncoding: preferHuffmanEncoding)
-            }
+        case .headers:
+            fatalError("HEADERS frames are written by the QPACKCoder")
         case .cancelPush(let payload):
             self.writeEncodedInteger(HTTP3FrameType.cancelPush.rawValue, strategy: .quic)
             self.writeLengthPrefixedQUICEncodedInteger(payload.pushID.rawValue)
@@ -45,23 +39,40 @@ extension ByteBuffer {
             self.writeLengthPrefixed(strategy: .quic(requiredBytesHint: .two)) { tempBuffer in
                 tempBuffer.writeHTTP3Settings(payload.settings)
             }
-        case .pushPromise(let payload):
-            self.writeEncodedInteger(HTTP3FrameType.pushPromise.rawValue, strategy: .quic)
-            self.writeLengthPrefixed(strategy: .quic) { tempBuffer in
-                var bytesWritten = 0
-                bytesWritten += tempBuffer.writeEncodedInteger(payload.pushID.rawValue, strategy: .quic)
-                bytesWritten += tempBuffer.writeFieldSection(
-                    payload.fieldSection,
-                    preferHuffmanEncoding: preferHuffmanEncoding
-                )
-                return bytesWritten
-            }
+        case .pushPromise:
+            fatalError("Writing PUSH_PROMISE frames is not supported")
         case .goaway(let payload):
             self.writeEncodedInteger(HTTP3FrameType.goaway.rawValue, strategy: .quic)
             self.writeLengthPrefixedQUICEncodedInteger(payload.id.rawValue)
         case .maxPushID(let payload):
             self.writeEncodedInteger(HTTP3FrameType.maxPushID.rawValue, strategy: .quic)
             self.writeLengthPrefixedQUICEncodedInteger(payload.id.rawValue)
+        }
+    }
+}
+
+extension ByteBuffer {
+    /// Write a HEADERS frame, whose payload `encodePayload` appends.
+    ///
+    /// - Parameters:
+    ///   - maxPayloadLength: The largest number of bytes `encodePayload` appends. The frame's length takes as many
+    ///     bytes as this needs, so that the payload never has to be moved once it's written.
+    ///   - encodePayload: Appends the QPACK encoded field section to the span, which has room for
+    ///     `maxPayloadLength` bytes.
+    @available(anyAppleOS 27, *)
+    mutating func writeHeadersFrame(maxPayloadLength: Int, encodePayload: (inout OutputRawSpan) -> Void) {
+        self.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
+        // Safe to unwrap: `bytesNeededForInteger` only returns 1, 2, 4 or 8.
+        let lengthLength = ByteBuffer.QUICBinaryEncodingStrategy.IntegerLength(
+            rawValue: ByteBuffer.QUICBinaryEncodingStrategy.bytesNeededForInteger(maxPayloadLength)
+        )!
+        self.writeLengthPrefixed(strategy: .quic(requiredBytesHint: lengthLength)) { buffer in
+            let start = buffer.writerIndex
+            buffer.writeWithOutputRawSpan(minimumWritableBytes: maxPayloadLength, initializingWith: encodePayload)
+            let payloadLength = buffer.writerIndex &- start
+            // A longer payload would need a longer length, and be moved to make room for it.
+            assert(payloadLength <= maxPayloadLength, "The payload is longer than its maximum length")
+            return payloadLength
         }
     }
 }
@@ -78,17 +89,5 @@ extension ByteBuffer {
     fileprivate mutating func writeLengthPrefixedQUICEncodedInteger(_ value: some FixedWidthInteger) {
         self.writeEncodedInteger(ByteBuffer.QUICBinaryEncodingStrategy.bytesNeededForInteger(value), strategy: .quic)
         self.writeEncodedInteger(value, strategy: .quic)
-    }
-
-    /// Write a field section
-    /// - Returns: The number of bytes written
-    @available(anyAppleOS 27, *)
-    fileprivate mutating func writeFieldSection(_ fieldSection: FieldSection, preferHuffmanEncoding: Bool) -> Int {
-        var bytesWritten = 0
-        bytesWritten += self.writeFieldSectionPrefix(fieldSection.prefix)
-        for line in fieldSection.lines {
-            bytesWritten += self.writeFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
-        }
-        return bytesWritten
     }
 }

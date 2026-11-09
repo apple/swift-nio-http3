@@ -55,8 +55,8 @@ extension BenchmarkCoder {
     /// A coder which never got an encoder stream, so it encodes with the static table only.
     fileprivate static func makeStaticCoder() -> BenchmarkCoder {
         BenchmarkCoder(
-            encoderMaxTableSize: 0,
-            decoderMaxTableSize: 0,
+            encoderTableMaxCapacity: 0,
+            decoderTableMaxCapacity: 0,
             decoderMaxBlockedStreams: 0,
             errorDelegate: NoConnection()
         )
@@ -65,12 +65,12 @@ extension BenchmarkCoder {
     /// A coder which uses a 4 KiB dynamic table.
     fileprivate static func makeDynamicCoder() throws -> BenchmarkCoder {
         let coder = BenchmarkCoder(
-            encoderMaxTableSize: 4096,
-            decoderMaxTableSize: 0,
+            encoderTableMaxCapacity: 4096,
+            decoderTableMaxCapacity: 0,
             decoderMaxBlockedStreams: 0,
             errorDelegate: NoConnection()
         )
-        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDynamicTableSize: 4096)
+        try coder.receivedRemoteSettings(maxQueueSize: 100, peersDecoderTableMaxCapacity: 4096)
         coder.outboundEncoderStreamReady(DiscardingEncoderStream())
         return coder
     }
@@ -82,11 +82,11 @@ extension BenchmarkCoder {
         streamID: QUICStreamID,
         into buffer: inout ByteBuffer
     ) {
-        let fieldSection = self.encodeHeaders(fields, streamID: streamID)
-        buffer.writeFieldSectionPrefix(fieldSection.prefix)
-        for line in fieldSection.lines {
-            buffer.writeFieldLine(line, preferHuffmanEncoding: true)
+        var instructions: [QPACKEncoderInstruction] = []
+        buffer.writeWithOutputRawSpan(minimumWritableBytes: self.maxEncodedLength(of: fields)) { output in
+            instructions = self.encodeHeaders(fields, streamID: streamID, into: &output, preferHuffmanEncoding: true)
         }
+        self.sendEncoderInstructions(instructions)
     }
 }
 
