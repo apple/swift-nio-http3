@@ -623,7 +623,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 return
             }
             let receivedSettings = ReceivedSettings(
-                datagramsSupported: onSettings.datagramsNegotiated,
+                datagramsSupported: onSettings.datagrams.isSupported,
                 extendedConnectSupported: onSettings.extendedConnect.isSupported
             )
 
@@ -635,12 +635,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
             self.connection?.fireReceivedSettingsEvent(receivedSettings)
 
-            if onSettings.datagramsNegotiated {
+            switch onSettings.datagrams {
+            case .supported(let streamIDsToNotify):
                 // Deliver datagrams which were buffered for open streams while awaiting the SETTINGS.
-                for streamID in self.streamHandlers.keys {
+                for streamID in streamIDsToNotify {
                     self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
                 }
-            } else {
+
+            case .unsupported:
                 self.datagramBuffer.discardAllDatagrams()
             }
         case .cancelStreams(let ids):

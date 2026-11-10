@@ -878,13 +878,37 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         @_spi(PackageInternal)
         public struct OnSettings: Hashable, Sendable {
             /// Whether both peers have agreed to use HTTP datagrams. The outcome must be reported downstream.
-            public var datagramsNegotiated: Bool
+            public var datagrams: DatagramsSupport
             /// The peer's maximum QPACK decoder table capacity
             public var qpackMaximumTableCapacity: UInt64
             /// The peer's maximum number of QPACK blocked streams
             public var qpackBlockedStreams: UInt64
             /// Whether the server is willing to receive Extended CONNECT requests (`SETTINGS_ENABLE_CONNECT_PROTOCOL`).
             public var extendedConnect: ExtendedConnectSupport
+
+            @_spi(PackageInternal)
+            public enum DatagramsSupport: Hashable, Sendable {
+                /// At least one peer did not advertise support for HTTP datagrams.
+                case unsupported
+
+                /// Both peers advertised support for HTTP datagrams.
+                ///
+                /// `streamIDsToNotify` contains the request streams that were opened before the peer's SETTINGS
+                /// arrived. Datagrams received for these streams in the meantime were buffered, and must now be
+                /// delivered.
+                case supported(streamIDsToNotify: [QUICStreamID])
+
+                /// Whether both peers advertised support for HTTP datagrams.
+                public var isSupported: Bool {
+                    switch self {
+                    case .unsupported:
+                        return false
+
+                    case .supported:
+                        return true
+                    }
+                }
+            }
 
             @_spi(PackageInternal)
             public enum ExtendedConnectSupport: Hashable, Sendable {
@@ -921,6 +945,19 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             case .initialized(var initializedState):
                 switch initializedState.settingsState.settingsReceived(settings) {
                 case .applied(let negotiatedSettings):
+                    let datagramsSupport: ControlFrameReceivedAction.OnSettings.DatagramsSupport
+                    if negotiatedSettings.datagramsSupported {
+                        // Datagrams received for open request streams were buffered until the peer's SETTINGS
+                        // arrived. Now that both peers have advertised support, the buffered datagrams for these
+                        // streams must be delivered.
+                        let streamIDsToNotify = initializedState.streamIDTracker.getOpenStreamIDs { streamID in
+                            streamID.type == .clientInitiatedBidirectional
+                        }
+                        datagramsSupport = .supported(streamIDsToNotify: streamIDsToNotify)
+                    } else {
+                        datagramsSupport = .unsupported
+                    }
+
                     let extendedConnect: ControlFrameReceivedAction.OnSettings.ExtendedConnectSupport
                     if negotiatedSettings.extendedConnectSupported {
                         var streamIDsToNotify: [QUICStreamID] = []
@@ -940,7 +977,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                     self = .init(state: .initialized(initializedState))
                     return .onSettings(
                         ControlFrameReceivedAction.OnSettings(
-                            datagramsNegotiated: negotiatedSettings.datagramsSupported,
+                            datagrams: datagramsSupport,
                             qpackMaximumTableCapacity: payload.settings.qpackMaximumTableCapacity,
                             qpackBlockedStreams: payload.settings.qpackBlockedStreams,
                             extendedConnect: extendedConnect

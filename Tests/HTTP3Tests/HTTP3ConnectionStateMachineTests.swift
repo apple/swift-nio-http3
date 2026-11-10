@@ -363,7 +363,7 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(String(describing: action2))")
             return
         }
-        #expect(!settings.datagramsNegotiated)
+        #expect(settings.datagrams == .unsupported)
         #expect(settings.qpackMaximumTableCapacity == 0)
         #expect(settings.qpackBlockedStreams == 0)
     }
@@ -953,7 +953,8 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(action)")
             return
         }
-        #expect(onSettings.datagramsNegotiated)
+        // The stream we opened earlier must have its buffered datagrams delivered.
+        #expect(onSettings.datagrams == .supported(streamIDsToNotify: [streamID]))
 
         #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
     }
@@ -1041,7 +1042,11 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(String(describing: action))")
             return
         }
-        #expect(settings.datagramsNegotiated == (localSupport && remoteSupport))
+        if localSupport && remoteSupport {
+            #expect(settings.datagrams == .supported(streamIDsToNotify: []))
+        } else {
+            #expect(settings.datagrams == .unsupported)
+        }
     }
 
     @available(anyAppleOS 27, *)
