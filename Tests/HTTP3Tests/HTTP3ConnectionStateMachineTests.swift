@@ -434,7 +434,12 @@ struct HTTP3ConnectionStateMachineTests {
             return
         }
 
-        #expect(settings.extendedConnectSupported == serverAllowsExtendedConnect)
+        if serverAllowsExtendedConnect {
+            // The stream we opened earlier must learn that Extended CONNECT is supported.
+            #expect(settings.extendedConnect == .supported(streamIDsToNotify: [streamID]))
+        } else {
+            #expect(settings.extendedConnect == .unsupported)
+        }
         #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
     }
 
@@ -455,7 +460,11 @@ struct HTTP3ConnectionStateMachineTests {
             Issue.record("Unexpected action \(String(describing: action))")
             return
         }
-        #expect(settings.extendedConnectSupported == serverAllowsExtendedConnect)
+        if serverAllowsExtendedConnect {
+            #expect(settings.extendedConnect == .supported(streamIDsToNotify: []))
+        } else {
+            #expect(settings.extendedConnect == .unsupported)
+        }
         #expect(stateMachine.extendedConnectSupported == serverAllowsExtendedConnect)
     }
 
