@@ -879,8 +879,9 @@ extension HTTP3ConnectionCoordinator: Sendable {}
 extension Channel {
     @available(anyAppleOS 27, *)
     fileprivate func writeStreamType(_ streamType: HTTP3StreamType.Unidirectional) {
-        var buffer = ByteBuffer()
-        buffer.writeEncodedInteger(streamType.rawValue, strategy: .quic)
+        let buffer = self.allocator.buffer(capacity: HTTP3EncodedLength.streamType(streamType)) {
+            $0.appendHTTP3StreamType(streamType)
+        }
         self.writeAndFlush(buffer, promise: nil)
     }
 }

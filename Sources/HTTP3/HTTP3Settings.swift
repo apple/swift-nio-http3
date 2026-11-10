@@ -307,48 +307,4 @@ extension ByteBuffer {
         }
         return settings
     }
-
-    /// Write some ``HTTP3Settings`` and return the number of bytes written.
-    ///
-    /// - Parameter settings: The settings to write.
-    /// - Returns: The number of bytes written.
-    @available(anyAppleOS 27, *)
-    mutating func writeHTTP3Settings(_ settings: HTTP3Settings) -> Int {
-        var bytesWritten = 0
-        if settings.qpackBlockedStreams != 0 {
-            bytesWritten += self.writeHTTP3Setting(
-                .init(identifier: .qpackBlockedStreams, value: settings.qpackBlockedStreams)
-            )
-        }
-        if settings.qpackMaximumTableCapacity != 0 {
-            bytesWritten += self.writeHTTP3Setting(
-                .init(identifier: .qpackMaximumTableCapacity, value: settings.qpackMaximumTableCapacity)
-            )
-        }
-        if let maximumFieldSectionSize = settings.maximumFieldSectionSize {
-            bytesWritten += self.writeHTTP3Setting(
-                .init(identifier: .maximumFieldSectionSize, value: maximumFieldSectionSize)
-            )
-        }
-        if settings.h3Datagram {
-            bytesWritten += self.writeHTTP3Setting(.init(identifier: .h3Datagram, value: 1))
-        }
-        if settings.enableConnectProtocol {
-            bytesWritten += self.writeHTTP3Setting(.init(identifier: .enableConnectProtocol, value: 1))
-        }
-        for setting in settings.other {
-            bytesWritten += self.writeHTTP3Setting(setting)
-        }
-        return bytesWritten
-    }
-
-    /// Write a single ``HTTP3Setting`` and return the number of bytes written.
-    ///
-    /// - Parameter setting: The setting to write.
-    /// - Returns: The number of bytes written.
-    @available(anyAppleOS 27, *)
-    private mutating func writeHTTP3Setting(_ setting: HTTP3Setting) -> Int {
-        self.writeEncodedInteger(setting.identifier.rawValue, strategy: .quic)
-            + self.writeEncodedInteger(setting.value, strategy: .quic)
-    }
 }
