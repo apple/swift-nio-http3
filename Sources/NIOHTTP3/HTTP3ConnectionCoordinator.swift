@@ -300,16 +300,15 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
     // MARK: - New Inbound streams -
 
-    func inboundStreamInitializer<Output: Sendable>(
+    func inboundStreamInitializer(
         parameters: HTTP3StreamInitializerParameters,
         addTypeHandlers: Bool,
-        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>,
+        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>,
         internalInboundStreamInitializer: (
             (
                 any Channel, QUICStreamID, HTTP3StreamType.Unidirectional
             ) -> EventLoopFuture<Void>
-        )?,
-        onUserStream: @escaping @Sendable (Output) -> Void
+        )?
     ) -> EventLoopFuture<Void> {
         self.eventLoop.preconditionInEventLoop()
         if parameters.streamID.isBidirectional {
@@ -318,8 +317,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             return self.inboundRequestStreamInitializer(
                 parameters: parameters,
                 addTypeHandlers: addTypeHandlers,
-                userInboundStreamInitializer: userInboundStreamInitializer,
-                onUserStream: onUserStream
+                userInboundStreamInitializer: userInboundStreamInitializer
             )
         } else {
             return self.inboundUnidirectionalStreamInitializer(
@@ -329,11 +327,10 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         }
     }
 
-    private func inboundRequestStreamInitializer<Output: Sendable>(
+    private func inboundRequestStreamInitializer(
         parameters: HTTP3StreamInitializerParameters,
         addTypeHandlers: Bool,
-        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>,
-        onUserStream: @escaping @Sendable (Output) -> Void
+        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Void> {
         let streamID = parameters.streamID
         let streamChannel = parameters.channel
@@ -356,7 +353,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 }
                 // State machine now considers the stream to be open: deliver the datagrams now.
                 self.emitBufferedDatagrams(forStream: streamID)
-                return userInboundStreamInitializer(parameters).map(onUserStream)
+                return userInboundStreamInitializer(parameters)
             } catch {
                 self.datagramBuffer.discardDatagrams(forStream: streamID)
                 return streamChannel.eventLoop.makeFailedFuture(error)

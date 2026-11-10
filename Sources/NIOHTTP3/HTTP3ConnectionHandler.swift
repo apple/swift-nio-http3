@@ -21,11 +21,43 @@ public import NIOQUICHelpers
 
 /// What to do when a new stream comes inbound.
 @available(anyAppleOS 27, *)
-enum H3InboundStreamInitializer {
-    /// Call yield on a multiplexer to give it the new stream channel.
-    case multiplexer(any StreamMultiplexerContinuation)
+struct H3InboundStreamInitializer {
+    /// Called with each new inbound request stream channel.
+    let initialize: (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
+    /// Called once the connection has become inactive.
+    let finish: (() -> Void)?
+
     /// Call a closure with the new stream channel.
-    case closure((HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>)
+    static func closure(_ initialize: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>) -> Self {
+        Self(initialize: initialize, finish: nil)
+    }
+
+    /// Yield the output of `streamInitializer` to `continuation`.
+    static func yielding<Output: Sendable>(
+        to continuation: AsyncStream<Output>.Continuation,
+        streamInitializer: @escaping @Sendable (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>
+    ) -> Self {
+        Self(
+            initialize: { parameters in
+                streamInitializer(parameters).map { output in
+                    switch continuation.yield(output) {
+                    case .enqueued:
+                        ()
+
+                    // Close the stream channel if the yield was not successful.
+                    case .dropped, .terminated:
+                        parameters.channel.close(promise: nil)
+
+                    @unknown default:
+                        parameters.channel.close(promise: nil)
+                    }
+                }
+            },
+            finish: {
+                continuation.finish()
+            }
+        )
+    }
 }
 
 /// This is the main handler to be used in HTTP/3 servers and clients.
@@ -167,37 +199,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         )
     }
 
-    /// Create a ``HTTP3ConnectionHandler`` for use in a server.
-    /// - Parameters:
-    ///   - eventLoop: The event loop of the channel this handler will be on.
-    ///   - configuration: Configuration for the handler.
-    ///   - settings: The HTTP3Settings to be used on each incoming connection.
-    ///   - streamCreator: For creating outbound streams.
-    ///   - logger: A logger.
-    ///   - connection: An instance of ``HTTP3ServerConnection`` which inbound connections can be vended to.
-    /// - Returns: A ``HTTP3ConnectionHandler``.
-    @available(anyAppleOS 27, *)
-    @_spi(HTTP3AsyncInterface)
-    public static func server<Output: Sendable>(
-        eventLoop: any EventLoop,
-        configuration: HTTP3ServerConfiguration,
-        settings: HTTP3Settings,
-        streamCreator: StreamCreator,
-        logger: Logger,
-        connection: HTTP3ServerConnection<Output, StreamCreator>
-    ) -> Self {
-        self.server(
-            eventLoop: eventLoop,
-            configuration: configuration,
-            settings: settings,
-            streamCreator: streamCreator,
-            logger: logger,
-            inboundRequestStreamInitializer: .multiplexer(connection),
-            internalInboundStreamInitializer: nil
-        )
-    }
-
-    private static func server(
+    static func server(
         eventLoop: any EventLoop,
         configuration: HTTP3ServerConfiguration,
         settings: HTTP3Settings,
@@ -320,12 +322,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
 
     public func channelInactive(context: ChannelHandlerContext) {
         self.logger.debug("Connection became inactive")
-        switch self.inboundStreamInitializer {
-        case .multiplexer(let mux):
-            mux.finish()
-        case .closure:
-            break
-        }
+        self.inboundStreamInitializer.finish?()
         // If there is still an open stream then something is wrong in our implementation because we should have
         // shut the child channels before shutting the connection.
         // If this is triggered, most likely theres a mistake in the way the connection state machine remembers which streams are open,
@@ -445,24 +442,12 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             )
         }
         self.logger.trace("Connection got inbound stream", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
-        switch self.inboundStreamInitializer {
-        case .closure(let closure):
-            return self.coordinator.inboundStreamInitializer(
-                parameters: .init(channel: streamChannel, streamID: streamID),
-                addTypeHandlers: self.addTypeHandlers,
-                userInboundStreamInitializer: closure,
-                internalInboundStreamInitializer: self.internalInboundStreamInitializer,
-                onUserStream: { _ in }
-            )
-        case .multiplexer(let multiplexer):
-            return self.coordinator.inboundStreamInitializer(
-                parameters: .init(channel: streamChannel, streamID: streamID),
-                addTypeHandlers: self.addTypeHandlers,
-                userInboundStreamInitializer: multiplexer.initialize(parameters:),
-                internalInboundStreamInitializer: self.internalInboundStreamInitializer,
-                onUserStream: { multiplexer.yield(output: $0) }
-            )
-        }
+        return self.coordinator.inboundStreamInitializer(
+            parameters: .init(channel: streamChannel, streamID: streamID),
+            addTypeHandlers: self.addTypeHandlers,
+            userInboundStreamInitializer: self.inboundStreamInitializer.initialize,
+            internalInboundStreamInitializer: self.internalInboundStreamInitializer
+        )
     }
 
     /// Create a new request stream on this connection.

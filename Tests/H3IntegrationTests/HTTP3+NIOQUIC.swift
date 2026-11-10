@@ -21,6 +21,7 @@ import class NIOQUIC.AsyncVerifier
 import class NIOQUIC.Authenticator
 import struct NIOQUIC.QUICConfiguration
 import class NIOQUIC.QUICHandler
+import enum NIOQUIC.QUICStreamChannels
 import struct NIOQUIC.QUICStreamCreator
 
 @_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
@@ -38,8 +39,8 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - settings: The `HTTP3Settings` to use for all incoming connections.
     ///   - quicConfiguration: The `QUICConfiguration` to be used.
     ///   - logger: The logger.
-    ///   - inboundRequestStreamInitializer: Closure to run for each incoming stream. Must be synchronous.
-    /// - Returns: A ``HTTP3ServerConnectionMultiplexer``. Use this to iterate incoming connections.
+    ///   - inboundRequestStreamInitializer: Closure to run for each incoming stream.
+    /// - Returns: An asynchronous sequence of the incoming connections, alongside the associated connection channel.
     /// - Throws: If adding the relevant handlers fails.
     @available(anyAppleOS 27, *)
     func configureHTTP3Server<Output: Sendable>(
@@ -51,7 +52,7 @@ extension ChannelPipeline.SynchronousOperations {
         inboundRequestStreamInitializer:
             @Sendable @escaping (HTTP3StreamInitializerParameters)
             -> EventLoopFuture<Output>
-    ) throws -> HTTP3ServerConnectionMultiplexer<Output, QUICStreamCreator> {
+    ) throws -> AsyncStream<(any Channel, HTTP3ServerConnection<Output>)> {
         let authenticator: Authenticator? =
             switch quicConfiguration.authenticationConfiguration {
             case .rawPublicKeys:
@@ -61,7 +62,7 @@ extension ChannelPipeline.SynchronousOperations {
             case .none:
                 fatalError("No QUIC authentication configuration specified.")
             }
-        let connectionMultiplexer = HTTP3ServerConnectionMultiplexer<Output, QUICStreamCreator>()
+        let (connectionStream, continuation) = AsyncStream<(any Channel, HTTP3ServerConnection<Output>)>.makeStream()
         let quicHandler = QUICHandler(
             channel: channel,
             quicConfiguration: quicConfiguration,
@@ -70,25 +71,14 @@ extension ChannelPipeline.SynchronousOperations {
             logger: logger,
             inboundConnectionInitializer: { connectionChannel, streamCreator in
                 connectionChannel.eventLoop.makeCompletedFuture {
-                    let loopBoundHandler: NIOLoopBoundBox<HTTP3ConnectionHandler<QUICStreamCreator>?> = .init(
-                        nil,
-                        eventLoop: connectionChannel.eventLoop
-                    )
-                    let connection = HTTP3ServerConnection(
-                        connectionHandler: loopBoundHandler,
-                        inboundStreamInitializer: inboundRequestStreamInitializer
-                    )
-                    let h3Handler = HTTP3ConnectionHandler.server(
-                        eventLoop: connectionChannel.eventLoop,
+                    let connection = try connectionChannel.pipeline.syncOperations.configureAsyncHTTP3ServerPipeline(
                         configuration: configuration,
                         settings: settings,
                         streamCreator: streamCreator,
                         logger: logger,
-                        connection: connection
+                        streamInitializer: inboundRequestStreamInitializer
                     )
-                    loopBoundHandler.value = h3Handler
-                    try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
-                    connectionMultiplexer.yield(connection: connection)
+                    continuation.yield((connectionChannel, connection))
                 }
             },
             inboundStreamInitializer: { streamChannel in
@@ -98,14 +88,14 @@ extension ChannelPipeline.SynchronousOperations {
                 }
             },
             noMoreConnections: {
-                connectionMultiplexer.finish()
+                continuation.finish()
             }
         )
         try self.addHandler(quicHandler)
-        return connectionMultiplexer
+        return connectionStream
     }
 
-    /// Setup a HTTP/3 client pipeline on a UDP channel.
+    /// Setup a HTTP/3 client on a UDP channel.
     ///
     /// - Parameters:
     ///   - channel: The UDP channel.
@@ -114,7 +104,7 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - quicConfiguration: The `QUICConfiguration` to be used.
     ///   - logger: The logger.
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-push stream.
-    /// - Returns: A ``HTTP3ClientConnectionMultiplexer``. Use this to create outgoing connections.
+    /// - Returns: A ``TestHTTP3Client``. Use this to create outgoing connections.
     /// - Throws: If adding the relevant handlers fails.
     @available(anyAppleOS 27, *)
     func configureHTTP3Client(
@@ -126,7 +116,7 @@ extension ChannelPipeline.SynchronousOperations {
         internalInboundStreamInitializer: (
             @Sendable (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
         )? = nil
-    ) throws -> HTTP3ClientConnectionMultiplexer<QUICConnectionCreator, QUICStreamCreator> {
+    ) throws -> TestHTTP3Client {
         let asyncVerifier: AsyncVerifier?
         switch quicConfiguration.verificationConfiguration {
         case .rawPublicKeys:
@@ -158,41 +148,13 @@ extension ChannelPipeline.SynchronousOperations {
         )
         try self.addHandler(quicHandler)
 
-        let connectionMultiplexer = HTTP3ClientConnectionMultiplexer<QUICConnectionCreator, QUICStreamCreator>(
-            eventLoop: self.eventLoop,
-            createNewConnection: NIOLoopBound(
-                QUICConnectionCreator(
-                    quicHandler: quicHandler,
-                    connectionInitializer: { connectionChannel, streamCreator in
-                        connectionChannel.eventLoop.makeCompletedFuture {
-                            let h3Handler = HTTP3ConnectionHandler.client(
-                                eventLoop: connectionChannel.eventLoop,
-                                configuration: configuration,
-                                settings: settings,
-                                streamCreator: streamCreator,
-                                logger: logger,
-                                inboundPushStreamInitializer: { _ in
-                                    fatalError()
-                                },
-                                internalInboundStreamInitializer: internalInboundStreamInitializer
-                            )
-                            try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
-                            return connectionChannel
-                        }
-                    },
-                    inboundStreamInitializer: { streamChannel in
-                        streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<QUICStreamCreator>.self)
-                            .flatMap {
-                                h3Handler in
-                                h3Handler.inboundStreamReceived(streamChannel)
-                            }
-                    }
-                ),
-                eventLoop: self.eventLoop
-            )
+        return TestHTTP3Client(
+            quicHandler: NIOLoopBound(quicHandler, eventLoop: self.eventLoop),
+            configuration: configuration,
+            settings: settings,
+            logger: logger,
+            internalInboundStreamInitializer: internalInboundStreamInitializer
         )
-
-        return connectionMultiplexer
     }
 }
 
@@ -267,5 +229,121 @@ extension ChannelPipeline.SynchronousOperations {
             noMoreConnections: {}
         )
         try channel.pipeline.syncOperations.addHandler(quicHandler)
+    }
+}
+
+/// Creates outbound HTTP/3 connections over a QUIC client channel.
+@available(anyAppleOS 27, *)
+struct TestHTTP3Client: Sendable {
+    let quicHandler: NIOLoopBound<QUICHandler<QUICStreamChannels>>
+    let configuration: HTTP3ClientConfiguration
+    let settings: HTTP3Settings
+    let logger: Logger
+    let internalInboundStreamInitializer:
+        (@Sendable (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>)?
+
+    /// Create an outbound connection using the async interface.
+    /// - Parameters:
+    ///   - serverName: The server to connect to.
+    ///   - remoteAddress: The server's address.
+    ///   - inboundPushStreamInitializer: A closure that configures the incoming push stream channel.
+    /// - Returns: The connection channel and a ``HTTP3ClientConnection`` which can be used to create outbound requests.
+    /// - Throws: If the connection cannot be created.
+    func createConnection<Output: Sendable>(
+        serverName: String,
+        remoteAddress: SocketAddress,
+        inboundPushStreamInitializer: @Sendable @escaping (HTTP3StreamInitializerParameters) throws -> Output
+    ) async throws -> (any Channel, HTTP3ClientConnection<Output, QUICStreamCreator>) {
+        try await self.connect(serverName: serverName, remoteAddress: remoteAddress) { channel, streamCreator in
+            channel.eventLoop.makeCompletedFuture {
+                let connection = try channel.pipeline.syncOperations.configureAsyncHTTP3ClientPipeline(
+                    configuration: self.configuration,
+                    settings: self.settings,
+                    streamCreator: streamCreator,
+                    logger: self.logger,
+                    inboundPushStreamInitializer: inboundPushStreamInitializer
+                )
+                return (channel, connection)
+            }
+        }.get()
+    }
+
+    /// Create an outbound connection channel with a `HTTP3ConnectionHandler` in the pipeline.
+    /// - Parameters:
+    ///   - serverName: The server to connect to.
+    ///   - remoteAddress: The server's address.
+    ///   - connectionInitializer: A closure that configures the connection channel.
+    /// - Returns: The connection channel.
+    func createConnectionChannel(
+        serverName: String,
+        remoteAddress: SocketAddress,
+        connectionInitializer: (@Sendable (any Channel) -> EventLoopFuture<Void>)?
+    ) -> EventLoopFuture<any Channel> {
+        self.connect(serverName: serverName, remoteAddress: remoteAddress) { channel, streamCreator in
+            channel.eventLoop.makeCompletedFuture {
+                let h3Handler = HTTP3ConnectionHandler.client(
+                    eventLoop: channel.eventLoop,
+                    configuration: self.configuration,
+                    settings: self.settings,
+                    streamCreator: streamCreator,
+                    logger: self.logger,
+                    inboundPushStreamInitializer: { _ in
+                        fatalError()
+                    },
+                    internalInboundStreamInitializer: self.internalInboundStreamInitializer
+                )
+                try channel.pipeline.syncOperations.addHandler(h3Handler)
+            }.flatMap {
+                connectionInitializer?(channel) ?? channel.eventLoop.makeSucceededVoidFuture()
+            }.map {
+                channel
+            }
+        }
+    }
+
+    /// Create an outbound connection and configure the connection channel with `connectionInitializer`.
+    /// - Parameters:
+    ///   - serverName: The server to connect to.
+    ///   - remoteAddress: The server's address.
+    ///   - connectionInitializer: A closure that configures the connection channel.
+    /// - Returns: The output of `connectionInitializer`.
+    private func connect<Output: Sendable>(
+        serverName: String,
+        remoteAddress: SocketAddress,
+        connectionInitializer: @escaping @Sendable (any Channel, QUICStreamCreator) -> EventLoopFuture<Output>
+    ) -> EventLoopFuture<Output> {
+        self.quicHandler.eventLoop.flatSubmit {
+            let outputPromise = self.quicHandler.eventLoop.makePromise(of: Output.self)
+            let connection = self.quicHandler.value.createOutboundConnection(
+                serverName: serverName,
+                remoteAddress: remoteAddress,
+                connectionInitializer: { connectionChannel, streamCreator in
+                    let output = connectionInitializer(connectionChannel, streamCreator)
+                    output.cascade(to: outputPromise)
+                    return output.map { _ in }
+                },
+                inboundStreamInitializer: { streamChannel in
+                    streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<QUICStreamCreator>.self)
+                        .flatMap { h3Handler in
+                            h3Handler.inboundStreamReceived(streamChannel)
+                        }
+                }
+            )
+            connection.cascadeFailure(to: outputPromise)
+            return connection.flatMap { _ in outputPromise.futureResult }
+        }
+    }
+}
+
+@available(anyAppleOS 27, *)
+extension Channel {
+    /// Send a GOAWAY frame with the provided `id` from the `HTTP3ConnectionHandler` in this connection channel's
+    /// pipeline.
+    func sendHTTP3Goaway(id: HTTP3GoawayID) async throws {
+        try await self.eventLoop.submit {
+            try self.pipeline.syncOperations
+                .handler(type: QUICHTTP3ConnectionHandler.self)
+                .sendGoaway(id: id)
+        }.get()
     }
 }
