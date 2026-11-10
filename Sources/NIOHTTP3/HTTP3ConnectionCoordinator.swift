@@ -34,6 +34,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     private var connectionStateMachine: HTTP3ConnectionStateMachine
     private let outboundControlStreamHandler: HTTP3OutboundControlStreamHandler
     private let streamCreator: QUICStreamCreator
+    private let type: HTTP3ConnectionType
     /// The connection handler.
     ///
     /// Setting this creates a strong retain cycle which is broken by the connection handler when
@@ -59,6 +60,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.outboundControlStreamHandler = .init(settings: localSettings)
         self.connectionStateMachine = .init(settings: localSettings, type: type)
         self.streamCreator = streamCreator
+        self.type = type
         self.logger = logger
         self.preferHuffmanEncoding = preferHuffmanEncoding
         self.datagramBuffer = HTTP3DatagramBuffer(maxAllowedSize: maxBufferedDatagramBytes)
@@ -624,20 +626,23 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             }
             let receivedSettings = ReceivedSettings(
                 datagramsSupported: onSettings.datagramsNegotiated,
-                extendedConnectSupported: onSettings.extendedConnect.isSupported
+                extendedConnectSupported: onSettings.extendedConnectSupported
             )
 
-            if case .supported(let streamIDsToNotify) = onSettings.extendedConnect {
-                for streamID in streamIDsToNotify {
-                    self.streamHandlers[streamID]?.peerSettingsReceived(receivedSettings)
+            if onSettings.extendedConnectSupported && self.type == .client {
+                // We may have opened outbound request streams before we received the server's SETTINGS. Now that the
+                // server has confirmed they support Extended CONNECT, we need to inform those streams about it.
+                for (streamID, handler) in self.streamHandlers where streamID.type == .clientInitiatedBidirectional {
+                    handler.peerSettingsReceived(receivedSettings)
                 }
             }
 
             self.connection?.fireReceivedSettingsEvent(receivedSettings)
 
             if onSettings.datagramsNegotiated {
-                // Deliver datagrams which were buffered for open streams while awaiting the SETTINGS.
-                for streamID in self.streamHandlers.keys {
+                // Deliver datagrams which were buffered for open streams while awaiting the SETTINGS. Datagrams can
+                // only be associated with client-initiated bidirectional streams (RFC 9297 § 2).
+                for streamID in self.streamHandlers.keys where streamID.type == .clientInitiatedBidirectional {
                     self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
                 }
             } else {
