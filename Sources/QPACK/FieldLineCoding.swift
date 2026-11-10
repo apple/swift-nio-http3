@@ -174,25 +174,36 @@ extension ByteBuffer {
     /// - Returns: The instruction, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
     mutating func readFieldLine() throws(IntegerReadingError) -> FieldLine? {
-        guard let result = try self.getFieldLine(at: self.readerIndex) else { return nil }
+        guard let result = try self.readableBytesSpan.getFieldLine(at: 0) else { return nil }
         self.moveReaderIndex(forwardBy: result.bytesRead)
         return result.value
     }
 
-    /// Get a single ``FieldLine`` from this `ByteBuffer`.
-    /// Does not move the readerIndex.
-    /// - Returns: The instruction, or nil if it cannot be decoded.
+    /// Read a single ``FieldSectionPrefix`` from this `ByteBuffer`.
+    /// - Returns: The section, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
-    private func getFieldLine(at startIndex: Int) throws(IntegerReadingError) -> Decoded<FieldLine>? {
-        guard let firstByte = self.getInteger(at: startIndex, as: UInt8.self) else {
+    mutating func readFieldSectionPrefix() throws(IntegerReadingError) -> EncodedFieldSectionPrefix? {
+        guard let result = try self.readableBytesSpan.getFieldSectionPrefix(at: 0) else { return nil }
+        self.moveReaderIndex(forwardBy: result.bytesRead)
+        return result.value
+    }
+}
+
+extension RawSpan {
+    /// Get a single ``FieldLine``, which starts `offset` bytes into the span.
+    /// - Returns: The line, or nil if it cannot be decoded.
+    @available(anyAppleOS 27, *)
+    func getFieldLine(at offset: Int) throws(IntegerReadingError) -> Decoded<FieldLine>? {
+        guard offset >= 0, offset < self.byteCount else {
             return nil
         }
+        let firstByte = self.qpackByte(at: offset)
         if firstByte & 0x80 == 0x80 {
             // First bit is 1. This is an Indexed Field Line
             // The 2nd bit represents static table (1) or dynamic table (0)
             let table = QPACKReferenceTable.staticIfTrue(firstByte & 0x40 == 0x40)
             // Remaining 6 bits are start of the integer for the relative index
-            guard let relativeIndex = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 6)
+            guard let relativeIndex = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 6)
             else {
                 return nil
             }
@@ -204,10 +215,10 @@ extension ByteBuffer {
             // 4th bit represents static table (1) or dynamic table (0)
             let table = QPACKReferenceTable.staticIfTrue(firstByte & 0x10 == 0x10)
             // Next 4 bits are the start of the index int
-            guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 4) else {
+            guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 4) else {
                 return nil
             }
-            guard let value = try self.getQPACKEncodedString(at: startIndex + index.bytesRead, withPrefix: 8) else {
+            guard let value = try self.getQPACKEncodedString(at: offset + index.bytesRead, withPrefix: 8) else {
                 return nil
             }
             return .init(
@@ -223,10 +234,10 @@ extension ByteBuffer {
             // First 3 bits are 001. This is Literal Field Line with Literal Name
             // 4th bit is N, if set then the encoded field line MUST always be encoded with a literal representation
             let requireLiteralRepresentation = firstByte & 0x10 == 0x10
-            guard let name = try self.getQPACKEncodedString(at: startIndex, withPrefix: 4) else {
+            guard let name = try self.getQPACKEncodedString(at: offset, withPrefix: 4) else {
                 return nil
             }
-            guard let value = try self.getQPACKEncodedString(at: startIndex + name.bytesRead, withPrefix: 8) else {
+            guard let value = try self.getQPACKEncodedString(at: offset + name.bytesRead, withPrefix: 8) else {
                 return nil
             }
             return .init(
@@ -240,7 +251,7 @@ extension ByteBuffer {
         } else if firstByte & 0x10 == 0x10 {
             // First 4 bits are 0001. This is Indexed Field Line with Post-Base Index
             // Remaining 4 bits are start of the integer for the relative index of the dynamic table
-            guard let relativeIndex = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 4)
+            guard let relativeIndex = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 4)
             else {
                 return nil
             }
@@ -250,10 +261,10 @@ extension ByteBuffer {
             // 5th bit is N, if set then the encoded field line MUST always be encoded with a literal representation
             let requireLiteralRepresentation = firstByte & 0x8 == 0x8
             // Remaining 4 bits are start of the integer for the post-base index of the dynamic table
-            guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 3) else {
+            guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 3) else {
                 return nil
             }
-            guard let value = try self.getQPACKEncodedString(at: startIndex + index.bytesRead, withPrefix: 8) else {
+            guard let value = try self.getQPACKEncodedString(at: offset + index.bytesRead, withPrefix: 8) else {
                 return nil
             }
             return .init(
@@ -267,36 +278,27 @@ extension ByteBuffer {
         }
     }
 
-    /// Read a single ``FieldSectionPrefix`` from this `ByteBuffer`.
-    /// - Returns: The section, or nil if it cannot be decoded.
+    /// Get a single ``FieldSectionPrefix``, which starts `offset` bytes into the span.
+    /// - Returns: The prefix, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
-    mutating func readFieldSectionPrefix() throws(IntegerReadingError) -> EncodedFieldSectionPrefix? {
-        guard let result = try self.getFieldSectionPrefix(at: self.readerIndex) else { return nil }
-        self.moveReaderIndex(forwardBy: result.bytesRead)
-        return result.value
-    }
-
-    @available(anyAppleOS 27, *)
-    private func getFieldSectionPrefix(
-        at startIndex: Int
+    func getFieldSectionPrefix(
+        at offset: Int
     ) throws(IntegerReadingError) -> Decoded<EncodedFieldSectionPrefix>? {
-        guard let requiredInsertCount = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 8)
+        guard let requiredInsertCount = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 8)
         else {
             return nil
         }
 
-        guard let signByte = self.getInteger(at: startIndex + requiredInsertCount.bytesRead, as: UInt8.self) else {
+        let signByteOffset = offset + requiredInsertCount.bytesRead
+        guard signByteOffset < self.byteCount else {
             return nil
         }
+        let signByte = self.qpackByte(at: signByteOffset)
         // 4.5.1.2  the Base is encoded relative to the Required Insert Count using a one-bit sign
         let signBitMask = UInt8.maskForBit(bit: 1)
         let signBit = signBitMask & signByte == signBitMask
         guard
-            let deltaBase = try self.getQPACKPrefixedInteger(
-                as: Int.self,
-                at: startIndex + requiredInsertCount.bytesRead,
-                withPrefix: 7
-            )
+            let deltaBase = try self.getQPACKPrefixedInteger(as: Int.self, at: signByteOffset, withPrefix: 7)
         else {
             return nil
         }

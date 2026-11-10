@@ -46,21 +46,51 @@ extension ByteBuffer {
         at startIndex: Int,
         withPrefix prefix: Int
     ) throws(IntegerReadingError) -> Decoded<Integer>? {
+        // An index far below the reader index wraps around to an offset far past the end of the span, which the
+        // span reader rejects like any other offset outside the span.
+        try self.readableBytesSpan.getQPACKPrefixedInteger(
+            as: Integer.self,
+            at: startIndex &- self.readerIndex,
+            withPrefix: prefix
+        )
+    }
+}
+
+extension RawSpan {
+    /// The byte `offset` bytes into the span.
+    ///
+    /// Despite its name, `unsafeLoad(fromByteOffset:as:)` checks the offset, so an offset outside the span traps
+    /// rather than reading out of bounds.
+    ///
+    /// - Precondition: `offset` is within the span.
+    func qpackByte(at offset: Int) -> UInt8 {
+        self.unsafeLoad(fromByteOffset: offset, as: UInt8.self)
+    }
+
+    /// Gets an integer encoded using the format defined in RFC 9204 § 4.1.1, which starts `startOffset` bytes into
+    /// the span.
+    /// - Precondition: The prefix MUST be between 1 and 8 inclusive.
+    /// - Throws: IntegerReadingError if the result doesn't fit in the requested type.
+    @available(anyAppleOS 27, *)
+    func getQPACKPrefixedInteger<Integer: FixedWidthInteger>(
+        as: Integer.Type = Integer.self,
+        at startOffset: Int,
+        withPrefix prefix: Int
+    ) throws(IntegerReadingError) -> Decoded<Integer>? {
         guard (1...8).contains(prefix) else {
             preconditionFailure("Prefixed integer must have a prefix between 1 and 8")
         }
-        if startIndex >= self.writerIndex {
+        guard startOffset >= 0, startOffset < self.byteCount else {
             return nil
         }
 
         // See RFC 7541 § 5.1 for details of the encoding/decoding.
 
-        var index = startIndex
+        var offset = startOffset
         // The shifting and arithmetic operate on 'Int' and prefix is 1...8, so these unchecked operations are
         // fine and the result must fit in a UInt8.
         let prefixMask = UInt8(truncatingIfNeeded: (1 &<< prefix) &- 1)
-        // Safe to bang because we already did a startIndex >= self.writerIndex check
-        let prefixBits = self.getInteger(at: index, as: UInt8.self)! & prefixMask
+        let prefixBits = self.qpackByte(at: offset) & prefixMask
 
         if prefixBits != prefixMask {
             // The prefix bits aren't all '1', so they represent the whole value, we're done.
@@ -68,19 +98,18 @@ extension ByteBuffer {
         }
 
         var accumulator = Integer(prefixMask)
-        index += 1
+        offset &+= 1
 
         // for the remaining bytes, as long as the top bit is set, consume the low seven bits.
         var shift = 0
         var byte: UInt8 = 0
 
         repeat {
-            if index == self.writerIndex {
+            if offset == self.byteCount {
                 return nil
             }
 
-            // Safe to bang because we already did a startIndex == self.writerIndex check
-            byte = self.getInteger(at: index, as: UInt8.self)!
+            byte = self.qpackByte(at: offset)
 
             let value = Integer(byte & valueMask)
 
@@ -103,10 +132,11 @@ extension ByteBuffer {
                 throw IntegerReadingError.unrepresentable
             }
 
-            index += 1
+            // Can't overflow: 'offset' is less than 'byteCount'.
+            offset &+= 1
         } while byte & continuationMask == continuationMask
 
-        return Decoded(value: accumulator, bytesRead: index - startIndex)
+        return Decoded(value: accumulator, bytesRead: offset &- startOffset)
     }
 }
 

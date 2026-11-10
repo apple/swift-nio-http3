@@ -267,6 +267,48 @@ struct StringCodingTests {
     }
 
     @available(anyAppleOS 27, *)
+    @Test(arguments: 3...8)
+    mutating func decodeTruncatedHuffmanString(prefix: Int) throws {
+        // The Huffman bit is set and the length is 2, but only one byte follows. The length has to be checked before
+        // the Huffman decoder is handed the bytes. A prefix of 2 leaves too few bits for a length of 2.
+        let huffmanBit = UInt8(1) << (prefix - 1)
+        var buffer = ByteBuffer(bytes: [huffmanBit | 2, 0xf1])
+        let result = try buffer.readQPACKEncodedString(withPrefix: prefix)
+        #expect(result == nil)
+        #expect(buffer.readableBytes == 2)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func decodeAfterTheReaderIndexMoved() throws {
+        // The `ByteBuffer` readers take an index, which is relative to the start of the buffer, not to its reader
+        // index.
+        var buffer = ByteBuffer(bytes: [0xff, 0xff])
+        buffer.moveReaderIndex(forwardBy: 2)
+        buffer.writeBytes([3] + Array("abc".utf8) + [0x81, 0x0f])
+
+        let plain = try #require(try buffer.getQPACKEncodedString(at: 2, withPrefix: 8))
+        #expect(plain.value == "abc")
+        #expect(plain.bytesRead == 4)
+        // "1" is Huffman encoded as 0b00001, padded with ones.
+        let huffman = try #require(try buffer.getQPACKEncodedString(at: 6, withPrefix: 8))
+        #expect(huffman.value == "1")
+        #expect(huffman.bytesRead == 2)
+        #expect(try buffer.getQPACKEncodedString(at: 8, withPrefix: 8) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func decodeFromARawSpanAtAnOffset() throws {
+        let bytes: [UInt8] = [0xff, 3] + Array("abc".utf8) + [0xff]
+        let decoded = try bytes.span.bytes.getQPACKEncodedString(at: 1, withPrefix: 8)
+        #expect(decoded?.value == "abc")
+        #expect(decoded?.bytesRead == 4)
+        // The string runs past the end of the span which only holds part of it.
+        let truncated = try bytes.span.bytes.extracting(0..<4).getQPACKEncodedString(at: 1, withPrefix: 8)
+        #expect(truncated == nil)
+        #expect(try bytes.span.bytes.getQPACKEncodedString(at: bytes.count, withPrefix: 8) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
     @Test(arguments: (1...50).flatMap { x in (2...8).map { y in (x, y) } })
     mutating func roundtrips(testStringLength: Int, testPrefix: Int) throws {
         let testString = String(repeating: "x", count: testStringLength)
@@ -295,6 +337,49 @@ struct StringCodingTests {
 
         #expect(throws: IntegerReadingError.unrepresentable) {
             try buffer.readQPACKEncodedString(withPrefix: 8)
+        }
+    }
+
+    static let truncationStrings: [String] = [
+        "",
+        "a",
+        "custom-value",
+        // Too long for the length to fit into the prefix, for every prefix.
+        String(repeating: "x", count: 300),
+        // Huffman coding makes this longer, so it stays plain even when Huffman coding is preferred.
+        "\u{1}\u{2}\u{3}",
+    ]
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: 2...8, Self.truncationStrings)
+    func decodeEveryTruncation(prefix: Int, value: String) throws {
+        for preferHuffmanEncoding in [false, true] {
+            // The bits ahead of the prefix are all set, so that they are not mistaken for part of the string.
+            let prefixBits = ~UInt8(truncatingIfNeeded: (1 << prefix) - 1)
+            let encoded = encodedBytes {
+                $0.appendQPACKEncodedString(
+                    value,
+                    preferHuffmanEncoding: preferHuffmanEncoding,
+                    prefix: prefix,
+                    prefixBits: prefixBits
+                )
+            }
+            try expectEveryTruncationIsIncomplete(encoded, decodingTo: value) {
+                span,
+                offset throws(IntegerReadingError) in
+                try span.getQPACKEncodedString(at: offset, withPrefix: prefix)
+            }
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func decodeAtAnOffsetOutsideTheSpan() throws {
+        let encoded = encodedBytes {
+            $0.appendQPACKEncodedString("custom-value", preferHuffmanEncoding: false, prefix: 8)
+        }
+        let span = encoded.span.bytes
+        for offset in offsetsOutsideASpan(of: span.byteCount) {
+            #expect(try span.getQPACKEncodedString(at: offset, withPrefix: 8) == nil)
         }
     }
 }
