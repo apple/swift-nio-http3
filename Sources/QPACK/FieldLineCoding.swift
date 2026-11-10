@@ -286,22 +286,6 @@ extension ByteBuffer {
         }
     }
 
-    /// Write a single ``FieldLine`` to this buffer.
-    /// - Parameters:
-    ///   - fieldLine: The line to write.
-    ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and where it would be more efficient to do so).
-    /// - Returns: The number of bytes written.
-    @available(anyAppleOS 27, *)
-    @discardableResult
-    @_spi(PackageInternal)
-    public mutating func writeFieldLine(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) -> Int {
-        let start = self.writerIndex
-        self.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.maxFieldLine(fieldLine)) {
-            $0.appendFieldLine(fieldLine, preferHuffmanEncoding: preferHuffmanEncoding)
-        }
-        return self.writerIndex &- start
-    }
-
     /// Read a single ``FieldSectionPrefix`` from this `ByteBuffer`.
     /// - Returns: The section, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
@@ -345,21 +329,6 @@ extension ByteBuffer {
             ),
             bytesRead: bytesRead
         )
-    }
-
-    /// Write a single ``FieldSectionPrefix`` to this buffer.
-    /// - Parameters
-    ///   - prefix: The ``FieldSectionPrefix`` to write.
-    /// - Returns: The number of bytes written.
-    @available(anyAppleOS 27, *)
-    @discardableResult
-    @_spi(PackageInternal)
-    public mutating func writeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> Int {
-        let start = self.writerIndex
-        self.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.fieldSectionPrefix(prefix)) {
-            $0.appendFieldSectionPrefix(prefix)
-        }
-        return self.writerIndex &- start
     }
 
     @available(anyAppleOS 27, *)

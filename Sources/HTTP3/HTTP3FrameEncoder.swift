@@ -12,8 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPTypes
-
 import struct NIOCore.ByteBuffer
 
 extension ByteBuffer {

@@ -1109,9 +1109,6 @@ extension ByteBuffer {
     @available(anyAppleOS 27, *)
     fileprivate init(fieldSection: FieldSection) {
         self.init()
-        self.writeFieldSectionPrefix(fieldSection.prefix)
-        for line in fieldSection.lines {
-            self.writeFieldLine(line, preferHuffmanEncoding: false)
-        }
+        self.writeFieldSection(fieldSection)
     }
 }
