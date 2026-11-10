@@ -834,9 +834,8 @@ struct NIOHTTP3StreamHandlerTests {
         channel.pipeline.fireUserInboundEventTriggered(QUICStopSendingEvent(code: QUICApplicationErrorCode(.noError)))
 
         // The pending write fails, and none of it reaches the QUIC stream.
-        let pendingWriteResult = try #require(completedResult(of: pendingWritePromise.futureResult))
         expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
-            try pendingWriteResult.get()
+            try pendingWritePromise.futureResult.wait()
         }
         channel.flush()
         #expect(try channel.readOutbound(as: ByteBuffer.self) == nil)
@@ -863,9 +862,8 @@ struct NIOHTTP3StreamHandlerTests {
         // Later writes fail the same way, still without an error in the pipeline.
         let laterWritePromise = eventLoop.makePromise(of: Void.self)
         channel.writeAndFlush(HTTP3Frame.data(.init(bytes: [1, 2, 3])), promise: laterWritePromise)
-        let laterWriteResult = try #require(completedResult(of: laterWritePromise.futureResult))
         expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
-            try laterWriteResult.get()
+            try laterWritePromise.futureResult.wait()
         }
         #expect(!inboundEvents.withLockedValue { $0 }.contains { $0.isErrorCaught })
     }
@@ -937,15 +935,6 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(error.code == .remoteStreamError)
         #expect(error.h3ErrorCode == .noError)
     }
-}
-
-/// The result of `future` if it has completed already, without waiting for it.
-private func completedResult(of future: EventLoopFuture<Void>) -> Result<Void, any Error>? {
-    let result = NIOLockedValueBox<Result<Void, any Error>?>(nil)
-    future.whenComplete { completed in
-        result.withLockedValue { $0 = completed }
-    }
-    return result.withLockedValue { $0 }
 }
 
 extension DebugInboundEventsHandler.Event {

@@ -558,10 +558,9 @@ struct AsyncEndToEndTests {
 
     @Test(arguments: Self.standardAuthenticationConfigurations)
     @available(anyAppleOS 27, *)
-    func requestBodyWritesFailAfterStopSending(
+    func requestBodyWritesFailAfterReceivingStopSending(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
-        // Once the server stopped reading, the client can't send anymore, but the response still arrives.
         let serverLogger = Logger(label: "Server")
         let clientLogger = Logger(label: "Client")
 
@@ -588,9 +587,7 @@ struct AsyncEndToEndTests {
         let testRequest = HTTPRequest(method: .post, scheme: "https", authority: "test", path: "/")
         let testResponse = HTTPResponse(status: .forbidden)
 
-        // The server holds back the end of the response until the client saw a write fail: once SwiftNetwork read the
-        // FIN after a STOP_SENDING, it closes the stream, and writes fail regardless. Finishing is idempotent, so the
-        // client can also finish on every way out, and the server never waits forever.
+        // The server holds back the end of the response until the client saw a write fail.
         let (clientSawWriteFail, clientSawWriteFailContinuation) = AsyncStream<Never>.makeStream()
 
         try await withThrowingTaskGroup(of: Void.self) { group in
