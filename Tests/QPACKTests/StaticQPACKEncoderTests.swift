@@ -81,6 +81,134 @@ struct StaticQPACKEncoderTests {
         #expect(buffer == expected.bytes(preferHuffmanEncoding: preferHuffmanEncoding))
     }
 
+    /// Requests with every combination of pseudo header fields: an absolute URI, an `*` path, CONNECT and Extended
+    /// CONNECT, and pseudo header fields whose length takes more than one byte.
+    @available(anyAppleOS 27, *)
+    static var requests: [HTTPRequest] {
+        var post = HTTPRequest(method: .post, scheme: "https", authority: "www.example.com", path: "/upload")
+        post.headerFields = HTTPFields(Self.headers.filter { !$0.name.rawName.hasPrefix(":") })
+        let options = HTTPRequest(method: .options, scheme: "https", authority: "www.example.com", path: "*")
+        let connect = HTTPRequest(method: .connect, scheme: nil, authority: "www.example.com:443", path: nil)
+        var extendedConnect = HTTPRequest(method: .connect, scheme: "https", authority: "example.com", path: "/chat")
+        extendedConnect.extendedConnectProtocol = "websocket"
+        let long = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: String(repeating: "a", count: 200) + ".example.com",
+            path: "/" + String(repeating: "b", count: 300)
+        )
+        return [post, options, connect, extendedConnect, long]
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: Self.requests, [true, false])
+    func writesTheFieldSectionOfARequest(request: HTTPRequest, preferHuffmanEncoding: Bool) {
+        let encoder = StaticQPACKEncoder()
+        let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: request)) {
+            encoder.encode(request: request, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+
+        // The pseudo header fields come first (RFC 9114 § 4.3).
+        let pseudo = request.pseudoHeaderFields
+        let fields =
+            [pseudo.method, pseudo.scheme, pseudo.authority, pseudo.path, pseudo.extendedConnectProtocol]
+            .compactMap { $0 } + Array(request.headerFields)
+        #expect(buffer == Self.encode(fields, preferHuffmanEncoding: preferHuffmanEncoding))
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: Self.requests, [true, false])
+    func requestRoundTripsThroughTheDecoder(request: HTTPRequest, preferHuffmanEncoding: Bool) throws {
+        let encoder = StaticQPACKEncoder()
+        let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: request)) {
+            encoder.encode(request: request, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+
+        let fields = try Self.decode(buffer)
+        let pseudo = request.pseudoHeaderFields
+        let expected =
+            [pseudo.method, pseudo.scheme, pseudo.authority, pseudo.path, pseudo.extendedConnectProtocol]
+            .compactMap { $0 } + Array(request.headerFields)
+        #expect(fields.map(\.name) == expected.map(\.name))
+        #expect(fields.map(\.value) == expected.map(\.value))
+    }
+
+    /// Statuses which are in the static table, and some which aren't (RFC 9204 Appendix A).
+    @available(anyAppleOS 27, *)
+    static var statuses: [HTTPResponse.Status] {
+        [.ok, .earlyHints, .notFound, .serviceUnavailable, 418, 599]
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: Self.statuses, [true, false])
+    func writesTheFieldSectionOfAResponse(status: HTTPResponse.Status, preferHuffmanEncoding: Bool) throws {
+        var response = HTTPResponse(status: status)
+        response.headerFields = HTTPFields(Self.headers.filter { !$0.name.rawName.hasPrefix(":") })
+        let encoder = StaticQPACKEncoder()
+        let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: response)) {
+            encoder.encode(response: response, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+
+        let fields = [response.pseudoHeaderFields.status] + Array(response.headerFields)
+        #expect(buffer == Self.encode(fields, preferHuffmanEncoding: preferHuffmanEncoding))
+
+        let decoded = try Self.decode(buffer)
+        #expect(decoded.map(\.name) == fields.map(\.name))
+        #expect(decoded.map(\.value) == fields.map(\.value))
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [true, false])
+    func writesTheFieldSectionOfTrailers(preferHuffmanEncoding: Bool) {
+        let trailers = HTTPFields(Self.headers.filter { !$0.name.rawName.hasPrefix(":") })
+        let encoder = StaticQPACKEncoder()
+        let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: trailers)) {
+            encoder.encode(trailers: trailers, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+
+        #expect(buffer == Self.encode(Array(trailers), preferHuffmanEncoding: preferHuffmanEncoding))
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func writesNothingButThePrefixForNoTrailers() {
+        let encoder = StaticQPACKEncoder()
+        let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: HTTPFields())) {
+            encoder.encode(trailers: HTTPFields(), into: &$0, preferHuffmanEncoding: true)
+        }
+        #expect(Array(buffer.readableBytesView) == [0, 0])
+    }
+
+    /// Decodes `buffer`, a field section which references no dynamic table entries, with the decoder of the
+    /// channel based stack.
+    @available(anyAppleOS 27, *)
+    static func decode(_ buffer: ByteBuffer) throws -> [HTTPField] {
+        var buffer = buffer
+        let encodedPrefix = try #require(try buffer.readFieldSectionPrefix())
+        var decoder = QPACKDecoder(dynamicTableMaxCapacity: 0)
+        let prefix = try #require(decoder.decodeFieldSectionPrefix(encodedPrefix))
+        guard
+            case .success(let fields, nil) = decoder.decodeFieldSection(
+                prefix: prefix,
+                lines: buffer,
+                streamID: 0
+            )
+        else {
+            Issue.record("The field section couldn't be decoded")
+            return []
+        }
+        return fields
+    }
+
+    /// The field section of `fields`, as ``StaticQPACKEncoder/encode(headers:into:preferHuffmanEncoding:)`` writes
+    /// it.
+    @available(anyAppleOS 27, *)
+    static func encode(_ fields: [HTTPField], preferHuffmanEncoding: Bool) -> ByteBuffer {
+        let encoder = StaticQPACKEncoder()
+        return encodeWithExactRoom(encoder.maxEncodedLength(of: fields)) {
+            encoder.encode(headers: fields, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
+        }.0
+    }
+
     @available(anyAppleOS 27, *)
     @Test func writesNothingButThePrefixForNoFields() {
         let encoder = StaticQPACKEncoder()

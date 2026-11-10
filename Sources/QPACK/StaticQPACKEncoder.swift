@@ -16,22 +16,17 @@ public import HTTPTypes
 
 /// Can encode field sections but only statically (can't use dynamic table and can't send instructions).
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public struct StaticQPACKEncoder {
-    @_spi(PackageInternal)
     public init() {}
 
     /// The largest number of bytes ``encode(headers:into:preferHuffmanEncoding:)`` appends for `headers`.
-    @_spi(PackageInternal)
     public func maxEncodedLength(of headers: [HTTPField]) -> Int {
-        QPACKEncodedLength.fieldSectionPrefix(Self.staticPrefix)
-            &+ QPACKEncodedLength.maxFieldLines(headers, indexLimit: StaticHeaderTable.raw.count)
+        Self.prefixLength &+ QPACKEncodedLength.maxFieldLines(headers, indexLimit: StaticHeaderTable.raw.count)
     }
 
     /// Encodes `headers` into a field section, and appends it to `output`.
     ///
     /// - Precondition: `output` has room for ``maxEncodedLength(of:)`` more bytes.
-    @_spi(PackageInternal)
     public func encode(headers: [HTTPField], into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
         output.appendFieldSectionPrefix(Self.staticPrefix)
         for header in headers {
@@ -43,6 +38,103 @@ public struct StaticQPACKEncoder {
     /// the same.
     private static var staticPrefix: EncodedFieldSectionPrefix {
         FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
+    }
+
+    /// The max number of bytes ``encode(request:into:preferHuffmanEncoding:)`` appends to `output`
+    public func maxEncodedLength(of request: HTTPRequest) -> Int {
+        let pseudo = request.pseudoHeaderFields
+        var length = Self.prefixLength &+ Self.maxEncodedLength(of: pseudo.method)
+        if let scheme = pseudo.scheme {
+            length &+= Self.maxEncodedLength(of: scheme)
+        }
+        if let authority = pseudo.authority {
+            length &+= Self.maxEncodedLength(of: authority)
+        }
+        if let path = pseudo.path {
+            length &+= Self.maxEncodedLength(of: path)
+        }
+        if let extendedConnectProtocol = pseudo.extendedConnectProtocol {
+            length &+= Self.maxEncodedLength(of: extendedConnectProtocol)
+        }
+        return length &+ Self.maxEncodedLength(of: request.headerFields)
+    }
+
+    /// Encodes `request` into a field section, its pseudo header fields first, and appends it to `output`.
+    ///
+    /// - Precondition: `output` has room for ``maxEncodedLength(of:)-(HTTPRequest)`` more bytes.
+    public func encode(request: HTTPRequest, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+        let pseudo = request.pseudoHeaderFields
+        output.appendFieldSectionPrefix(Self.staticPrefix)
+        self.append(pseudo.method, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        if let scheme = pseudo.scheme {
+            self.append(scheme, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+        if let authority = pseudo.authority {
+            self.append(authority, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+        if let path = pseudo.path {
+            self.append(path, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+        if let extendedConnectProtocol = pseudo.extendedConnectProtocol {
+            self.append(extendedConnectProtocol, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
+        self.append(request.headerFields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+    }
+
+    /// The largest number of bytes ``encode(response:into:preferHuffmanEncoding:)`` appends for `response`.
+    public func maxEncodedLength(of response: HTTPResponse) -> Int {
+        Self.prefixLength
+            &+ Self.maxEncodedLength(of: response.pseudoHeaderFields.status)
+            &+ Self.maxEncodedLength(of: response.headerFields)
+    }
+
+    /// Encodes `response` into a field section, its pseudo header field first, and appends it to `output`.
+    ///
+    /// - Precondition: `output` has room for ``maxEncodedLength(of:)-(HTTPResponse)`` more bytes.
+    public func encode(response: HTTPResponse, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+        output.appendFieldSectionPrefix(Self.staticPrefix)
+        self.append(response.pseudoHeaderFields.status, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        self.append(response.headerFields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+    }
+
+    /// The largest number of bytes ``encode(trailers:into:preferHuffmanEncoding:)`` appends for `trailers`.
+    public func maxEncodedLength(of trailers: HTTPFields) -> Int {
+        Self.prefixLength &+ Self.maxEncodedLength(of: trailers)
+    }
+
+    /// Encodes `trailers` into a field section, and appends it to `output`.
+    ///
+    /// - Precondition: `output` has room for ``maxEncodedLength(of:)-(HTTPFields)`` more bytes.
+    public func encode(trailers: HTTPFields, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+        output.appendFieldSectionPrefix(Self.staticPrefix)
+        self.append(trailers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+    }
+
+    private static var prefixLength: Int {
+        QPACKEncodedLength.fieldSectionPrefix(Self.staticPrefix)
+    }
+
+    private static func maxEncodedLength(of field: HTTPField) -> Int {
+        QPACKEncodedLength.maxFieldLine(field, indexLimit: StaticHeaderTable.raw.count)
+    }
+
+    private static func maxEncodedLength(of fields: HTTPFields) -> Int {
+        var length = 0
+        for field in fields {
+            length &+= Self.maxEncodedLength(of: field)
+        }
+        return length
+    }
+
+    private func append(_ field: HTTPField, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+        let fieldLine = self.fieldLine(for: field)
+        output.appendFieldLine(fieldLine, preferHuffmanEncoding: preferHuffmanEncoding)
+    }
+
+    private func append(_ fields: HTTPFields, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+        for field in fields {
+            self.append(field, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        }
     }
 
     /// Encodes a single field.
@@ -65,7 +157,7 @@ public struct StaticQPACKEncoder {
     ///     - header: The header to be encoded.
     ///     - requireLiteralRepresentation: If true, a flag will be set requiring intermediates to keep this header as a literal.
     /// - Returns: The encoded header.
-    func encodeSingleHeader(
+    private func encodeSingleHeader(
         _ header: HTTPField,
         requireLiteralRepresentation: Bool
     ) -> HeaderRepresentation {
@@ -92,17 +184,23 @@ public struct StaticQPACKEncoder {
 }
 
 extension QPACKEncodedLength {
-    /// The largest number of bytes the field lines encoding `headers` take, if every table index the encoder may
+    /// The max number of bytes the field lines encoding `headers` take, if every table index the encoder may
     /// reference is below `indexLimit`.
     static func maxFieldLines(_ headers: [HTTPField], indexLimit: Int) -> Int {
+        var length = 0
+        for header in headers {
+            length &+= Self.maxFieldLine(header, indexLimit: indexLimit)
+        }
+        return length
+    }
+
+    /// The max number of bytes the field line encoding `header` takes, if every table index the encoder may
+    /// reference is below `indexLimit`.
+    static func maxFieldLine(_ header: HTTPField, indexLimit: Int) -> Int {
         // The smallest index prefix is 3 bits (RFC 9204 § 4.5.5). A name is an index or a string literal; a value, if
         // present, is a string literal.
         let maxIndex = Self.prefixedInteger(indexLimit, prefix: 3)
-        var length = 0
-        for header in headers {
-            let maxName = Self.maxString(byteCount: header.name.canonicalName.utf8.count, prefix: 4)
-            length &+= max(maxName, maxIndex) &+ Self.maxString(byteCount: header.value.utf8.count, prefix: 8)
-        }
-        return length
+        let maxName = Self.maxString(byteCount: header.name.canonicalName.utf8.count, prefix: 4)
+        return max(maxName, maxIndex) &+ Self.maxString(byteCount: header.value.utf8.count, prefix: 8)
     }
 }
