@@ -27,7 +27,7 @@ import struct NIOQUIC.QUICStreamCreator
 @_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 
 @available(anyAppleOS 27, *)
-typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator>
+typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator, HTTP3InboundStreamInitializer>
 
 // MARK: Configure with async interface
 extension ChannelPipeline.SynchronousOperations {
@@ -82,8 +82,9 @@ extension ChannelPipeline.SynchronousOperations {
                 }
             },
             inboundStreamInitializer: { streamChannel in
-                streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<QUICStreamCreator>.self).flatMap {
-                    h3Handler in
+                streamChannel.parent!.pipeline.handler(
+                    type: HTTP3ConnectionHandler<QUICStreamCreator, HTTP3AsyncInboundStreamInitializer<Output>>.self
+                ).flatMap { h3Handler in
                     h3Handler.inboundStreamReceived(streamChannel)
                 }
             },
@@ -139,7 +140,7 @@ extension ChannelPipeline.SynchronousOperations {
                 fatalError()
             },
             inboundStreamInitializer: { streamChannel in
-                streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<QUICStreamCreator>.self).flatMap {
+                streamChannel.parent!.pipeline.handler(type: QUICHTTP3ConnectionHandler.self).flatMap {
                     h3Handler in
                     h3Handler.inboundStreamReceived(streamChannel)
                 }
@@ -221,7 +222,7 @@ extension ChannelPipeline.SynchronousOperations {
                 }
             },
             inboundStreamInitializer: { streamChannel in
-                streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<QUICStreamCreator>.self).flatMap {
+                streamChannel.parent!.pipeline.handler(type: QUICHTTP3ConnectionHandler.self).flatMap {
                     h3Handler in
                     h3Handler.inboundStreamReceived(streamChannel)
                 }
@@ -323,7 +324,7 @@ struct TestHTTP3Client: Sendable {
                     return output.map { _ in }
                 },
                 inboundStreamInitializer: { streamChannel in
-                    streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<QUICStreamCreator>.self)
+                    streamChannel.parent!.pipeline.handler(type: QUICHTTP3ConnectionHandler.self)
                         .flatMap { h3Handler in
                             h3Handler.inboundStreamReceived(streamChannel)
                         }
@@ -339,10 +340,13 @@ struct TestHTTP3Client: Sendable {
 extension Channel {
     /// Send a GOAWAY frame with the provided `id` from the `HTTP3ConnectionHandler` in this connection channel's
     /// pipeline.
-    func sendHTTP3Goaway(id: HTTP3GoawayID) async throws {
+    func sendHTTP3Goaway<InboundStreamInitializer: HTTP3InboundStreamInitializerProtocol>(
+        id: HTTP3GoawayID,
+        inboundStreamInitializer: InboundStreamInitializer.Type
+    ) async throws {
         try await self.eventLoop.submit {
             try self.pipeline.syncOperations
-                .handler(type: QUICHTTP3ConnectionHandler.self)
+                .handler(type: HTTP3ConnectionHandler<QUICStreamCreator, InboundStreamInitializer>.self)
                 .sendGoaway(id: id)
         }.get()
     }

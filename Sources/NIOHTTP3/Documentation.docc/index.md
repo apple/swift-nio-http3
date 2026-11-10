@@ -10,6 +10,7 @@ Implementation of HTTP3 on top of swift-nio.
 
 - ``HTTP3ServerConfiguration``
 - ``HTTP3ServerConnection``
+- ``HTTP3AsyncInboundStreamInitializer``
 - ``HTTP3ServerTypesHandler``
 
 ### Clients
@@ -19,3 +20,5 @@ Implementation of HTTP3 on top of swift-nio.
 
 ### Common 
 - ``HTTP3ConnectionHandler``
+- ``HTTP3InboundStreamInitializerProtocol``
+- ``HTTP3InboundStreamInitializer``

@@ -87,7 +87,12 @@ struct HTTP3AsyncPipelineTests {
         // Set the stream ID.
         try streamChannel.syncOptions?.setOption(.quicStreamID, value: id)
         try connectionChannel.pipeline.syncOperations
-            .handler(type: HTTP3ConnectionHandler<SingleChannelStreamCreator>.self)
+            .handler(
+                type: HTTP3ConnectionHandler<
+                    SingleChannelStreamCreator,
+                    HTTP3AsyncInboundStreamInitializer<QUICStreamID>
+                >.self
+            )
             .inboundStreamReceived(streamChannel)
             .wait()
 

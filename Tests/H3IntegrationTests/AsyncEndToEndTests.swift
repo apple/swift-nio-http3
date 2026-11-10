@@ -27,6 +27,11 @@ import struct NIOQUIC.QUICStreamCreator
 @_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
 
 struct AsyncEndToEndTests {
+    @available(anyAppleOS 27, *)
+    private typealias ServerInboundStreamInitializer = HTTP3AsyncInboundStreamInitializer<
+        NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>
+    >
+
     private let eventLoopGroup = MultiThreadedEventLoopGroup.singleton
 
     private static let standardAuthenticationConfigurations: [AuthenticationConfiguration] = {
@@ -170,7 +175,10 @@ struct AsyncEndToEndTests {
                         try await #expect(inboundPartIterator.next() == nil)
 
                         // Tell the client to goaway, but with an id that won't affect this request
-                        try await connectionChannel.sendHTTP3Goaway(id: 100)
+                        try await connectionChannel.sendHTTP3Goaway(
+                            id: 100,
+                            inboundStreamInitializer: ServerInboundStreamInitializer.self
+                        )
 
                         try await outbound.write(.head(testResponse))
                         try await outbound.write(.body(.init(string: "Hello World")))
@@ -274,7 +282,10 @@ struct AsyncEndToEndTests {
                         try await #expect(inboundPartIterator.next() == nil)
 
                         // Tell the client to goaway, with an id will affect this current request
-                        try await connectionChannel.sendHTTP3Goaway(id: 0)
+                        try await connectionChannel.sendHTTP3Goaway(
+                            id: 0,
+                            inboundStreamInitializer: ServerInboundStreamInitializer.self
+                        )
 
                         // The stream has been reset and will close. Don't try to respond or wait for
                         // the automatic close - just let the closure complete without sending FIN.

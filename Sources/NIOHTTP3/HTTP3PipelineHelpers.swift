@@ -23,7 +23,8 @@ extension ChannelPipeline.SynchronousOperations {
     ///
     /// This operation **must** be called on the event loop, typically from the QUIC implementation's inbound connection
     /// initializer. Inbound stream channels on the connection must be passed to
-    /// ``HTTP3ConnectionHandler/inboundStreamReceived(_:)``.
+    /// ``HTTP3ConnectionHandler/inboundStreamReceived(_:)``. The handler added to the pipeline is an
+    /// `HTTP3ConnectionHandler<StreamCreator, HTTP3AsyncInboundStreamInitializer<Output>>`.
     ///
     /// - Parameters:
     ///   - configuration: Configuration for the connection.
@@ -51,7 +52,10 @@ extension ChannelPipeline.SynchronousOperations {
             settings: settings,
             streamCreator: streamCreator,
             logger: logger,
-            inboundRequestStreamInitializer: .yielding(to: continuation, streamInitializer: streamInitializer),
+            inboundRequestStreamInitializer: HTTP3AsyncInboundStreamInitializer(
+                yieldingTo: continuation,
+                streamInitializer: streamInitializer
+            ),
             internalInboundStreamInitializer: nil
         )
         try self.addHandler(handler)

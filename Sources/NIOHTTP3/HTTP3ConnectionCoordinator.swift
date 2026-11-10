@@ -22,7 +22,10 @@ import NIOQUICHelpers
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
 @available(anyAppleOS 27, *)
-final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator> {
+final class HTTP3ConnectionCoordinator<
+    QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator,
+    InboundStreamInitializer: HTTP3InboundStreamInitializerProtocol
+> {
 
     /// The QPACK coder used by all streams of this connection. The coordinator is both the QPACK
     /// connection delegate and the stream delegate of every stream handler.
@@ -38,7 +41,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     ///
     /// Setting this creates a strong retain cycle which is broken by the connection handler when
     /// it's removed from the channel pipeline.
-    private var connection: HTTP3ConnectionHandler<QUICStreamCreator>?
+    private var connection: HTTP3ConnectionHandler<QUICStreamCreator, InboundStreamInitializer>?
     private let preferHuffmanEncoding: Bool
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.
@@ -71,7 +74,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         )
     }
 
-    func setConnectionHandler(_ handler: HTTP3ConnectionHandler<QUICStreamCreator>?) {
+    func setConnectionHandler(_ handler: HTTP3ConnectionHandler<QUICStreamCreator, InboundStreamInitializer>?) {
         self.eventLoop.preconditionInEventLoop()
         self.connection = handler
     }
@@ -303,7 +306,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     func inboundStreamInitializer(
         parameters: HTTP3StreamInitializerParameters,
         addTypeHandlers: Bool,
-        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>,
+        userInboundStreamInitializer: InboundStreamInitializer,
         internalInboundStreamInitializer: (
             (
                 any Channel, QUICStreamID, HTTP3StreamType.Unidirectional
@@ -330,7 +333,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     private func inboundRequestStreamInitializer(
         parameters: HTTP3StreamInitializerParameters,
         addTypeHandlers: Bool,
-        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
+        userInboundStreamInitializer: InboundStreamInitializer
     ) -> EventLoopFuture<Void> {
         let streamID = parameters.streamID
         let streamChannel = parameters.channel
@@ -353,7 +356,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 }
                 // State machine now considers the stream to be open: deliver the datagrams now.
                 self.emitBufferedDatagrams(forStream: streamID)
-                return userInboundStreamInitializer(parameters)
+                return userInboundStreamInitializer.initialize(parameters)
             } catch {
                 self.datagramBuffer.discardDatagrams(forStream: streamID)
                 return streamChannel.eventLoop.makeFailedFuture(error)
