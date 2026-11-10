@@ -96,10 +96,15 @@ extension ByteBuffer {
     /// `fieldSection`, written one line at a time.
     @available(anyAppleOS 27, *)
     init(fieldSection: FieldSection, preferHuffmanEncoding: Bool) {
-        self.init()
-        self.writeFieldSectionPrefix(fieldSection.prefix)
+        var maxLength = QPACKEncodedLength.fieldSectionPrefix(fieldSection.prefix)
         for line in fieldSection.lines {
-            self.writeFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
+            maxLength += QPACKEncodedLength.maxFieldLine(line)
+        }
+        self.init(initialCapacity: maxLength) { output in
+            output.appendFieldSectionPrefix(fieldSection.prefix)
+            for line in fieldSection.lines {
+                output.appendFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
+            }
         }
     }
 }

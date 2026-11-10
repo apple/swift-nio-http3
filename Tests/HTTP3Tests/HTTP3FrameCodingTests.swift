@@ -439,10 +439,7 @@ struct HTTP3FrameCodingTests {
         buffer.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
         buffer.writeLengthPrefixed(strategy: .quic) { tempBuffer in
             var bytesWritten = 0
-            bytesWritten += tempBuffer.writeFieldSectionPrefix(testFieldSection.prefix)
-            for line in testFieldSection.lines {
-                bytesWritten += tempBuffer.writeFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
-            }
+            bytesWritten += tempBuffer.writeFieldSection(testFieldSection, preferHuffmanEncoding: preferHuffmanEncoding)
             // write 1 extra byte
             bytesWritten += tempBuffer.writeBytes([0])
             return bytesWritten
