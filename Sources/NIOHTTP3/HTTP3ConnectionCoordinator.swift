@@ -638,7 +638,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             if onSettings.datagramsNegotiated {
                 // Deliver datagrams which were buffered for open streams while awaiting the SETTINGS.
                 for streamID in self.streamHandlers.keys {
-                    self.emitBufferedDatagrams(forStream: streamID)
+                    self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
                 }
             } else {
                 self.datagramBuffer.discardAllDatagrams()
