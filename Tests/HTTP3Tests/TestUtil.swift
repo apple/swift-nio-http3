@@ -58,10 +58,17 @@ extension ByteBuffer {
     @available(anyAppleOS 27, *)
     @discardableResult
     mutating func writeFieldSection(_ fieldSection: FieldSection, preferHuffmanEncoding: Bool = false) -> Int {
-        var bytesWritten = self.writeFieldSectionPrefix(fieldSection.prefix)
+        var maxLength = QPACKEncodedLength.fieldSectionPrefix(fieldSection.prefix)
         for line in fieldSection.lines {
-            bytesWritten += self.writeFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
+            maxLength += QPACKEncodedLength.maxFieldLine(line)
         }
-        return bytesWritten
+        let start = self.writerIndex
+        self.writeWithOutputRawSpan(minimumWritableBytes: maxLength) { output in
+            output.appendFieldSectionPrefix(fieldSection.prefix)
+            for line in fieldSection.lines {
+                output.appendFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
+            }
+        }
+        return self.writerIndex - start
     }
 }

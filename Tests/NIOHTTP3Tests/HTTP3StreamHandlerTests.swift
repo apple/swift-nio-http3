@@ -172,8 +172,9 @@ struct NIOHTTP3StreamHandlerTests {
     @available(anyAppleOS 27, *)
     private var testUndecodableRequestPartialHeaderBytes: ByteBuffer {
         var fieldSection = self.testRequestFieldSectionBytes
-        // A relative index of 0 against a base of 0 is absolute index -1, which is never in the table.
-        fieldSection.writeFieldLine(.indexed(.dynamicTable, index: 0), preferHuffmanEncoding: false)
+        // An indexed field line: 1 for indexed, 0 for the dynamic table, then the relative index 0. A relative index
+        // of 0 against a base of 0 is absolute index -1, which is never in the table.
+        fieldSection.writeInteger(UInt8(0b10000000))
         var buffer = ByteBuffer()
         buffer.writeHeadersFrame(fieldSection: fieldSection)
         return buffer
