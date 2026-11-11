@@ -213,7 +213,9 @@ extension ChannelPipeline.SynchronousOperations {
                         settings: settings,
                         streamCreator: streamCreator,
                         logger: logger,
-                        inboundRequestStreamInitializer: HTTP3ClosureInboundStreamInitializer(inboundRequestStreamInitializer),
+                        inboundRequestStreamInitializer: HTTP3ClosureInboundStreamInitializer(
+                            inboundRequestStreamInitializer
+                        ),
                         internalInboundStreamInitializer: internalInboundStreamInitializer
                     )
                     try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
