@@ -19,7 +19,7 @@ public import NIOCore
 /// ``initialize(_:)`` is called with each new inbound stream. When the connection becomes inactive, ``finish()`` is
 /// called to signal that no more streams will arrive.
 @available(anyAppleOS 27, *)
-public protocol HTTP3InboundStreamInitializerProtocol: SendableMetatype {
+public protocol HTTP3InboundStreamInitializer: SendableMetatype {
     /// Called with each new inbound stream channel, before the channel is activated.
     ///
     /// - Parameter parameters: The new stream channel and its stream ID.
@@ -34,7 +34,7 @@ public protocol HTTP3InboundStreamInitializerProtocol: SendableMetatype {
 
 /// Calls a closure with each new inbound stream channel.
 @available(anyAppleOS 27, *)
-public struct HTTP3InboundStreamInitializer: HTTP3InboundStreamInitializerProtocol {
+public struct HTTP3ClosureInboundStreamInitializer: HTTP3InboundStreamInitializer {
     @usableFromInline
     // private but usableFromInline
     let initializer: (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
@@ -57,7 +57,7 @@ public struct HTTP3InboundStreamInitializer: HTTP3InboundStreamInitializerProtoc
 /// Yields the output of a stream initializer to an `AsyncStream`. Finishes the `AsyncStream` once the connection has
 /// become inactive.
 @available(anyAppleOS 27, *)
-public struct HTTP3AsyncInboundStreamInitializer<Output: Sendable>: HTTP3InboundStreamInitializerProtocol, Sendable {
+public struct HTTP3AsyncInboundStreamInitializer<Output: Sendable>: HTTP3InboundStreamInitializer, Sendable {
     @usableFromInline
     // private but usableFromInline
     let continuation: AsyncStream<Output>.Continuation

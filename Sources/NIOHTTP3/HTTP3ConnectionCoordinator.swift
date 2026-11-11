@@ -24,7 +24,7 @@ import NIOQUICHelpers
 @available(anyAppleOS 27, *)
 final class HTTP3ConnectionCoordinator<
     QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator,
-    InboundStreamInitializer: HTTP3InboundStreamInitializerProtocol
+    InboundStreamInitializer: HTTP3InboundStreamInitializer
 > {
 
     /// The QPACK coder used by all streams of this connection. The coordinator is both the QPACK

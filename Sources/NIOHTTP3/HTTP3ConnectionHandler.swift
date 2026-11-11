@@ -27,7 +27,7 @@ public import NIOQUICHelpers
 @available(anyAppleOS 27, *)
 public final class HTTP3ConnectionHandler<
     StreamCreator: QUICStreamCreator & SendableMetatype,
-    InboundStreamInitializer: HTTP3InboundStreamInitializerProtocol
+    InboundStreamInitializer: HTTP3InboundStreamInitializer
 >: ChannelInboundHandler, ChannelOutboundHandler {
     public typealias InboundIn = ByteBuffer
     public typealias InboundOut = HTTP3Datagram

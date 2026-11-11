@@ -692,7 +692,7 @@ struct EndToEndTests {
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler
         _ = requestStreamChannel.eventLoop.submit {
             let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(
-                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator, HTTP3InboundStreamInitializer>
+                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator, HTTP3ClosureInboundStreamInitializer>
                     .StreamHandler.self
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
@@ -933,7 +933,7 @@ struct EndToEndTests {
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler.
         _ = requestStreamChannel.eventLoop.submit {
             let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(
-                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator, HTTP3InboundStreamInitializer>
+                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator, HTTP3ClosureInboundStreamInitializer>
                     .StreamHandler.self
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)

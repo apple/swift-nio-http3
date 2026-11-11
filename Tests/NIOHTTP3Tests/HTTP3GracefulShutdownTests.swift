@@ -171,7 +171,7 @@ struct HTTP3GracefulShutdownTests {
 extension HTTP3GracefulShutdownTests {
     private typealias ConnectionHandler = HTTP3ConnectionHandler<
         SingleChannelStreamCreator,
-        HTTP3InboundStreamInitializer
+        HTTP3ClosureInboundStreamInitializer
     >
 
     private func makeClientHandler(
@@ -192,7 +192,7 @@ extension HTTP3GracefulShutdownTests {
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundPushStreamInitializer: HTTP3InboundStreamInitializer { _ in
+            inboundPushStreamInitializer: HTTP3ClosureInboundStreamInitializer { _ in
                 fatalError("Push streams are not supported")
             }
         )
@@ -218,7 +218,7 @@ extension HTTP3GracefulShutdownTests {
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundRequestStreamInitializer: HTTP3InboundStreamInitializer {
+            inboundRequestStreamInitializer: HTTP3ClosureInboundStreamInitializer {
                 $0.channel.eventLoop.makeSucceededVoidFuture()
             }
         )

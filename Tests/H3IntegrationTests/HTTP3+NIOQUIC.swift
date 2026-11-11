@@ -27,7 +27,7 @@ import struct NIOQUIC.QUICStreamCreator
 @testable import NIOHTTP3
 
 @available(anyAppleOS 27, *)
-typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator, HTTP3InboundStreamInitializer>
+typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator, HTTP3ClosureInboundStreamInitializer>
 
 // MARK: Configure with async interface
 extension ChannelPipeline.SynchronousOperations {
@@ -213,7 +213,7 @@ extension ChannelPipeline.SynchronousOperations {
                         settings: settings,
                         streamCreator: streamCreator,
                         logger: logger,
-                        inboundRequestStreamInitializer: HTTP3InboundStreamInitializer(inboundRequestStreamInitializer),
+                        inboundRequestStreamInitializer: HTTP3ClosureInboundStreamInitializer(inboundRequestStreamInitializer),
                         internalInboundStreamInitializer: internalInboundStreamInitializer
                     )
                     try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
@@ -288,7 +288,7 @@ struct TestHTTP3Client: Sendable {
                     settings: self.settings,
                     streamCreator: streamCreator,
                     logger: self.logger,
-                    inboundPushStreamInitializer: HTTP3InboundStreamInitializer { _ in fatalError() },
+                    inboundPushStreamInitializer: HTTP3ClosureInboundStreamInitializer { _ in fatalError() },
                     internalInboundStreamInitializer: self.internalInboundStreamInitializer
                 )
                 try channel.pipeline.syncOperations.addHandler(h3Handler)
@@ -338,7 +338,7 @@ struct TestHTTP3Client: Sendable {
 extension Channel {
     /// Send a GOAWAY frame with the provided `id` from the `HTTP3ConnectionHandler` in this connection channel's
     /// pipeline.
-    func sendHTTP3Goaway<InboundStreamInitializer: HTTP3InboundStreamInitializerProtocol>(
+    func sendHTTP3Goaway<InboundStreamInitializer: HTTP3InboundStreamInitializer>(
         id: HTTP3GoawayID,
         inboundStreamInitializer: InboundStreamInitializer.Type
     ) async throws {

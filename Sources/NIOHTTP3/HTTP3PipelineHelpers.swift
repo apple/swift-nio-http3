@@ -92,7 +92,7 @@ extension ChannelPipeline.SynchronousOperations {
             logger: logger,
             // TODO: https://github.com/apple/swift-nio-http3/issues/1
             // Push streams are not supported yet.
-            inboundPushStreamInitializer: HTTP3InboundStreamInitializer {
+            inboundPushStreamInitializer: HTTP3ClosureInboundStreamInitializer {
                 $0.channel.eventLoop.makeSucceededVoidFuture()
             }
         )

@@ -67,10 +67,10 @@ public struct HTTP3ClientConnection<
     Output: Sendable,
     StreamCreator: QUICStreamCreator & SendableMetatype
 >: Sendable {
-    let h3Handler: NIOLoopBound<HTTP3ConnectionHandler<StreamCreator, HTTP3InboundStreamInitializer>>
+    let h3Handler: NIOLoopBound<HTTP3ConnectionHandler<StreamCreator, HTTP3ClosureInboundStreamInitializer>>
 
     init(
-        h3Handler: NIOLoopBound<HTTP3ConnectionHandler<StreamCreator, HTTP3InboundStreamInitializer>>,
+        h3Handler: NIOLoopBound<HTTP3ConnectionHandler<StreamCreator, HTTP3ClosureInboundStreamInitializer>>,
         inboundPushStreamInitializer: @Sendable (HTTP3StreamInitializerParameters) throws -> Output
     ) {
         self.h3Handler = h3Handler
