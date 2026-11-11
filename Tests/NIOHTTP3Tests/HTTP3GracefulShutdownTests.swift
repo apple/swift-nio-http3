@@ -169,9 +169,14 @@ struct HTTP3GracefulShutdownTests {
 
 @available(anyAppleOS 27, *)
 extension HTTP3GracefulShutdownTests {
+    private typealias ConnectionHandler = HTTP3ConnectionHandler<
+        SingleChannelStreamCreator,
+        HTTP3ClosureInboundStreamInitializer
+    >
+
     private func makeClientHandler(
         configuration: HTTP3ClientConfiguration = .defaults
-    ) throws -> (EmbeddedChannel, HTTP3ConnectionHandler<SingleChannelStreamCreator>, EmbeddedChannel) {
+    ) throws -> (EmbeddedChannel, ConnectionHandler, EmbeddedChannel) {
         let loop = EmbeddedEventLoop()
         let streamChannel = EmbeddedChannel()
 
@@ -181,13 +186,13 @@ extension HTTP3GracefulShutdownTests {
             embeddedStreamChannel: streamChannel
         )
 
-        let handler = HTTP3ConnectionHandler<SingleChannelStreamCreator>.client(
+        let handler = HTTP3ConnectionHandler.client(
             eventLoop: loop,
             configuration: configuration,
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundPushStreamInitializer: { _ in
+            inboundPushStreamInitializer: HTTP3ClosureInboundStreamInitializer { _ in
                 fatalError("Push streams are not supported")
             }
         )
@@ -197,7 +202,7 @@ extension HTTP3GracefulShutdownTests {
 
     private func makeServerHandler(
         configuration: HTTP3ServerConfiguration = .defaults
-    ) throws -> (EmbeddedChannel, HTTP3ConnectionHandler<SingleChannelStreamCreator>, EmbeddedChannel) {
+    ) throws -> (EmbeddedChannel, ConnectionHandler, EmbeddedChannel) {
         let loop = EmbeddedEventLoop()
         let streamChannel = EmbeddedChannel()
 
@@ -207,13 +212,15 @@ extension HTTP3GracefulShutdownTests {
             embeddedStreamChannel: streamChannel
         )
 
-        let handler = HTTP3ConnectionHandler<SingleChannelStreamCreator>.server(
+        let handler = HTTP3ConnectionHandler.server(
             eventLoop: loop,
             configuration: configuration,
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundRequestStreamInitializer: { _ in loop.makeSucceededVoidFuture() }
+            inboundRequestStreamInitializer: HTTP3ClosureInboundStreamInitializer {
+                $0.channel.eventLoop.makeSucceededVoidFuture()
+            }
         )
         let connectionChannel = EmbeddedChannel(handler: handler, loop: loop)
         return (connectionChannel, handler, streamChannel)
