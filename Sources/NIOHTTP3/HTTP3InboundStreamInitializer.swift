@@ -24,23 +24,29 @@ public protocol HTTP3InboundStreamInitializerProtocol: SendableMetatype {
     ///
     /// - Parameter parameters: The new stream channel and its stream ID.
     /// - Returns: A future which completes once the stream channel has been initialized.
+    @inlinable
     func initialize(_ parameters: HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
 
     /// Called once the connection has become inactive.
+    @inlinable
     func finish()
 }
 
 /// Calls a closure with each new inbound stream channel.
 @available(anyAppleOS 27, *)
 public struct HTTP3InboundStreamInitializer: HTTP3InboundStreamInitializerProtocol {
-    private let initializer: (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
+    @usableFromInline
+    // private but usableFromInline
+    let initializer: (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
 
     /// Create a new ``HTTP3InboundStreamInitializer``.
     /// - Parameter initializer: Called with each new inbound stream channel.
+    @inlinable
     public init(_ initializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>) {
         self.initializer = initializer
     }
 
+    @inlinable
     public func initialize(_ parameters: HTTP3StreamInitializerParameters) -> EventLoopFuture<Void> {
         self.initializer(parameters)
     }
@@ -52,8 +58,13 @@ public struct HTTP3InboundStreamInitializer: HTTP3InboundStreamInitializerProtoc
 /// become inactive.
 @available(anyAppleOS 27, *)
 public struct HTTP3AsyncInboundStreamInitializer<Output: Sendable>: HTTP3InboundStreamInitializerProtocol, Sendable {
-    private let continuation: AsyncStream<Output>.Continuation
-    private let streamInitializer: @Sendable (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>
+    @usableFromInline
+    // private but usableFromInline
+    let continuation: AsyncStream<Output>.Continuation
+
+    @usableFromInline
+    // private but usableFromInline
+    let streamInitializer: @Sendable (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>
 
     init(
         yieldingTo continuation: AsyncStream<Output>.Continuation,
@@ -63,6 +74,7 @@ public struct HTTP3AsyncInboundStreamInitializer<Output: Sendable>: HTTP3Inbound
         self.streamInitializer = streamInitializer
     }
 
+    @inlinable
     public func initialize(_ parameters: HTTP3StreamInitializerParameters) -> EventLoopFuture<Void> {
         self.streamInitializer(parameters).map { output in
             switch self.continuation.yield(output) {
@@ -79,6 +91,7 @@ public struct HTTP3AsyncInboundStreamInitializer<Output: Sendable>: HTTP3Inbound
         }
     }
 
+    @inlinable
     public func finish() {
         self.continuation.finish()
     }
