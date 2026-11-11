@@ -218,7 +218,9 @@ extension HTTP3GracefulShutdownTests {
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundRequestStreamInitializer: HTTP3InboundStreamInitializer { $0.channel.eventLoop.makeSucceededVoidFuture() }
+            inboundRequestStreamInitializer: HTTP3InboundStreamInitializer {
+                $0.channel.eventLoop.makeSucceededVoidFuture()
+            }
         )
         let connectionChannel = EmbeddedChannel(handler: handler, loop: loop)
         return (connectionChannel, handler, streamChannel)
