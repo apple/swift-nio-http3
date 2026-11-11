@@ -44,7 +44,6 @@ public protocol QPACKOutboundDecoderStream: ~Copyable {
 
 /// An object representing an HTTP3Connection, which opens the outbound encoder stream on request.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public protocol QPACKConnectionDelegate {
     /// Open a unidirectional `HTTP3StreamType.Unidirectional.qpackEncoder` stream and pass it to
     /// ``QPACKCoder/outboundEncoderStreamReady(_:)``.

@@ -34,27 +34,50 @@ public final class HTTP3ConnectionHandler<
     public typealias OutboundIn = HTTP3Datagram
     public typealias OutboundOut = ByteBuffer
 
-    private let addTypeHandlers: Bool
-    private let coordinator: HTTP3ConnectionCoordinator<StreamCreator, InboundStreamInitializer>
-    private let logger: Logger
-    private let inboundStreamInitializer: InboundStreamInitializer
-    private let internalInboundStreamInitializer:
+    @usableFromInline
+    // private but usableFromInline
+    let addTypeHandlers: Bool
+
+    @usableFromInline
+    // private but usableFromInline
+    let coordinator: HTTP3ConnectionCoordinator<StreamCreator, InboundStreamInitializer>
+
+    @usableFromInline
+    // private but usableFromInline
+    let logger: Logger
+
+    @usableFromInline
+    // private but usableFromInline
+    let inboundStreamInitializer: InboundStreamInitializer
+
+    @usableFromInline
+    // private but usableFromInline
+    let internalInboundStreamInitializer:
         ((any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>)?
 
     /// A closure that returns the current QUIC round-trip time estimate. Used to compute the time to wait between
     /// sending the first and second GOAWAY frames during graceful shutdown.
-    private let rttProvider: (@Sendable () -> TimeAmount)
+    @usableFromInline
+    // private but usableFromInline
+    let rttProvider: (@Sendable () -> TimeAmount)
 
     /// The multiplier applied to the RTT when computing the time the server should wait between sending the first and
     /// second GOAWAY frames during graceful shutdown.
-    private let gracefulShutdownRTTMultiplier: Int
+    @usableFromInline
+    // private but usableFromInline
+    let gracefulShutdownRTTMultiplier: Int
+
     /// Whether we are the server or the client.
-    private let type: HTTP3ConnectionType
+    @usableFromInline
+    // private but usableFromInline
+    let type: HTTP3ConnectionType
 
     private var context: ChannelHandlerContext?
 
     /// Create a new HTTP3ConnectionHandler.
-    private init(
+    @inlinable
+    // private but inlinable
+    init(
         eventLoop: any EventLoop,
         addTypeHandlers: Bool,
         settings: HTTP3Settings,
@@ -104,6 +127,7 @@ public final class HTTP3ConnectionHandler<
     ///   - logger: A logger.
     ///   - inboundRequestStreamInitializer: Called for every incoming request stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @inlinable
     public static func server(
         eventLoop: any EventLoop,
         configuration: HTTP3ServerConfiguration,
@@ -133,6 +157,7 @@ public final class HTTP3ConnectionHandler<
     ///   - inboundRequestStreamInitializer: Called for every incoming request stream.
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-request stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @inlinable
     static func server(
         eventLoop: any EventLoop,
         configuration: HTTP3ServerConfiguration,
@@ -169,6 +194,7 @@ public final class HTTP3ConnectionHandler<
     ///   - logger: A logger.
     ///   - inboundPushStreamInitializer: Called for every incoming push stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @inlinable
     public static func client(
         eventLoop: any EventLoop,
         configuration: HTTP3ClientConfiguration,
@@ -198,6 +224,7 @@ public final class HTTP3ConnectionHandler<
     ///   - inboundPushStreamInitializer: Called for every incoming push stream.
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-push stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @inlinable
     static func client(
         eventLoop: any EventLoop,
         configuration: HTTP3ClientConfiguration,

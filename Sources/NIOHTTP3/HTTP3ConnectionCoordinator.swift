@@ -12,16 +12,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) import HTTP3
+@_spi(PackageInternal) public import HTTP3
 import HTTPTypes
-import Logging
-import NIOCore
-import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
+public import Logging
+public import NIOCore
+public import NIOQUICHelpers
+@_spi(PackageInternal) public import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
 @available(anyAppleOS 27, *)
+@usableFromInline
 final class HTTP3ConnectionCoordinator<
     QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator,
     InboundStreamInitializer: HTTP3InboundStreamInitializer
@@ -48,6 +49,7 @@ final class HTTP3ConnectionCoordinator<
     private var streamHandlers = [QUICStreamID: StreamHandler]()
     private var datagramBuffer: HTTP3DatagramBuffer
 
+    @usableFromInline
     init(
         eventLoop: any EventLoop,
         localSettings: HTTP3Settings,
@@ -147,7 +149,9 @@ final class HTTP3ConnectionCoordinator<
     // MARK: Outbound streams
 
     /// Create an outbound stream, write the stream type, add the handlers and hand the stream to the QPACK coder.
-    private func createQPACKEncoderInstructionStream() {
+    @usableFromInline
+    // private but usableFromInline
+    func createQPACKEncoderInstructionStream() {
         self.eventLoop.assertInEventLoop()
         self.createOutboundUnidirectionalStream(ofType: .qpackEncoder) {
             let streamChannel = $0.channel
@@ -900,6 +904,7 @@ extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
 
 @available(anyAppleOS 27, *)
 extension HTTP3ConnectionCoordinator: QPACKConnectionDelegate {
+    @inlinable
     func makeOutboundEncoderStream() {
         self.createQPACKEncoderInstructionStream()
     }
