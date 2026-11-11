@@ -24,9 +24,14 @@ import X509
 import struct NIOQUIC.QUICConfiguration
 import struct NIOQUIC.QUICStreamCreator
 
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
+@testable import NIOHTTP3
 
 struct AsyncEndToEndTests {
+    @available(anyAppleOS 27, *)
+    private typealias ServerInboundStreamInitializer = HTTP3AsyncInboundStreamInitializer<
+        NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>
+    >
+
     private let eventLoopGroup = MultiThreadedEventLoopGroup.singleton
 
     private static let standardAuthenticationConfigurations: [AuthenticationConfiguration] = {
@@ -48,12 +53,12 @@ struct AsyncEndToEndTests {
             serverName = name
         }
 
-        let (serverChannel, serverMultiplexer) = try await makeHTTP3Server(
+        let (serverChannel, serverConnectionStream) = try await makeHTTP3Server(
             credentials: credentials,
             settings: .init(),
             logger: serverLogger
         )
-        let (clientChannel, clientMultiplexer) = try await makeHTTP3Client(
+        let (clientChannel, client) = try await makeHTTP3Client(
             credentials: credentials,
             settings: .init(),
             logger: clientLogger
@@ -65,8 +70,8 @@ struct AsyncEndToEndTests {
         try await withThrowingTaskGroup(of: Void.self) { group in
             // Server
             group.addTask {
-                for try await inboundConnection in serverMultiplexer.inboundConnections {
-                    for try await inboundStream in inboundConnection.inboundStreams {
+                for await (_, inboundConnection) in serverConnectionStream {
+                    for try await inboundStream in inboundConnection.inbound {
                         serverLogger.info("Got inbound stream")
                         try await inboundStream.executeThenClose { inboundParts, outbound in
                             var inboundPartIterator = inboundParts.makeAsyncIterator()
@@ -83,7 +88,7 @@ struct AsyncEndToEndTests {
             }
             // Client
             group.addTask {
-                let clientConnection = try await clientMultiplexer.concurrencyView.createConnection(
+                let (_, clientConnection) = try await client.createConnection(
                     serverName: serverName,
                     remoteAddress: serverChannel.localAddress!,
                     inboundPushStreamInitializer: { _ in
@@ -91,7 +96,7 @@ struct AsyncEndToEndTests {
                     }
                 )
 
-                let requestStream = try await clientConnection.concurrencyView.createRequestStream {
+                let requestStream = try await clientConnection.createRequestStream {
                     let streamChannel = $0.channel
                     return streamChannel.eventLoop.makeCompletedFuture {
                         try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
@@ -141,12 +146,12 @@ struct AsyncEndToEndTests {
             serverName = name
         }
 
-        let (serverChannel, serverMultiplexer) = try await makeHTTP3Server(
+        let (serverChannel, serverConnectionStream) = try await makeHTTP3Server(
             credentials: credentials,
             settings: .init(),
             logger: serverLogger
         )
-        let (clientChannel, clientMultiplexer) = try await makeHTTP3Client(
+        let (clientChannel, client) = try await makeHTTP3Client(
             credentials: credentials,
             settings: .init(),
             logger: clientLogger
@@ -159,9 +164,9 @@ struct AsyncEndToEndTests {
             // Server
             group.addTask {
                 // this server will only serve a single connection, then shut itself down.
-                var inboundConnections = serverMultiplexer.inboundConnections.makeAsyncIterator()
-                let inboundConnection = try #require(await inboundConnections.next())
-                for try await inboundStream in inboundConnection.inboundStreams {
+                var inboundConnections = serverConnectionStream.makeAsyncIterator()
+                let (connectionChannel, inboundConnection) = try #require(await inboundConnections.next())
+                for try await inboundStream in inboundConnection.inbound {
                     serverLogger.info("Got inbound stream")
                     try await inboundStream.executeThenClose { inboundParts, outbound in
                         var inboundPartIterator = inboundParts.makeAsyncIterator()
@@ -170,7 +175,10 @@ struct AsyncEndToEndTests {
                         try await #expect(inboundPartIterator.next() == nil)
 
                         // Tell the client to goaway, but with an id that won't affect this request
-                        inboundConnection.sendGoaway(id: 100)
+                        try await connectionChannel.sendHTTP3Goaway(
+                            id: 100,
+                            inboundStreamInitializer: ServerInboundStreamInitializer.self
+                        )
 
                         try await outbound.write(.head(testResponse))
                         try await outbound.write(.body(.init(string: "Hello World")))
@@ -182,7 +190,7 @@ struct AsyncEndToEndTests {
             }
             // Client
             group.addTask {
-                let clientConnection = try await clientMultiplexer.concurrencyView.createConnection(
+                let (_, clientConnection) = try await client.createConnection(
                     serverName: serverName,
                     remoteAddress: serverChannel.localAddress!,
                     inboundPushStreamInitializer: { _ in
@@ -190,7 +198,7 @@ struct AsyncEndToEndTests {
                     }
                 )
 
-                let requestStream = try await clientConnection.concurrencyView.createRequestStream {
+                let requestStream = try await clientConnection.createRequestStream {
                     let streamChannel = $0.channel
                     return streamChannel.eventLoop.makeCompletedFuture {
                         try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
@@ -217,7 +225,7 @@ struct AsyncEndToEndTests {
 
                 // Further request streams can't be made
                 await #expect(throws: HTTP3Error.self) {
-                    try await clientConnection.concurrencyView.createRequestStream {
+                    try await clientConnection.createRequestStream {
                         $0.channel.eventLoop.makeSucceededVoidFuture()
                     }
                 }
@@ -246,12 +254,12 @@ struct AsyncEndToEndTests {
             serverName = name
         }
 
-        let (serverChannel, serverMultiplexer) = try await makeHTTP3Server(
+        let (serverChannel, serverConnectionStream) = try await makeHTTP3Server(
             credentials: credentials,
             settings: .init(),
             logger: serverLogger
         )
-        let (clientChannel, clientMultiplexer) = try await makeHTTP3Client(
+        let (clientChannel, client) = try await makeHTTP3Client(
             credentials: credentials,
             settings: .init(),
             logger: clientLogger
@@ -263,9 +271,9 @@ struct AsyncEndToEndTests {
             // Server
             group.addTask {
                 // this server will only serve a single connection, then shut itself down.
-                var inboundConnections = serverMultiplexer.inboundConnections.makeAsyncIterator()
-                let inboundConnection = try #require(await inboundConnections.next())
-                for try await inboundStream in inboundConnection.inboundStreams {
+                var inboundConnections = serverConnectionStream.makeAsyncIterator()
+                let (connectionChannel, inboundConnection) = try #require(await inboundConnections.next())
+                for try await inboundStream in inboundConnection.inbound {
                     serverLogger.info("Got inbound stream")
                     try await inboundStream.executeThenClose { inboundParts, outbound in
                         var inboundPartIterator = inboundParts.makeAsyncIterator()
@@ -274,7 +282,10 @@ struct AsyncEndToEndTests {
                         try await #expect(inboundPartIterator.next() == nil)
 
                         // Tell the client to goaway, with an id will affect this current request
-                        inboundConnection.sendGoaway(id: 0)
+                        try await connectionChannel.sendHTTP3Goaway(
+                            id: 0,
+                            inboundStreamInitializer: ServerInboundStreamInitializer.self
+                        )
 
                         // The stream has been reset and will close. Don't try to respond or wait for
                         // the automatic close - just let the closure complete without sending FIN.
@@ -290,7 +301,7 @@ struct AsyncEndToEndTests {
                 defer {
                     clientRequestErrorPromise.fail(NeverFulfilled())
                 }
-                let clientConnection = try await clientMultiplexer.concurrencyView.createConnection(
+                let (_, clientConnection) = try await client.createConnection(
                     serverName: serverName,
                     remoteAddress: serverChannel.localAddress!,
                     inboundPushStreamInitializer: { _ in
@@ -298,7 +309,7 @@ struct AsyncEndToEndTests {
                     }
                 )
 
-                let requestStream = try await clientConnection.concurrencyView.createRequestStream {
+                let requestStream = try await clientConnection.createRequestStream {
                     let streamChannel = $0.channel
                     return streamChannel.eventLoop.makeCompletedFuture {
                         try streamChannel.pipeline.syncOperations.addHandler(
@@ -350,7 +361,7 @@ struct AsyncEndToEndTests {
 
                 // Further request streams can't be made
                 await #expect(throws: HTTP3Error.self) {
-                    try await clientConnection.concurrencyView.createRequestStream {
+                    try await clientConnection.createRequestStream {
                         $0.channel.eventLoop.makeSucceededVoidFuture()
                     }
                 }
@@ -381,12 +392,12 @@ struct AsyncEndToEndTests {
             serverName = name
         }
 
-        let (serverChannel, serverMultiplexer) = try await makeHTTP3Server(
+        let (serverChannel, serverConnectionStream) = try await makeHTTP3Server(
             credentials: credentials,
             settings: .init(),
             logger: serverLogger
         )
-        let (clientChannel, clientMultiplexer) = try await makeHTTP3Client(
+        let (clientChannel, client) = try await makeHTTP3Client(
             credentials: credentials,
             settings: .init(),
             logger: clientLogger
@@ -395,10 +406,10 @@ struct AsyncEndToEndTests {
         try await withThrowingTaskGroup(of: Void.self) { group in
             // Server
             group.addTask {
-                var inboundConnections = serverMultiplexer.inboundConnections.makeAsyncIterator()
-                let inboundConnection = try #require(await inboundConnections.next())
+                var inboundConnections = serverConnectionStream.makeAsyncIterator()
+                let (_, inboundConnection) = try #require(await inboundConnections.next())
 
-                var inboundStreams = inboundConnection.inboundStreams.makeAsyncIterator()
+                var inboundStreams = inboundConnection.inbound.makeAsyncIterator()
                 let inboundStream = try #require(await inboundStreams.next())
 
                 try await inboundStream.executeThenClose { inboundParts, _ in
@@ -418,7 +429,7 @@ struct AsyncEndToEndTests {
 
             // Client
             group.addTask {
-                let clientConnection = try await clientMultiplexer.concurrencyView.createConnection(
+                let (_, clientConnection) = try await client.createConnection(
                     serverName: serverName,
                     remoteAddress: serverChannel.localAddress!,
                     inboundPushStreamInitializer: { _ in
@@ -426,7 +437,7 @@ struct AsyncEndToEndTests {
                     }
                 )
 
-                let outboundStream = try await clientConnection.concurrencyView.createRequestStream {
+                let outboundStream = try await clientConnection.createRequestStream {
                     let streamChannel = $0.channel
                     return streamChannel.eventLoop.makeCompletedFuture {
                         try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
@@ -472,7 +483,7 @@ struct AsyncEndToEndTests {
         function: String = #function
     ) async throws -> (
         any Channel,
-        HTTP3ServerConnectionMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, QUICStreamCreator>
+        AsyncStream<(any Channel, HTTP3ServerConnection<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)>
     ) {
         switch credentials {
         case .rawKeys(let serverName, let publicKeyPath, let privateKeyPath, _):
@@ -556,9 +567,7 @@ struct AsyncEndToEndTests {
         credentials: Credentials,
         settings: HTTP3Settings,
         logger: Logger
-    ) async throws -> (
-        any Channel, HTTP3ClientConnectionMultiplexer<QUICConnectionCreator, NIOQUIC.QUICStreamCreator>
-    ) {
+    ) async throws -> (any Channel, TestHTTP3Client) {
         switch credentials {
         case .rawKeys(_, let publicKeyPath, _, _):
             logger.info("Starting QUIC client")
@@ -566,13 +575,13 @@ struct AsyncEndToEndTests {
             return try await DatagramBootstrap(group: self.eventLoopGroup)
                 .bind(host: "127.0.0.1", port: 0) { channel in
                     channel.eventLoop.makeCompletedFuture {
-                        let mux = try channel.pipeline.syncOperations.configureHTTP3Client(
+                        let client = try channel.pipeline.syncOperations.configureHTTP3Client(
                             channel: channel,
                             settings: settings,
                             quicConfiguration: .makeH3ClientConfig(publicKeyPath: publicKeyPath),
                             logger: logger
                         )
-                        return (channel, mux)
+                        return (channel, client)
                     }
                 }
         case .certificates(_, _, _, let trustedRootsPath):
@@ -581,13 +590,13 @@ struct AsyncEndToEndTests {
             return try await DatagramBootstrap(group: self.eventLoopGroup)
                 .bind(host: "127.0.0.1", port: 0) { channel in
                     channel.eventLoop.makeCompletedFuture {
-                        let mux = try channel.pipeline.syncOperations.configureHTTP3Client(
+                        let client = try channel.pipeline.syncOperations.configureHTTP3Client(
                             channel: channel,
                             settings: settings,
                             quicConfiguration: .makeH3ClientConfig(trustedRootsPath: trustedRootsPath),
                             logger: logger
                         )
-                        return (channel, mux)
+                        return (channel, client)
                     }
                 }
         }

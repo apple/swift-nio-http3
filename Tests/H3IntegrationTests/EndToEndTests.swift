@@ -25,7 +25,7 @@ import Testing
 import X509
 
 @_spi(PackageInternal) @testable import HTTP3
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
+@testable import NIOHTTP3
 @_spi(PackageInternal) @testable import QPACK
 
 /// Buffers incoming body data until end. Then echoes it all back with a 200 status header.
@@ -692,7 +692,8 @@ struct EndToEndTests {
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler
         _ = requestStreamChannel.eventLoop.submit {
             let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(
-                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>.StreamHandler.self
+                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator, HTTP3ClosureInboundStreamInitializer>
+                    .StreamHandler.self
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             var buffer = ByteBuffer()
@@ -932,7 +933,8 @@ struct EndToEndTests {
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler.
         _ = requestStreamChannel.eventLoop.submit {
             let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(
-                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>.StreamHandler.self
+                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator, HTTP3ClosureInboundStreamInitializer>
+                    .StreamHandler.self
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             // Required Insert Count 0 and Base 0, then a literal field line: 001 for literal, 0 for N, 0 for H, 0001 for
@@ -1415,7 +1417,7 @@ struct EndToEndTests {
         // Server sends GOAWAY(12) - stream 8 < 12, so it's allowed to complete
         // Streams 0, 4 already completed. Stream 8 is active, so connection stays open.
         let serverH3HandlerFuture = inboundConnectionChannels[0].pipeline.handler(
-            type: HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>.self
+            type: QUICHTTP3ConnectionHandler.self
         )
         try await serverH3HandlerFuture.flatMapThrowing {
             try $0.sendGoaway(id: 12)

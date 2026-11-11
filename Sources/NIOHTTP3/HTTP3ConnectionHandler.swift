@@ -19,51 +19,65 @@ public import Logging
 public import NIOCore
 public import NIOQUICHelpers
 
-/// What to do when a new stream comes inbound.
-@available(anyAppleOS 27, *)
-enum H3InboundStreamInitializer {
-    /// Call yield on a multiplexer to give it the new stream channel.
-    case multiplexer(any StreamMultiplexerContinuation)
-    /// Call a closure with the new stream channel.
-    case closure((HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>)
-}
-
 /// This is the main handler to be used in HTTP/3 servers and clients.
 ///
 /// This handler should be in a QUIC connection channel pipeline, and thus there should be one instance of this handler per connection.
 /// It expects to be told about any incoming stream channels by calling ``HTTP3ConnectionHandler/inboundStreamReceived(_:)``.
 /// The handler is also able to make outbound streams, see ``HTTP3ConnectionHandler/createRequestStream(streamInitializer:)``.
 @available(anyAppleOS 27, *)
-public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & SendableMetatype>:
-    ChannelInboundHandler,
-    ChannelOutboundHandler
-{
+public final class HTTP3ConnectionHandler<
+    StreamCreator: QUICStreamCreator & SendableMetatype,
+    InboundStreamInitializer: HTTP3InboundStreamInitializer
+>: ChannelInboundHandler, ChannelOutboundHandler {
     public typealias InboundIn = ByteBuffer
     public typealias InboundOut = HTTP3Datagram
     public typealias OutboundIn = HTTP3Datagram
     public typealias OutboundOut = ByteBuffer
 
-    private let addTypeHandlers: Bool
-    private let coordinator: HTTP3ConnectionCoordinator<StreamCreator>
-    private let logger: Logger
-    private let inboundStreamInitializer: H3InboundStreamInitializer
-    private let internalInboundStreamInitializer:
+    @usableFromInline
+    // private but usableFromInline
+    let addTypeHandlers: Bool
+
+    @usableFromInline
+    // private but usableFromInline
+    let coordinator: HTTP3ConnectionCoordinator<StreamCreator, InboundStreamInitializer>
+
+    @usableFromInline
+    // private but usableFromInline
+    let logger: Logger
+
+    @usableFromInline
+    // private but usableFromInline
+    let inboundStreamInitializer: InboundStreamInitializer
+
+    @usableFromInline
+    // private but usableFromInline
+    let internalInboundStreamInitializer:
         ((any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>)?
 
     /// A closure that returns the current QUIC round-trip time estimate. Used to compute the time to wait between
     /// sending the first and second GOAWAY frames during graceful shutdown.
-    private let rttProvider: (@Sendable () -> TimeAmount)
+    @usableFromInline
+    // private but usableFromInline
+    let rttProvider: (@Sendable () -> TimeAmount)
 
     /// The multiplier applied to the RTT when computing the time the server should wait between sending the first and
     /// second GOAWAY frames during graceful shutdown.
-    private let gracefulShutdownRTTMultiplier: Int
+    @usableFromInline
+    // private but usableFromInline
+    let gracefulShutdownRTTMultiplier: Int
+
     /// Whether we are the server or the client.
-    private let type: HTTP3ConnectionType
+    @usableFromInline
+    // private but usableFromInline
+    let type: HTTP3ConnectionType
 
     private var context: ChannelHandlerContext?
 
     /// Create a new HTTP3ConnectionHandler.
-    private init(
+    @inlinable
+    // private but inlinable
+    init(
         eventLoop: any EventLoop,
         addTypeHandlers: Bool,
         settings: HTTP3Settings,
@@ -72,7 +86,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
         preferHuffmanEncoding: Bool,
         maxBufferedDatagramBytes: Int,
         logger: Logger,
-        inboundStreamInitializer: H3InboundStreamInitializer,
+        inboundStreamInitializer: InboundStreamInitializer,
         internalInboundStreamInitializer: (
             (
                 any Channel, QUICStreamID, HTTP3StreamType.Unidirectional
@@ -111,15 +125,16 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - settings: The HTTP3Settings to be used on each incoming connection.
     ///   - streamCreator: For creating outbound streams.
     ///   - logger: A logger.
-    ///   - inboundRequestStreamInitializer: A closure which will be called for every incoming request stream.
+    ///   - inboundRequestStreamInitializer: Called for every incoming request stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @inlinable
     public static func server(
         eventLoop: any EventLoop,
         configuration: HTTP3ServerConfiguration,
         settings: HTTP3Settings,
         streamCreator: StreamCreator,
         logger: Logger,
-        inboundRequestStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
+        inboundRequestStreamInitializer: InboundStreamInitializer
     ) -> Self {
         self.server(
             eventLoop: eventLoop,
@@ -127,7 +142,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             settings: settings,
             streamCreator: streamCreator,
             logger: logger,
-            inboundRequestStreamInitializer: .closure(inboundRequestStreamInitializer),
+            inboundRequestStreamInitializer: inboundRequestStreamInitializer,
             internalInboundStreamInitializer: nil
         )
     }
@@ -139,71 +154,17 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - settings: The HTTP3Settings to be used on each incoming connection.
     ///   - streamCreator: For creating outbound streams.
     ///   - logger: A logger.
-    ///   - inboundRequestStreamInitializer: A closure which will be called for every incoming request stream.
+    ///   - inboundRequestStreamInitializer: Called for every incoming request stream.
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-request stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @inlinable
     static func server(
         eventLoop: any EventLoop,
         configuration: HTTP3ServerConfiguration,
         settings: HTTP3Settings,
         streamCreator: StreamCreator,
         logger: Logger,
-        inboundRequestStreamInitializer:
-            @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<
-                Void
-            >,
-        internalInboundStreamInitializer: (
-            (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
-        )?
-    ) -> Self {
-        self.server(
-            eventLoop: eventLoop,
-            configuration: configuration,
-            settings: settings,
-            streamCreator: streamCreator,
-            logger: logger,
-            inboundRequestStreamInitializer: .closure(inboundRequestStreamInitializer),
-            internalInboundStreamInitializer: internalInboundStreamInitializer
-        )
-    }
-
-    /// Create a ``HTTP3ConnectionHandler`` for use in a server.
-    /// - Parameters:
-    ///   - eventLoop: The event loop of the channel this handler will be on.
-    ///   - configuration: Configuration for the handler.
-    ///   - settings: The HTTP3Settings to be used on each incoming connection.
-    ///   - streamCreator: For creating outbound streams.
-    ///   - logger: A logger.
-    ///   - connection: An instance of ``HTTP3ServerConnection`` which inbound connections can be vended to.
-    /// - Returns: A ``HTTP3ConnectionHandler``.
-    @available(anyAppleOS 27, *)
-    @_spi(HTTP3AsyncInterface)
-    public static func server<Output: Sendable>(
-        eventLoop: any EventLoop,
-        configuration: HTTP3ServerConfiguration,
-        settings: HTTP3Settings,
-        streamCreator: StreamCreator,
-        logger: Logger,
-        connection: HTTP3ServerConnection<Output, StreamCreator>
-    ) -> Self {
-        self.server(
-            eventLoop: eventLoop,
-            configuration: configuration,
-            settings: settings,
-            streamCreator: streamCreator,
-            logger: logger,
-            inboundRequestStreamInitializer: .multiplexer(connection),
-            internalInboundStreamInitializer: nil
-        )
-    }
-
-    private static func server(
-        eventLoop: any EventLoop,
-        configuration: HTTP3ServerConfiguration,
-        settings: HTTP3Settings,
-        streamCreator: StreamCreator,
-        logger: Logger,
-        inboundRequestStreamInitializer: H3InboundStreamInitializer,
+        inboundRequestStreamInitializer: InboundStreamInitializer,
         internalInboundStreamInitializer: (
             (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
         )?
@@ -231,31 +192,25 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - settings: The HTTP3Settings to be used on each incoming connection.
     ///   - streamCreator: For creating outbound streams.
     ///   - logger: A logger.
-    ///   - inboundPushStreamInitializer: A closure which will be called for every incoming push stream.
+    ///   - inboundPushStreamInitializer: Called for every incoming push stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @inlinable
     public static func client(
         eventLoop: any EventLoop,
         configuration: HTTP3ClientConfiguration,
         settings: HTTP3Settings,
         streamCreator: StreamCreator,
         logger: Logger,
-        inboundPushStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
+        inboundPushStreamInitializer: InboundStreamInitializer
     ) -> Self {
-        Self(
+        self.client(
             eventLoop: eventLoop,
-            addTypeHandlers: !configuration.emitFrames,
+            configuration: configuration,
             settings: settings,
             streamCreator: streamCreator,
-            type: .client,
-            preferHuffmanEncoding: configuration.preferHuffmanEncoding,
-            maxBufferedDatagramBytes: configuration.maxBufferedDatagramBytes,
             logger: logger,
-            inboundStreamInitializer: .closure(inboundPushStreamInitializer),
-            internalInboundStreamInitializer: nil,
-            // The `rttProvider` closure and `gracefulShutdownRTTMultiplier` is not used for clients, only servers use
-            // it. We only pass values here because the initializer requires it.
-            rttProvider: { .milliseconds(100) },
-            gracefulShutdownRTTMultiplier: 1
+            inboundPushStreamInitializer: inboundPushStreamInitializer,
+            internalInboundStreamInitializer: nil
         )
     }
 
@@ -266,16 +221,17 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
     ///   - settings: The HTTP3Settings to be used on each incoming connection.
     ///   - streamCreator: For creating outbound streams.
     ///   - logger: A logger.
-    ///   - inboundPushStreamInitializer: A closure which will be called for every incoming push stream.
+    ///   - inboundPushStreamInitializer: Called for every incoming push stream.
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-push stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
+    @inlinable
     static func client(
         eventLoop: any EventLoop,
         configuration: HTTP3ClientConfiguration,
         settings: HTTP3Settings,
         streamCreator: StreamCreator,
         logger: Logger,
-        inboundPushStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>,
+        inboundPushStreamInitializer: InboundStreamInitializer,
         internalInboundStreamInitializer: (
             (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
         )?
@@ -289,7 +245,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             preferHuffmanEncoding: configuration.preferHuffmanEncoding,
             maxBufferedDatagramBytes: configuration.maxBufferedDatagramBytes,
             logger: logger,
-            inboundStreamInitializer: .closure(inboundPushStreamInitializer),
+            inboundStreamInitializer: inboundPushStreamInitializer,
             internalInboundStreamInitializer: internalInboundStreamInitializer,
             // The `rttProvider` closure and `gracefulShutdownRTTMultiplier` is not used for clients, only servers use
             // it. We only pass values here because the initializer requires it.
@@ -320,12 +276,7 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
 
     public func channelInactive(context: ChannelHandlerContext) {
         self.logger.debug("Connection became inactive")
-        switch self.inboundStreamInitializer {
-        case .multiplexer(let mux):
-            mux.finish()
-        case .closure:
-            break
-        }
+        self.inboundStreamInitializer.finish()
         // If there is still an open stream then something is wrong in our implementation because we should have
         // shut the child channels before shutting the connection.
         // If this is triggered, most likely theres a mistake in the way the connection state machine remembers which streams are open,
@@ -445,24 +396,12 @@ public final class HTTP3ConnectionHandler<StreamCreator: QUICStreamCreator & Sen
             )
         }
         self.logger.trace("Connection got inbound stream", metadata: [LoggingKeys.quicStreamID: "\(streamID)"])
-        switch self.inboundStreamInitializer {
-        case .closure(let closure):
-            return self.coordinator.inboundStreamInitializer(
-                parameters: .init(channel: streamChannel, streamID: streamID),
-                addTypeHandlers: self.addTypeHandlers,
-                userInboundStreamInitializer: closure,
-                internalInboundStreamInitializer: self.internalInboundStreamInitializer,
-                onUserStream: { _ in }
-            )
-        case .multiplexer(let multiplexer):
-            return self.coordinator.inboundStreamInitializer(
-                parameters: .init(channel: streamChannel, streamID: streamID),
-                addTypeHandlers: self.addTypeHandlers,
-                userInboundStreamInitializer: multiplexer.initialize(parameters:),
-                internalInboundStreamInitializer: self.internalInboundStreamInitializer,
-                onUserStream: { multiplexer.yield(output: $0) }
-            )
-        }
+        return self.coordinator.inboundStreamInitializer(
+            parameters: .init(channel: streamChannel, streamID: streamID),
+            addTypeHandlers: self.addTypeHandlers,
+            userInboundStreamInitializer: self.inboundStreamInitializer,
+            internalInboundStreamInitializer: self.internalInboundStreamInitializer
+        )
     }
 
     /// Create a new request stream on this connection.
