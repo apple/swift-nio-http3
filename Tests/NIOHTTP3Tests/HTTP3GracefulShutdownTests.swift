@@ -136,9 +136,8 @@ struct HTTP3GracefulShutdownTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func rejectedRequestStreamIsAbortedInBothDirections() throws {
+    @Test func rejectedRequestStreamIsAbortedInBothDirections() throws {
         var configuration = HTTP3ServerConfiguration.defaults
         configuration.rttProvider = { .milliseconds(20) }
 
