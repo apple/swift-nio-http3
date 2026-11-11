@@ -14,7 +14,6 @@
 
 public import HTTPTypes
 import NIOQUICHelpers
-@_spi(PackageInternal) public import QPACK
 
 public import struct NIOCore.ByteBuffer
 
@@ -29,10 +28,10 @@ public enum HTTP3PartialFrame: Hashable, Sendable {
     @_spi(PackageInternal)
     public struct Headers: Hashable, Sendable {
         @_spi(PackageInternal)
-        public let fieldSection: FieldSection
+        public let fieldSection: ByteBuffer
 
         @_spi(PackageInternal)
-        public init(fieldSection: FieldSection) {
+        public init(fieldSection: ByteBuffer) {
             self.fieldSection = fieldSection
         }
     }
@@ -45,10 +44,10 @@ public enum HTTP3PartialFrame: Hashable, Sendable {
         public let pushID: HTTP3PushID
 
         @_spi(PackageInternal)
-        public let fieldSection: FieldSection
+        public let fieldSection: ByteBuffer
 
         @_spi(PackageInternal)
-        init(pushID: HTTP3PushID, fieldSection: FieldSection) {
+        init(pushID: HTTP3PushID, fieldSection: ByteBuffer) {
             self.pushID = pushID
             self.fieldSection = fieldSection
         }

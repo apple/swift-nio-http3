@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
+import NIOCore
 import NIOQUICHelpers
 @_spi(PackageInternal) import QPACK
 import Testing
@@ -209,6 +210,10 @@ extension QPACKDecoder {
         guard let prefix = self.decodeFieldSectionPrefix(fieldSection.prefix) else {
             return .error(QPACKDecoderError.invalidFieldSection)
         }
-        return self.decodeFieldSection(prefix: prefix, lines: fieldSection.lines, streamID: streamID)
+        return self.decodeFieldSection(
+            prefix: prefix,
+            lines: ByteBuffer(fieldLines: fieldSection.lines),
+            streamID: streamID
+        )
     }
 }

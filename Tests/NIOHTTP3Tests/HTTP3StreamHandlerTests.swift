@@ -403,9 +403,10 @@ struct NIOHTTP3StreamHandlerTests {
             Issue.record("Expected a HEADERS frame, got \(String(describing: frame))")
             return
         }
-        #expect(
-            headers.fieldSection.prefix == FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 4096)
-        )
+        // The prefix says Required Insert Count 1 and Base 0. RFC 9204 § 4.5.1.1: the Required Insert Count is
+        // encoded as 1 mod (2 * MaxEntries) + 1 = 2, where MaxEntries = 4096 / 32. § 4.5.1.2: the Base is less than
+        // the Required Insert Count, so the sign bit is set, and the Delta Base is Required Insert Count - Base - 1 = 0.
+        #expect(headers.fieldSection.readableBytesView.prefix(2) == [0x02, 0x80])
     }
 
     /// Write a frame which would result in a stream error.

@@ -144,11 +144,11 @@ extension QPACKDecoder {
         streamBytes: inout ByteBuffer,
         streamID: QUICStreamID
     ) throws -> QPACKFullDecodeResult {
-        guard let fieldSection = try streamBytes.readFieldSection(),
-            let prefix = self.decodeFieldSectionPrefix(fieldSection.prefix)
+        guard let encodedPrefix = try streamBytes.readFieldSectionPrefix(),
+            let prefix = self.decodeFieldSectionPrefix(encodedPrefix)
         else {
             return .error(QPACKDecoderError.invalidFieldSection)
         }
-        return self.decodeFieldSection(prefix: prefix, lines: fieldSection.lines, streamID: streamID)
+        return self.decodeFieldSection(prefix: prefix, lines: streamBytes, streamID: streamID)
     }
 }

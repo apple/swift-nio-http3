@@ -78,7 +78,7 @@ struct StaticQPACKEncoderTests {
         )
         #expect(FieldSection(readingAll: buffer) == expected)
         // Comparing bytes too checks the Huffman coding, which reading undoes.
-        #expect(buffer == ByteBuffer(fieldSection: expected, preferHuffmanEncoding: preferHuffmanEncoding))
+        #expect(buffer == expected.bytes(preferHuffmanEncoding: preferHuffmanEncoding))
     }
 
     @available(anyAppleOS 27, *)
@@ -89,22 +89,5 @@ struct StaticQPACKEncoderTests {
         }
         // Required Insert Count 0, then Base 0
         #expect(Array(buffer.readableBytesView) == [0, 0])
-    }
-}
-
-extension ByteBuffer {
-    /// `fieldSection`, written one line at a time.
-    @available(anyAppleOS 27, *)
-    init(fieldSection: FieldSection, preferHuffmanEncoding: Bool) {
-        var maxLength = QPACKEncodedLength.fieldSectionPrefix(fieldSection.prefix)
-        for line in fieldSection.lines {
-            maxLength += QPACKEncodedLength.maxFieldLine(line)
-        }
-        self.init(initialCapacity: maxLength) { output in
-            output.appendFieldSectionPrefix(fieldSection.prefix)
-            for line in fieldSection.lines {
-                output.appendFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
-            }
-        }
     }
 }

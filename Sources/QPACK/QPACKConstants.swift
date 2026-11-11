@@ -26,7 +26,7 @@ public enum QPACKConstants {
     @inlinable
     public static var defaultTargetEvictableFraction: Double { 0.1 }
 
-    /// Default capacity for field lines array when reading field sections.
+    /// Default capacity for the fields when decoding field sections.
     /// Used for performance optimization to reduce array reallocations.
     static var defaultFieldLinesCapacity: Int { 16 }
 }
