@@ -218,9 +218,8 @@ struct HTTP3GracefulShutdownTests {
         }
     }
 
-    @Test
     @available(anyAppleOS 27, *)
-    func inboundRequestStreamOptsIntoHalfCloseOnStopSending() throws {
+    @Test func inboundRequestStreamOptsIntoHalfCloseOnStopSending() throws {
         let (connectionChannel, handler, _) = try self.makeServerHandler()
         defer { try? connectionChannel.close().wait() }
 
