@@ -46,7 +46,7 @@ public protocol QPACKOutboundDecoderStream: ~Copyable {
 @available(anyAppleOS 27, *)
 public protocol QPACKConnectionDelegate {
     /// Open a unidirectional `HTTP3StreamType.Unidirectional.qpackEncoder` stream and pass it to
-    /// ``QPACKCoder/outboundEncoderStreamReady(_:)``.
+    /// `QPACKCoder/outboundEncoderStreamReady(_:)`.
     ///
     /// Called at most once per connection, and only if the peer permits the dynamic table. Until the stream is
     /// handed back the coder encodes with the static table only.
