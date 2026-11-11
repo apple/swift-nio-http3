@@ -171,21 +171,14 @@ struct HTTP3GracefulShutdownTests {
             }
         )
         try rejectedStreamChannel.syncOptions?.setOption(.quicStreamID, value: 4)
-        try rejectedStreamChannel.connect(to: .init(ipAddress: "127.0.0.1", port: 8000)).wait()
         try handler.inboundStreamReceived(rejectedStreamChannel).wait()
 
         let recordedOutboundEvents = outboundEvents.withLockedValue { $0 }
-        let stopSendingIndex = try #require(recordedOutboundEvents.firstIndex { $0.isStopSendingEvent != nil })
-        let resetStreamIndex = try #require(recordedOutboundEvents.firstIndex { $0.isResetStreamEvent != nil })
-        #expect(stopSendingIndex < resetStreamIndex)
-        #expect(
-            recordedOutboundEvents[stopSendingIndex].isStopSendingEvent?.code
-                == QUICApplicationErrorCode(.requestRejected)
-        )
-        #expect(
-            recordedOutboundEvents[resetStreamIndex].isResetStreamEvent?.code
-                == QUICApplicationErrorCode(.requestRejected)
-        )
+        #expect(recordedOutboundEvents[0].isChannelRegistered)
+        let stopSendingEvent = try #require(recordedOutboundEvents[1].isStopSendingEvent)
+        let resetStreamEvent = try #require(recordedOutboundEvents[2].isResetStreamEvent)
+        #expect(stopSendingEvent.code == QUICApplicationErrorCode(.requestRejected))
+        #expect(resetStreamEvent.code == QUICApplicationErrorCode(.requestRejected))
 
         // A rejected stream counts as open until it closes, and graceful shutdown waits for it.
         // Read the flag first: on failure, `#expect` would describe the channel, and that traps in
