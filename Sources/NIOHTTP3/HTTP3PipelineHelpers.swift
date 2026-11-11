@@ -34,7 +34,6 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - streamInitializer: Called for every inbound request stream.
     /// - Returns: A ``HTTP3ServerConnection`` for iterating the inbound request streams.
     /// - Throws: If the handler could not be added to the pipeline.
-    @_spi(HTTP3AsyncInterface)
     public func configureAsyncHTTP3ServerPipeline<
         Output: Sendable,
         StreamCreator: QUICStreamCreator & SendableMetatype
@@ -76,7 +75,6 @@ extension ChannelPipeline.SynchronousOperations {
     ///     push streams are not supported yet. See https://github.com/apple/swift-nio-http3/issues/1.
     /// - Returns: A ``HTTP3ClientConnection`` for creating request streams.
     /// - Throws: If the handler could not be added to the pipeline.
-    @_spi(HTTP3AsyncInterface)
     public func configureAsyncHTTP3ClientPipeline<
         Output: Sendable,
         StreamCreator: QUICStreamCreator & SendableMetatype

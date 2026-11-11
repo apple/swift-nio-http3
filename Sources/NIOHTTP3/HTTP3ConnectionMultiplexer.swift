@@ -18,7 +18,6 @@ public import NIOQUICHelpers
 // TODO: https://github.com/apple/swift-nio-http3/issues/1
 // Allow creating outbound push streams.
 /// A HTTP/3 connection from a servers side. Allows iterating inbound request streams.
-@_spi(HTTP3AsyncInterface)
 @available(anyAppleOS 27, *)
 public struct HTTP3ServerConnection<Output: Sendable>: Sendable {
     /// An asynchronous sequence of the outputs of the stream initializer, one per inbound request stream. Finishes
@@ -63,7 +62,6 @@ extension HTTP3ServerConnection.InboundStreams.AsyncIterator: Sendable {}
 // TODO: https://github.com/apple/swift-nio-http3/issues/1
 // Allow iterating incoming push streams.
 /// A HTTP/3 connection from a clients side. Allows creating outbound request streams.
-@_spi(HTTP3AsyncInterface)
 @available(anyAppleOS 27, *)
 public struct HTTP3ClientConnection<
     Output: Sendable,

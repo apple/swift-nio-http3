@@ -25,7 +25,7 @@ import Testing
 import X509
 
 @_spi(PackageInternal) @testable import HTTP3
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
+@testable import NIOHTTP3
 @_spi(PackageInternal) @testable import QPACK
 
 /// Buffers incoming body data until end. Then echoes it all back with a 200 status header.

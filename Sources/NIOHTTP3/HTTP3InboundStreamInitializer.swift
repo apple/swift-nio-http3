@@ -50,7 +50,6 @@ public struct HTTP3InboundStreamInitializer: HTTP3InboundStreamInitializerProtoc
 
 /// Yields the output of a stream initializer to an `AsyncStream`. Finishes the `AsyncStream` once the connection has
 /// become inactive.
-@_spi(HTTP3AsyncInterface)
 @available(anyAppleOS 27, *)
 public struct HTTP3AsyncInboundStreamInitializer<Output: Sendable>: HTTP3InboundStreamInitializerProtocol, Sendable {
     private let continuation: AsyncStream<Output>.Continuation

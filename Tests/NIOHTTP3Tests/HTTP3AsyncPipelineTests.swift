@@ -19,7 +19,7 @@ import NIOEmbedded
 import NIOQUICHelpers
 import Testing
 
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
+@testable import NIOHTTP3
 
 struct HTTP3AsyncPipelineTests {
     private let logger = Logger(label: "HTTP3AsyncPipelineTests")

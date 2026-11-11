@@ -24,7 +24,7 @@ import X509
 import struct NIOQUIC.QUICConfiguration
 import struct NIOQUIC.QUICStreamCreator
 
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
+@testable import NIOHTTP3
 
 struct AsyncEndToEndTests {
     @available(anyAppleOS 27, *)

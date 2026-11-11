@@ -24,7 +24,7 @@ import class NIOQUIC.QUICHandler
 import enum NIOQUIC.QUICStreamChannels
 import struct NIOQUIC.QUICStreamCreator
 
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
+@testable import NIOHTTP3
 
 @available(anyAppleOS 27, *)
 typealias QUICHTTP3ConnectionHandler = HTTP3ConnectionHandler<QUICStreamCreator, HTTP3InboundStreamInitializer>
