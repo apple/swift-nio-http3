@@ -14,12 +14,17 @@
 
 import NIOQUICHelpers
 
+/// The type of an HTTP/3 stream (RFC 9114 § 6).
 @available(anyAppleOS 27, *)
 public enum HTTP3StreamType: Sendable {
+    /// A unidirectional stream. Its type is the first variable-length integer on the stream.
     case unidirectional(Unidirectional)
-    case request  // Bidirectional streams must be request streams
+    /// A request stream. All bidirectional streams are request streams.
+    case request
 
-    /// Unidirectional stream types.
+    /// Unidirectional stream types (RFC 9114 § 6.2).
+    ///
+    /// Write one at the start of a unidirectional stream with ``OutputRawSpan/appendHTTP3StreamType(_:)``.
     public enum Unidirectional: Hashable, RawRepresentable, CustomStringConvertible, Sendable {
         /// Type 0x00. Carries HTTP3 frames such as settings, goaway, etc.
         case control
@@ -32,7 +37,7 @@ public enum HTTP3StreamType: Sendable {
         /// Type not known to this implementation.
         case unknown(raw: UInt64)
 
-        /// RFC 9114 § 6.2 specifies the mapping.
+        /// The stream type value sent on the wire. RFC 9114 § 6.2 specifies the mapping.
         public var rawValue: UInt64 {
             switch self {
             case .control: return 0
@@ -53,6 +58,9 @@ public enum HTTP3StreamType: Sendable {
             }
         }
 
+        /// Creates a stream type from its wire value. Unknown values map to ``unknown(raw:)``.
+        ///
+        /// - Precondition: `rawValue` must fit in a QUIC variable-length integer (at most 2^62 - 1).
         public init(rawValue: UInt64) {
             precondition(rawValue <= QUICEncodableInteger.maxValue, "Invalid stream type \(rawValue)")
             switch rawValue {
@@ -75,8 +83,11 @@ public enum HTTP3StreamType: Sendable {
 extension HTTP3StreamType {
     /// Stream types which carry HTTP3 frames (other streams, e.g. qpack streams, do not). This is a subset of ``HTTP3StreamType``.
     public enum Framed: Hashable, CustomStringConvertible, Sendable {
+        /// A request stream.
         case request
+        /// A push stream.
         case push
+        /// The control stream.
         case control
 
         public var description: String {
@@ -88,6 +99,7 @@ extension HTTP3StreamType {
         }
     }
 
+    /// Creates the stream type of a framed stream.
     public init(_ framed: Framed) {
         switch framed {
         case .request:
