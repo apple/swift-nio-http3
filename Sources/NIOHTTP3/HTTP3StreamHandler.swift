@@ -220,10 +220,10 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
                 self.logger.trace("HTTP3StreamHandler waiting for QPACK decode")
                 self.qpackCoder.decodeFields(partialHeader.fieldSection, streamID: self.streamID, decodeReceiver: self)
             case .emitStreamError(let error):
-                context.triggerUserOutboundEvent(
-                    QUICStopSendingEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
-                    promise: nil
-                )
+                // Abort both directions (read and write), so that the peer doesn't wait for a response either.
+                let code = QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)
+                context.triggerUserOutboundEvent(QUICStopSendingEvent(code: code), promise: nil)
+                context.triggerUserOutboundEvent(QUICResetStreamEvent(code: code), promise: nil)
                 context.fireErrorCaught(error)
             case .emitConnectionError(let error):
                 self.delegate.onConnectionError(error)
