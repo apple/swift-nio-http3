@@ -12,8 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) import QPACK
-
 public import struct NIOCore.ByteBuffer
 
 /// A decoder for ``HTTP3PartialFrame``.
@@ -251,9 +249,8 @@ extension ByteBuffer {
         case .data:
             fatalError("Implementation error, this function should not be used to read a whole data frame.")
         case .headers:
-            guard let fieldSection = try self.readFieldSectionWithHTTP3Error() else {
-                return nil
-            }
+            // The field section will be decoded in QPACK decoders. Let's just extract the bytes here.
+            let fieldSection = self.readSlice(length: self.readableBytes)!
             return .known(.headers(.init(fieldSection: fieldSection)))
         case .cancelPush:
             guard let pushID = self.readEncodedInteger(as: UInt64.self, strategy: .quic) else {
@@ -268,9 +265,8 @@ extension ByteBuffer {
             guard let pushID = self.readEncodedInteger(as: UInt64.self, strategy: .quic) else {
                 return nil
             }
-            guard let fieldSection = try self.readFieldSectionWithHTTP3Error() else {
-                return nil
-            }
+            // The field section will be decoded in QPACK decoders. Let's just extract the bytes here.
+            let fieldSection = self.readSlice(length: self.readableBytes)!
             return .known(.pushPromise(.init(pushID: .init(rawValue: pushID), fieldSection: fieldSection)))
         case .goaway:
             guard let id = self.readEncodedInteger(as: UInt64.self, strategy: .quic) else {
@@ -287,24 +283,6 @@ extension ByteBuffer {
             // We want to skip the payload for unknown types
             self.moveReaderIndex(forwardBy: self.readableBytes)
             return .unknown
-        }
-    }
-
-    @available(anyAppleOS 27, *)
-    private mutating func readFieldSectionWithHTTP3Error() throws(HTTP3Error) -> FieldSection? {
-        do {
-            return try self.readFieldSection()
-        } catch {
-            switch error {
-            case .unrepresentable:
-                throw HTTP3Error(
-                    code: .integerTooLarge,
-                    message: "Integer is too large",
-                    cause: error,
-                    errorCode: .generalProtocolError,
-                    location: .here()
-                )
-            }
         }
     }
 }

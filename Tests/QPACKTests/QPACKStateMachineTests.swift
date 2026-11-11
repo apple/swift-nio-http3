@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
+import NIOCore
 import NIOQUICHelpers
 import Testing
 
@@ -250,7 +251,7 @@ struct QPACKStateMachineTests {
             prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
             lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
         )
-        let action = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: receiver)
+        let action = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: receiver)
         guard case .informDecodeResult(let result, let context) = action else {
             Issue.record("Unexpected action \(String(describing: action))")
             return
@@ -287,7 +288,7 @@ struct QPACKStateMachineTests {
             lines: [.indexedWithPostBase(index: 0)]
         )
         let receiver = 3
-        let actions2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: receiver)
+        let actions2 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: receiver)
         guard case .informDecodeResult(let decodeResult, let context) = actions2 else {
             Issue.record("Unexpected action \(String(describing: actions2))")
             return
@@ -318,7 +319,7 @@ struct QPACKStateMachineTests {
             prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 100),
             lines: [.indexedWithPostBase(index: 0)]
         )
-        let action2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
+        let action2 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: contextID)
 
         guard case .emitConnectionError(let error, let context) = action2 else {
             Issue.record("Unexpected actions \(String(describing: action2))")
@@ -343,7 +344,7 @@ struct QPACKStateMachineTests {
             prefix: FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0),
             lines: [.literal(requireLiteralRepresentation: false, name: "ILLEGAL", value: "value")]
         )
-        let action2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
+        let action2 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: contextID)
         guard case .informDecodeError(let error, let context) = action2 else {
             Issue.record("Unexpected actions \(String(describing: action2))")
             return
@@ -368,7 +369,7 @@ struct QPACKStateMachineTests {
             lines: [.indexedWithPostBase(index: 0)]
         )
         let contextID = 12
-        let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
+        let actions3 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: contextID)
         // The machine can't decode it, because it hasn't received that entry yet
         #expect(actions3 == nil)
 
@@ -412,7 +413,7 @@ struct QPACKStateMachineTests {
             ]
         )
         let contextID = 6
-        let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
+        let actions3 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: contextID)
         // The machine can't decode it, because it hasn't received that entry yet
         #expect(actions3 == nil)
 
@@ -447,7 +448,7 @@ struct QPACKStateMachineTests {
                 .literal(requireLiteralRepresentation: false, name: "test", value: "test")
             ]
         )
-        let actions3 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
+        let actions3 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: contextID)
         // The machine can't decode it, because the prefix is nonsense
         guard case .emitConnectionError(let error, let context) = actions3 else {
             Issue.record("Unexpected action \(String(describing: actions3))")
@@ -455,6 +456,107 @@ struct QPACKStateMachineTests {
         }
         #expect(error == .invalidFieldSectionPrefix)
         #expect(context == contextID)
+    }
+
+    // MARK: Malformed field sections
+
+    // RFC 9204 § 6: A field section the decoder can't interpret is a connection error of type
+    // QPACK_DECOMPRESSION_FAILED.
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeEmptyFieldSection() {
+        var stateMachine = QPACKStateMachine<Int>(decoderTableMaxCapacity: 1024, decoderMaxBlockedStreams: 100)
+        // Not even a prefix.
+        let action = stateMachine.decodeHeaders(ByteBuffer(), forStream: 0, context: 7)
+        Self.expectConnectionError(action, .invalidFieldSectionPrefix, context: 7)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeTruncatedFieldSectionPrefix() {
+        var stateMachine = QPACKStateMachine<Int>(decoderTableMaxCapacity: 1024, decoderMaxBlockedStreams: 100)
+        // Required Insert Count 0, without the Delta Base which follows it.
+        let action = stateMachine.decodeHeaders(ByteBuffer(bytes: [0x00]), forStream: 0, context: 7)
+        Self.expectConnectionError(action, .invalidFieldSectionPrefix, context: 7)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeFieldSectionPrefixWithUnrepresentableInteger() {
+        var stateMachine = QPACKStateMachine<Int>(decoderTableMaxCapacity: 1024, decoderMaxBlockedStreams: 100)
+        var fieldSection = ByteBuffer()
+        // A Required Insert Count larger than an Int, then Delta Base 0.
+        fieldSection.writeWithOutputRawSpan(minimumWritableBytes: 11) {
+            $0.appendQPACKPrefixedInteger(UInt.max, prefix: 8)
+        }
+        fieldSection.writeInteger(UInt8(0))
+        let action = stateMachine.decodeHeaders(fieldSection, forStream: 0, context: 7)
+        Self.expectConnectionError(action, .invalidFieldSectionPrefix, context: 7)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeTruncatedFieldLine() {
+        var stateMachine = QPACKStateMachine<Int>(decoderTableMaxCapacity: 1024, decoderMaxBlockedStreams: 100)
+        var fieldSection = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+            lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
+        ).bytes()
+        // Cut the last byte off the value.
+        fieldSection.moveWriterIndex(to: fieldSection.writerIndex - 1)
+        let action = stateMachine.decodeHeaders(fieldSection, forStream: 0, context: 7)
+        Self.expectConnectionError(action, .decodeError(.invalidFieldSection), context: 7)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeFieldLineWithUnrepresentableInteger() {
+        var stateMachine = QPACKStateMachine<Int>(decoderTableMaxCapacity: 1024, decoderMaxBlockedStreams: 100)
+        // Required Insert Count 0, Delta Base 0.
+        var fieldSection = ByteBuffer(bytes: [0x00, 0x00])
+        // An indexed field line (11 for indexed and static) whose index is larger than an Int.
+        fieldSection.writeWithOutputRawSpan(minimumWritableBytes: 11) {
+            $0.appendQPACKPrefixedInteger(UInt.max, prefix: 6, prefixBits: 0xC0)
+        }
+        let action = stateMachine.decodeHeaders(fieldSection, forStream: 0, context: 7)
+        Self.expectConnectionError(action, .decodeError(.invalidFieldSection), context: 7)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeTruncatedFieldLineDelayed() {
+        var stateMachine = QPACKStateMachine<Int>(decoderTableMaxCapacity: 1024, decoderMaxBlockedStreams: 100)
+        stateMachine.setupRemoteDynamicTable(maxSize: 1024)
+        stateMachine.setupLocalDynamicTable(maxSize: 1024)
+        stateMachine.setupOutboundDecoderStream()
+
+        var fieldSection = FieldSection(
+            prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
+            lines: [
+                .indexedWithPostBase(index: 0),
+                .literal(requireLiteralRepresentation: false, name: "cookie", value: "test"),
+            ]
+        ).bytes()
+        fieldSection.moveWriterIndex(to: fieldSection.writerIndex - 1)
+        // The lines are only read once the section is unblocked.
+        #expect(stateMachine.decodeHeaders(fieldSection, forStream: 0, context: 7) == nil)
+
+        let action = stateMachine.receivedIncomingEncoderInstruction(
+            .insertWithLiteralName(name: "cookie", value: "test")
+        )
+        #expect(action?.decoderInstructions == .insertCountIncrement(increment: 1))
+        Self.expectConnectionError(stateMachine.checkPendingDecodes(), .decodeError(.invalidFieldSection), context: 7)
+    }
+
+    @available(anyAppleOS 27, *)
+    private static func expectConnectionError(
+        _ action: QPACKStateMachine<Int>.DecodeHeaderAction?,
+        _ expectedError: QPACKError,
+        context expectedContext: Int,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        guard case .emitConnectionError(let error, let context) = action else {
+            Issue.record("Unexpected action \(String(describing: action))", sourceLocation: sourceLocation)
+            return
+        }
+        #expect(error == expectedError, sourceLocation: sourceLocation)
+        #expect(error.isConnectionError, sourceLocation: sourceLocation)
+        #expect(context == expectedContext, sourceLocation: sourceLocation)
     }
 
     @available(anyAppleOS 27, *)
@@ -478,16 +580,16 @@ struct QPACKStateMachineTests {
         )
 
         // Max blocked streams is 3, so the first 3 are fine, they just get queued
-        let action1 = stateMachine.decodeHeaders(testHeader, forStream: streamID1, context: contextID)
+        let action1 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID1, context: contextID)
         #expect(action1 == nil)
-        let action2 = stateMachine.decodeHeaders(testHeader, forStream: streamID2, context: contextID)
+        let action2 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID2, context: contextID)
         #expect(action2 == nil)
-        let action3 = stateMachine.decodeHeaders(testHeader, forStream: streamID3, context: contextID)
+        let action3 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID3, context: contextID)
         #expect(action3 == nil)
 
         // Trying to queue on a 4th stream is a connection error
         // RFC 9204 2.1.2: If a decoder encounters more blocked streams than it promised to support, it MUST treat this as a connection error of type QPACK_DECOMPRESSION_FAILED.
-        let action4 = stateMachine.decodeHeaders(testHeader, forStream: streamID4, context: contextID)
+        let action4 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID4, context: contextID)
         guard case .emitConnectionError(let error, let context) = action4 else {
             Issue.record("Unexpected action \(String(describing: action4))")
             return
@@ -517,7 +619,7 @@ struct QPACKStateMachineTests {
         )
         let streamID = QUICStreamID(0)
         let contextID = 11
-        let actions2 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
+        let actions2 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: contextID)
         // The action is only to inform the decode result, there is no section acknowledgment because the outbound stream isn't ready
         #expect(
             actions2
@@ -695,7 +797,7 @@ struct QPACKStateMachineTests {
             prefix: FieldSectionPrefix(requiredInsertCount: 1, base: 0).encode(maxCapacity: 100),
             lines: [.indexedWithPostBase(index: 0)]
         )
-        let actions1 = stateMachine.decodeHeaders(testHeader, forStream: streamID, context: contextID)
+        let actions1 = stateMachine.decodeHeaders(testHeader.bytes(), forStream: streamID, context: contextID)
         // The state machine will have queued the decoding, so we don't have an action yet.
         #expect(actions1 == nil)
 

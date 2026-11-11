@@ -60,16 +60,6 @@ struct QPACKEncodeResult {
 }
 
 @available(anyAppleOS 27, *)
-extension FieldSection {
-    /// Reads the field section which takes up the whole of `buffer`.
-    init(readingAll buffer: ByteBuffer, sourceLocation: SourceLocation = #_sourceLocation) {
-        var buffer = buffer
-        self = try! buffer.readFieldSection()!
-        #expect(buffer.readableBytes == 0, sourceLocation: sourceLocation)
-    }
-}
-
-@available(anyAppleOS 27, *)
 extension StaticQPACKEncoder {
     /// The field section the encoder writes for `headers`, read back from its bytes.
     func encode(headers: [HTTPField], sourceLocation: SourceLocation = #_sourceLocation) -> FieldSection {
