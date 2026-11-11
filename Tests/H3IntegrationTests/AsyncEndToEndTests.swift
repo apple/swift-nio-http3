@@ -567,8 +567,8 @@ struct AsyncEndToEndTests {
         try await serverChannel.close()
     }
 
-    @Test(arguments: Self.standardAuthenticationConfigurations)
     @available(anyAppleOS 27, *)
+    @Test(arguments: Self.standardAuthenticationConfigurations)
     func requestBodyWritesFailAfterReceivingStopSending(
         authenticationConfiguration: AuthenticationConfiguration
     ) async throws {
