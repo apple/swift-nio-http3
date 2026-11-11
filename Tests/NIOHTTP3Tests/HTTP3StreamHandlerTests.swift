@@ -925,13 +925,13 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(eventsAfterResponse[1].isChannelReadComplete)
         #expect(eventsAfterResponse[2].isInputClosedEvent)
 
-        // Later writes fail the same way, still without an error in the pipeline.
+        // Later writes fail the same way, and add no event to the pipeline.
         let laterWritePromise = eventLoop.makePromise(of: Void.self)
         channel.writeAndFlush(HTTP3Frame.data(.init(bytes: [1, 2, 3])), promise: laterWritePromise)
         expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
             try laterWritePromise.futureResult.wait()
         }
-        #expect(!inboundEvents.withLockedValue { $0 }.contains { $0.isErrorCaught })
+        #expect(inboundEvents.withLockedValue { $0 }.count == 6)
     }
 
     /// When a stream closes after the whole response has arrived, NIOQUIC reports the peer's STOP_SENDING as an error.
@@ -965,10 +965,16 @@ struct NIOHTTP3StreamHandlerTests {
         try channel.close().wait()
 
         let recordedEvents = inboundEvents.withLockedValue { $0 }
-        #expect(!recordedEvents.contains { $0.isErrorCaught })
-        let readFrameAny = try #require(recordedEvents.lazy.compactMap(\.readValue).first)
+        try #require(recordedEvents.count == 8)
+        #expect(recordedEvents[0].isChannelRegistered)
+        #expect(recordedEvents[1].isOutputClosedEvent)
+        #expect(recordedEvents[2].isStopSendingEvent != nil)
+        let readFrameAny = try #require(recordedEvents[3].readValue)
         #expect(handler.unwrapOutboundIn(readFrameAny) == .headers(self.testResponseHeaderFields))
-        #expect(recordedEvents.contains { $0.isInputClosedEvent })
+        #expect(recordedEvents[4].isChannelReadComplete)
+        #expect(recordedEvents[5].isInputClosedEvent)
+        #expect(recordedEvents[6].isChannelInactive)
+        #expect(recordedEvents[7].isChannelUnregistered)
     }
 
     /// A STOP_SENDING error before the end of the response means the stream closes with inbound data missing. That is
@@ -1023,16 +1029,6 @@ extension DebugInboundEventsHandler.Event {
 
         default:
             return nil
-        }
-    }
-
-    var isErrorCaught: Bool {
-        switch self {
-        case .errorCaught:
-            return true
-
-        default:
-            return false
         }
     }
 
