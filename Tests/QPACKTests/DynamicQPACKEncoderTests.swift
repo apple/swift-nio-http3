@@ -71,7 +71,7 @@ struct DynamicQPACKEncoderTests {
             let fieldSection = FieldSection(readingAll: buffer)
             // Reading undoes the Huffman coding, so check it by writing the lines back.
             #expect(
-                buffer == ByteBuffer(fieldSection: fieldSection, preferHuffmanEncoding: preferHuffmanEncoding),
+                buffer == fieldSection.bytes(preferHuffmanEncoding: preferHuffmanEncoding),
                 "round \(round)"
             )
             if fieldSection.prefix.encodedRequiredInsertCount == 0
@@ -86,7 +86,7 @@ struct DynamicQPACKEncoderTests {
             let prefix = try #require(decoder.decodeFieldSectionPrefix(fieldSection.prefix), "round \(round)")
             let decoded = try decoder.decodeFieldSection(
                 prefix: prefix,
-                lines: fieldSection.lines,
+                lines: ByteBuffer(fieldLines: fieldSection.lines),
                 streamID: streamID
             ).unwrap()
             let (fields, acknowledgement) = try #require(decoded, "round \(round)")
@@ -129,11 +129,11 @@ struct DynamicQPACKEncoderTests {
                 _ = try decoder.processInstruction(instruction)
             }
 
-            let fieldSection = try #require(try buffer.readFieldSection(), "round \(round)")
-            let prefix = try #require(decoder.decodeFieldSectionPrefix(fieldSection.prefix), "round \(round)")
+            let encodedPrefix = try #require(try buffer.readFieldSectionPrefix(), "round \(round)")
+            let prefix = try #require(decoder.decodeFieldSectionPrefix(encodedPrefix), "round \(round)")
             let decoded = try decoder.decodeFieldSection(
                 prefix: prefix,
-                lines: fieldSection.lines,
+                lines: buffer,
                 streamID: streamID
             ).unwrap()
             let (fields, acknowledgement) = try #require(decoded, "round \(round)")
