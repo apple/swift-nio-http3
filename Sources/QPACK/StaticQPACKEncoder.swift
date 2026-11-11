@@ -19,14 +19,14 @@ public import HTTPTypes
 public struct StaticQPACKEncoder {
     public init() {}
 
-    /// The largest number of bytes ``encode(headers:into:preferHuffmanEncoding:)`` appends for `headers`.
-    public func maxEncodedLength(of headers: [HTTPField]) -> Int {
-        Self.prefixLength &+ QPACKEncodedLength.maxFieldLines(headers, indexLimit: StaticHeaderTable.raw.count)
+    /// The largest number of bytes ``encode(headers:into:preferHuffmanEncoding:)`` appends for `fields`.
+    public func maxEncodedLength(of fields: [HTTPField]) -> Int {
+        Self.prefixLength &+ QPACKEncodedLength.maxFieldLines(fields, indexLimit: StaticHeaderTable.raw.count)
     }
 
     /// Encodes `headers` into a field section, and appends it to `output`.
     ///
-    /// - Precondition: `output` has room for ``maxEncodedLength(of:)`` more bytes.
+    /// - Precondition: `output` has room for ``maxEncodedLength(of:)-([HTTPField])`` more bytes.
     public func encode(headers: [HTTPField], into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
         output.appendFieldSectionPrefix(Self.staticPrefix)
         for header in headers {
@@ -40,7 +40,7 @@ public struct StaticQPACKEncoder {
         FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
     }
 
-    /// The max number of bytes ``encode(request:into:preferHuffmanEncoding:)`` appends to `output`
+    /// The largest number of bytes ``encode(request:into:preferHuffmanEncoding:)`` appends for `request`.
     public func maxEncodedLength(of request: HTTPRequest) -> Int {
         let pseudo = request.pseudoHeaderFields
         var length = Self.prefixLength &+ Self.maxEncodedLength(of: pseudo.method)
@@ -97,17 +97,17 @@ public struct StaticQPACKEncoder {
         self.append(response.headerFields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
     }
 
-    /// The largest number of bytes ``encode(trailers:into:preferHuffmanEncoding:)`` appends for `trailers`.
-    public func maxEncodedLength(of trailers: HTTPFields) -> Int {
-        Self.prefixLength &+ Self.maxEncodedLength(of: trailers)
+    /// The largest number of bytes ``encode(fields:into:preferHuffmanEncoding:)`` appends for `fields`.
+    public func maxEncodedLength(of fields: HTTPFields) -> Int {
+        Self.prefixLength &+ Self.maxEncodedLength(of: fields)
     }
 
-    /// Encodes `trailers` into a field section, and appends it to `output`.
+    /// Encodes `fields` into a field section, and appends it to `output`.
     ///
     /// - Precondition: `output` has room for ``maxEncodedLength(of:)-(HTTPFields)`` more bytes.
-    public func encode(trailers: HTTPFields, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+    public func encode(fields: HTTPFields, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
         output.appendFieldSectionPrefix(Self.staticPrefix)
-        self.append(trailers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+        self.append(fields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
     }
 
     private static var prefixLength: Int {

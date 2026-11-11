@@ -163,7 +163,7 @@ struct StaticQPACKEncoderTests {
         let trailers = HTTPFields(Self.headers.filter { !$0.name.rawName.hasPrefix(":") })
         let encoder = StaticQPACKEncoder()
         let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: trailers)) {
-            encoder.encode(trailers: trailers, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
+            encoder.encode(fields: trailers, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
         }
 
         #expect(buffer == Self.encode(Array(trailers), preferHuffmanEncoding: preferHuffmanEncoding))
@@ -173,7 +173,7 @@ struct StaticQPACKEncoderTests {
     @Test func writesNothingButThePrefixForNoTrailers() {
         let encoder = StaticQPACKEncoder()
         let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: HTTPFields())) {
-            encoder.encode(trailers: HTTPFields(), into: &$0, preferHuffmanEncoding: true)
+            encoder.encode(fields: HTTPFields(), into: &$0, preferHuffmanEncoding: true)
         }
         #expect(Array(buffer.readableBytesView) == [0, 0])
     }
