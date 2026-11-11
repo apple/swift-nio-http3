@@ -10,14 +10,15 @@ Implementation of HTTP3 on top of swift-nio.
 
 - ``HTTP3ServerConfiguration``
 - ``HTTP3ServerConnection``
-- ``HTTP3ServerConnectionMultiplexer``
+- ``HTTP3AsyncInboundStreamInitializer``
 - ``HTTP3ServerTypesHandler``
 
 ### Clients
 - ``HTTP3ClientConfiguration``
 - ``HTTP3ClientConnection``
-- ``HTTP3ClientConnectionMultiplexer``
 - ``HTTP3ClientTypesHandler``
 
 ### Common 
 - ``HTTP3ConnectionHandler``
+- ``HTTP3InboundStreamInitializerProtocol``
+- ``HTTP3InboundStreamInitializer``

@@ -15,6 +15,8 @@
 public import HTTPTypes
 public import NIOQUICHelpers
 
+public import struct NIOCore.ByteBuffer
+
 /// A stream to send encoder instructions on, which the peer can then use in its QPACKDecoder
 ///
 /// This is the unidirectional QPACK encoder stream of RFC 9204 § 4.2.1. It only exists if the peer's settings
@@ -42,7 +44,6 @@ public protocol QPACKOutboundDecoderStream: ~Copyable {
 
 /// An object representing an HTTP3Connection, which opens the outbound encoder stream on request.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public protocol QPACKConnectionDelegate {
     /// Open a unidirectional `HTTP3StreamType.Unidirectional.qpackEncoder` stream and pass it to
     /// ``QPACKCoder/outboundEncoderStreamReady(_:)``.
@@ -305,12 +306,13 @@ public final class QPACKCoder<
     ///              will invoke the ``QPACKDecodeReceiver/decodeResult(_:)`` method syncronously.
     ///
     /// - Parameters:
-    ///   - fieldSection: The field section to QPACK decode
+    ///   - fieldSection: The QPACK encoded field section, e.g. the payload of a HEADERS frame. A malformed one is a
+    ///     connection error, like any other field section the decoder can't interpret (RFC 9204 § 6).
     ///   - streamID: The stream id of the stream, that received the header frame
     ///   - decodeReceiver: The object that needs to be informed about the decode result.
     @_spi(PackageInternal)
     public func decodeFields(
-        _ fieldSection: FieldSection,
+        _ fieldSection: ByteBuffer,
         streamID: QUICStreamID,
         decodeReceiver: DecodeReceiver
     ) {

@@ -12,17 +12,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) import HTTP3
+@_spi(PackageInternal) public import HTTP3
 import HTTPTypes
-import Logging
-import NIOCore
-import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
+public import Logging
+public import NIOCore
+public import NIOQUICHelpers
+@_spi(PackageInternal) public import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
 @available(anyAppleOS 27, *)
-final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator> {
+@usableFromInline
+final class HTTP3ConnectionCoordinator<
+    QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator,
+    InboundStreamInitializer: HTTP3InboundStreamInitializer
+> {
 
     /// The QPACK coder used by all streams of this connection. The coordinator is both the QPACK
     /// connection delegate and the stream delegate of every stream handler.
@@ -38,13 +42,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     ///
     /// Setting this creates a strong retain cycle which is broken by the connection handler when
     /// it's removed from the channel pipeline.
-    private var connection: HTTP3ConnectionHandler<QUICStreamCreator>?
+    private var connection: HTTP3ConnectionHandler<QUICStreamCreator, InboundStreamInitializer>?
     private let preferHuffmanEncoding: Bool
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.
     private var streamHandlers = [QUICStreamID: StreamHandler]()
     private var datagramBuffer: HTTP3DatagramBuffer
 
+    @usableFromInline
     init(
         eventLoop: any EventLoop,
         localSettings: HTTP3Settings,
@@ -71,7 +76,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         )
     }
 
-    func setConnectionHandler(_ handler: HTTP3ConnectionHandler<QUICStreamCreator>?) {
+    func setConnectionHandler(_ handler: HTTP3ConnectionHandler<QUICStreamCreator, InboundStreamInitializer>?) {
         self.eventLoop.preconditionInEventLoop()
         self.connection = handler
     }
@@ -144,7 +149,9 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     // MARK: Outbound streams
 
     /// Create an outbound stream, write the stream type, add the handlers and hand the stream to the QPACK coder.
-    private func createQPACKEncoderInstructionStream() {
+    @usableFromInline
+    // private but usableFromInline
+    func createQPACKEncoderInstructionStream() {
         self.eventLoop.assertInEventLoop()
         self.createOutboundUnidirectionalStream(ofType: .qpackEncoder) {
             let streamChannel = $0.channel
@@ -300,16 +307,15 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
     // MARK: - New Inbound streams -
 
-    func inboundStreamInitializer<Output: Sendable>(
+    func inboundStreamInitializer(
         parameters: HTTP3StreamInitializerParameters,
         addTypeHandlers: Bool,
-        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>,
+        userInboundStreamInitializer: InboundStreamInitializer,
         internalInboundStreamInitializer: (
             (
                 any Channel, QUICStreamID, HTTP3StreamType.Unidirectional
             ) -> EventLoopFuture<Void>
-        )?,
-        onUserStream: @escaping @Sendable (Output) -> Void
+        )?
     ) -> EventLoopFuture<Void> {
         self.eventLoop.preconditionInEventLoop()
         if parameters.streamID.isBidirectional {
@@ -318,8 +324,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             return self.inboundRequestStreamInitializer(
                 parameters: parameters,
                 addTypeHandlers: addTypeHandlers,
-                userInboundStreamInitializer: userInboundStreamInitializer,
-                onUserStream: onUserStream
+                userInboundStreamInitializer: userInboundStreamInitializer
             )
         } else {
             return self.inboundUnidirectionalStreamInitializer(
@@ -329,11 +334,10 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         }
     }
 
-    private func inboundRequestStreamInitializer<Output: Sendable>(
+    private func inboundRequestStreamInitializer(
         parameters: HTTP3StreamInitializerParameters,
         addTypeHandlers: Bool,
-        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>,
-        onUserStream: @escaping @Sendable (Output) -> Void
+        userInboundStreamInitializer: InboundStreamInitializer
     ) -> EventLoopFuture<Void> {
         let streamID = parameters.streamID
         let streamChannel = parameters.channel
@@ -356,7 +360,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 }
                 // State machine now considers the stream to be open: deliver the datagrams now.
                 self.emitBufferedDatagrams(forStream: streamID)
-                return userInboundStreamInitializer(parameters).map(onUserStream)
+                return userInboundStreamInitializer.initialize(parameters)
             } catch {
                 self.datagramBuffer.discardDatagrams(forStream: streamID)
                 return streamChannel.eventLoop.makeFailedFuture(error)
@@ -901,6 +905,7 @@ extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
 
 @available(anyAppleOS 27, *)
 extension HTTP3ConnectionCoordinator: QPACKConnectionDelegate {
+    @inlinable
     func makeOutboundEncoderStream() {
         self.createQPACKEncoderInstructionStream()
     }
