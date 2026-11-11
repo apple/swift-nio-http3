@@ -192,7 +192,7 @@ extension HTTP3GracefulShutdownTests {
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundPushStreamInitializer: { _ in
+            inboundPushStreamInitializer: HTTP3InboundStreamInitializer { _ in
                 fatalError("Push streams are not supported")
             }
         )
@@ -218,7 +218,7 @@ extension HTTP3GracefulShutdownTests {
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundRequestStreamInitializer: { _ in loop.makeSucceededVoidFuture() }
+            inboundRequestStreamInitializer: HTTP3InboundStreamInitializer { $0.channel.eventLoop.makeSucceededVoidFuture() }
         )
         let connectionChannel = EmbeddedChannel(handler: handler, loop: loop)
         return (connectionChannel, handler, streamChannel)

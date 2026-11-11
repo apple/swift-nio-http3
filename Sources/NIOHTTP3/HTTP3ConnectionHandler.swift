@@ -102,7 +102,7 @@ public final class HTTP3ConnectionHandler<
     ///   - settings: The HTTP3Settings to be used on each incoming connection.
     ///   - streamCreator: For creating outbound streams.
     ///   - logger: A logger.
-    ///   - inboundRequestStreamInitializer: A closure which will be called for every incoming request stream.
+    ///   - inboundRequestStreamInitializer: Called for every incoming request stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
     public static func server(
         eventLoop: any EventLoop,
@@ -110,8 +110,8 @@ public final class HTTP3ConnectionHandler<
         settings: HTTP3Settings,
         streamCreator: StreamCreator,
         logger: Logger,
-        inboundRequestStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
-    ) -> Self where InboundStreamInitializer == HTTP3InboundStreamInitializer {
+        inboundRequestStreamInitializer: InboundStreamInitializer
+    ) -> Self {
         self.server(
             eventLoop: eventLoop,
             configuration: configuration,
@@ -124,41 +124,6 @@ public final class HTTP3ConnectionHandler<
     }
 
     /// Internal version of the above, allows accessing internal inbound streams.
-    /// - Parameters:
-    ///   - eventLoop: The event loop of the channel this handler will be on.
-    ///   - configuration: Configuration for the handler.
-    ///   - settings: The HTTP3Settings to be used on each incoming connection.
-    ///   - streamCreator: For creating outbound streams.
-    ///   - logger: A logger.
-    ///   - inboundRequestStreamInitializer: A closure which will be called for every incoming request stream.
-    ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-request stream.
-    /// - Returns: A ``HTTP3ConnectionHandler``.
-    static func server(
-        eventLoop: any EventLoop,
-        configuration: HTTP3ServerConfiguration,
-        settings: HTTP3Settings,
-        streamCreator: StreamCreator,
-        logger: Logger,
-        inboundRequestStreamInitializer:
-            @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<
-                Void
-            >,
-        internalInboundStreamInitializer: (
-            (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
-        )?
-    ) -> Self where InboundStreamInitializer == HTTP3InboundStreamInitializer {
-        self.server(
-            eventLoop: eventLoop,
-            configuration: configuration,
-            settings: settings,
-            streamCreator: streamCreator,
-            logger: logger,
-            inboundRequestStreamInitializer: HTTP3InboundStreamInitializer(inboundRequestStreamInitializer),
-            internalInboundStreamInitializer: internalInboundStreamInitializer
-        )
-    }
-
-    /// Create a ``HTTP3ConnectionHandler`` for use in a server.
     /// - Parameters:
     ///   - eventLoop: The event loop of the channel this handler will be on.
     ///   - configuration: Configuration for the handler.
@@ -202,7 +167,7 @@ public final class HTTP3ConnectionHandler<
     ///   - settings: The HTTP3Settings to be used on each incoming connection.
     ///   - streamCreator: For creating outbound streams.
     ///   - logger: A logger.
-    ///   - inboundPushStreamInitializer: A closure which will be called for every incoming push stream.
+    ///   - inboundPushStreamInitializer: Called for every incoming push stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
     public static func client(
         eventLoop: any EventLoop,
@@ -210,8 +175,8 @@ public final class HTTP3ConnectionHandler<
         settings: HTTP3Settings,
         streamCreator: StreamCreator,
         logger: Logger,
-        inboundPushStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>
-    ) -> Self where InboundStreamInitializer == HTTP3InboundStreamInitializer {
+        inboundPushStreamInitializer: InboundStreamInitializer
+    ) -> Self {
         self.client(
             eventLoop: eventLoop,
             configuration: configuration,
@@ -224,38 +189,6 @@ public final class HTTP3ConnectionHandler<
     }
 
     /// Internal version of the above, allows accessing internal inbound streams.
-    /// - Parameters:
-    ///   - eventLoop: The event loop of the channel this handler will be on.
-    ///   - configuration: Configuration for the handler.
-    ///   - settings: The HTTP3Settings to be used on each incoming connection.
-    ///   - streamCreator: For creating outbound streams.
-    ///   - logger: A logger.
-    ///   - inboundPushStreamInitializer: A closure which will be called for every incoming push stream.
-    ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-push stream.
-    /// - Returns: A ``HTTP3ConnectionHandler``.
-    static func client(
-        eventLoop: any EventLoop,
-        configuration: HTTP3ClientConfiguration,
-        settings: HTTP3Settings,
-        streamCreator: StreamCreator,
-        logger: Logger,
-        inboundPushStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Void>,
-        internalInboundStreamInitializer: (
-            (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
-        )?
-    ) -> Self where InboundStreamInitializer == HTTP3InboundStreamInitializer {
-        self.client(
-            eventLoop: eventLoop,
-            configuration: configuration,
-            settings: settings,
-            streamCreator: streamCreator,
-            logger: logger,
-            inboundPushStreamInitializer: HTTP3InboundStreamInitializer(inboundPushStreamInitializer),
-            internalInboundStreamInitializer: internalInboundStreamInitializer
-        )
-    }
-
-    /// Create a ``HTTP3ConnectionHandler`` for use in a client.
     /// - Parameters:
     ///   - eventLoop: The event loop of the channel this handler will be on.
     ///   - configuration: Configuration for the handler.

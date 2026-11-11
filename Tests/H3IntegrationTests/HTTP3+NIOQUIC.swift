@@ -213,7 +213,7 @@ extension ChannelPipeline.SynchronousOperations {
                         settings: settings,
                         streamCreator: streamCreator,
                         logger: logger,
-                        inboundRequestStreamInitializer: inboundRequestStreamInitializer,
+                        inboundRequestStreamInitializer: HTTP3InboundStreamInitializer(inboundRequestStreamInitializer),
                         internalInboundStreamInitializer: internalInboundStreamInitializer
                     )
                     try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
@@ -288,9 +288,7 @@ struct TestHTTP3Client: Sendable {
                     settings: self.settings,
                     streamCreator: streamCreator,
                     logger: self.logger,
-                    inboundPushStreamInitializer: { _ in
-                        fatalError()
-                    },
+                    inboundPushStreamInitializer: HTTP3InboundStreamInitializer { _ in fatalError() },
                     internalInboundStreamInitializer: self.internalInboundStreamInitializer
                 )
                 try channel.pipeline.syncOperations.addHandler(h3Handler)
