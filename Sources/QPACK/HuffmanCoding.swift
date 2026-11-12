@@ -155,6 +155,9 @@ extension RawSpan {
                 var state: UInt8 = 0
                 var acceptable = false
 
+                // Iterating by index on purpose: on Swift 6.4, `for ch in span` leaves an extra outer loop and a
+                // trap around this one, which makes the equivalent encode loops slower.
+                // TODO: Revisit `for ch in span` once Swift 6.5 has landed.
                 for i in input.indices {
                     let ch = input[i]
                     var t = HuffmanDecoderTable[state: state, nybble: ch >> 4]

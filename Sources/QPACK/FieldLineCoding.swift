@@ -194,10 +194,9 @@ extension RawSpan {
     /// - Returns: The line, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
     func getFieldLine(at offset: Int) throws(IntegerReadingError) -> Decoded<FieldLine>? {
-        guard offset >= 0, offset < self.byteCount else {
+        guard let firstByte = self.qpackByte(at: offset) else {
             return nil
         }
-        let firstByte = self.qpackByte(at: offset)
         if firstByte & 0x80 == 0x80 {
             // First bit is 1. This is an Indexed Field Line
             // The 2nd bit represents static table (1) or dynamic table (0)
@@ -290,10 +289,9 @@ extension RawSpan {
         }
 
         let signByteOffset = offset + requiredInsertCount.bytesRead
-        guard signByteOffset < self.byteCount else {
+        guard let signByte = self.qpackByte(at: signByteOffset) else {
             return nil
         }
-        let signByte = self.qpackByte(at: signByteOffset)
         // 4.5.1.2  the Base is encoded relative to the Required Insert Count using a one-bit sign
         let signBitMask = UInt8.maskForBit(bit: 1)
         let signBit = signBitMask & signByte == signBitMask

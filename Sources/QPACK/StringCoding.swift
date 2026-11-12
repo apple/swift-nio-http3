@@ -50,10 +50,9 @@ extension RawSpan {
         precondition(prefix >= 2)
         precondition(prefix <= 8)
         // peek to read the encoding bit
-        guard offset >= 0, offset < self.byteCount else {
+        guard let initialByte = self.qpackByte(at: offset) else {
             return nil
         }
-        let initialByte = self.qpackByte(at: offset)
         // We are using huffman encoding if the first bit after the prefix is 1
         // E.g. is prefix is 4, then the 5th bit represents huffman coding
         // so in that case we would & 0b00001000
