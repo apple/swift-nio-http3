@@ -194,7 +194,7 @@ extension RawSpan {
     /// - Returns: The line, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
     func getFieldLine(at offset: Int) throws(IntegerReadingError) -> Decoded<FieldLine>? {
-        guard let firstByte = self.qpackByte(at: offset) else {
+        guard let firstByte = self.getByte(at: offset) else {
             return nil
         }
         if firstByte & 0x80 == 0x80 {
@@ -289,7 +289,7 @@ extension RawSpan {
         }
 
         let signByteOffset = offset + requiredInsertCount.bytesRead
-        guard let signByte = self.qpackByte(at: signByteOffset) else {
+        guard let signByte = self.getByte(at: signByteOffset) else {
             return nil
         }
         // 4.5.1.2  the Base is encoded relative to the Required Insert Count using a one-bit sign

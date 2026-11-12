@@ -58,7 +58,7 @@ extension ByteBuffer {
 
 extension RawSpan {
     /// The byte `offset` bytes into the span, or nil if `offset` is outside the span.
-    func qpackByte(at offset: Int) -> UInt8? {
+    func getByte(at offset: Int) -> UInt8? {
         guard offset >= 0, offset < self.byteCount else {
             return nil
         }
@@ -79,7 +79,7 @@ extension RawSpan {
         guard (1...8).contains(prefix) else {
             preconditionFailure("Prefixed integer must have a prefix between 1 and 8")
         }
-        guard let firstByte = self.qpackByte(at: startOffset) else {
+        guard let firstByte = self.getByte(at: startOffset) else {
             return nil
         }
 
@@ -104,7 +104,7 @@ extension RawSpan {
         var byte: UInt8 = 0
 
         repeat {
-            guard let nextByte = self.qpackByte(at: offset) else {
+            guard let nextByte = self.getByte(at: offset) else {
                 return nil
             }
             byte = nextByte
