@@ -158,7 +158,7 @@ struct NIOHTTP3StreamHandlerTests {
     private var testRequestFieldSectionBytes: ByteBuffer {
         let encoder = StaticQPACKEncoder()
         return ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: self.testRequestHeaderFields)) {
-            encoder.encode(headers: self.testRequestHeaderFields, into: &$0, preferHuffmanEncoding: false)
+            encoder.encode(fields: self.testRequestHeaderFields, into: &$0, preferHuffmanEncoding: false)
         }
     }
 
