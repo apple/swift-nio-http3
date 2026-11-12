@@ -24,7 +24,9 @@ var swiftSettings: [PackageDescription.SwiftSetting] = [
 let package = Package(
     name: "swift-nio-http3",
     products: [
-        .library(name: "NIOHTTP3", targets: ["NIOHTTP3"])
+        .library(name: "QPACK", targets: ["QPACK"]),
+        .library(name: "HTTP3", targets: ["HTTP3"]),
+        .library(name: "NIOHTTP3", targets: ["NIOHTTP3"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.82.0"),
