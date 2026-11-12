@@ -44,7 +44,7 @@ struct StaticQPACKEncoderTests {
     func writesItsFieldSection(preferHuffmanEncoding: Bool) throws {
         let encoder = StaticQPACKEncoder()
         let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: Self.headers)) {
-            encoder.encode(headers: Self.headers, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
+            encoder.encode(fields: Self.headers, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
         }
 
         let expected = FieldSection(
@@ -199,13 +199,13 @@ struct StaticQPACKEncoderTests {
         return fields
     }
 
-    /// The field section of `fields`, as ``StaticQPACKEncoder/encode(headers:into:preferHuffmanEncoding:)`` writes
-    /// it.
+    /// The field section of `fields`, as
+    /// ``StaticQPACKEncoder/encode(fields:into:preferHuffmanEncoding:)-([HTTPField],_,_)`` writes it.
     @available(anyAppleOS 27, *)
     static func encode(_ fields: [HTTPField], preferHuffmanEncoding: Bool) -> ByteBuffer {
         let encoder = StaticQPACKEncoder()
         return encodeWithExactRoom(encoder.maxEncodedLength(of: fields)) {
-            encoder.encode(headers: fields, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
+            encoder.encode(fields: fields, into: &$0, preferHuffmanEncoding: preferHuffmanEncoding)
         }.0
     }
 
@@ -213,7 +213,7 @@ struct StaticQPACKEncoderTests {
     @Test func writesNothingButThePrefixForNoFields() {
         let encoder = StaticQPACKEncoder()
         let (buffer, _) = encodeWithExactRoom(encoder.maxEncodedLength(of: [])) {
-            encoder.encode(headers: [], into: &$0, preferHuffmanEncoding: true)
+            encoder.encode(fields: [], into: &$0, preferHuffmanEncoding: true)
         }
         // Required Insert Count 0, then Base 0
         #expect(Array(buffer.readableBytesView) == [0, 0])

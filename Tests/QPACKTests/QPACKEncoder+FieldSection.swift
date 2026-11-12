@@ -64,7 +64,7 @@ extension StaticQPACKEncoder {
     /// The field section the encoder writes for `headers`, read back from its bytes.
     func encode(headers: [HTTPField], sourceLocation: SourceLocation = #_sourceLocation) -> FieldSection {
         let (buffer, _) = encodeWithExactRoom(self.maxEncodedLength(of: headers)) { output in
-            self.encode(headers: headers, into: &output, preferHuffmanEncoding: false)
+            self.encode(fields: headers, into: &output, preferHuffmanEncoding: false)
         }
         return FieldSection(readingAll: buffer, sourceLocation: sourceLocation)
     }

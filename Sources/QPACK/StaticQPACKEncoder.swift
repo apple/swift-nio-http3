@@ -19,19 +19,30 @@ public import HTTPTypes
 public struct StaticQPACKEncoder {
     public init() {}
 
-    /// The largest number of bytes ``encode(headers:into:preferHuffmanEncoding:)`` appends for `fields`.
-    public func maxEncodedLength(of fields: [HTTPField]) -> Int {
-        Self.prefixLength &+ QPACKEncodedLength.maxFieldLines(fields, indexLimit: StaticHeaderTable.raw.count)
+    /// The max number of bytes ``encode(fields:into:preferHuffmanEncoding:)-(HTTPFields,_,_)`` appends for `fields`.
+    public func maxEncodedLength(of fields: HTTPFields) -> Int {
+        Self.prefixLength &+ Self.maxEncodedLength(of: fields)
     }
 
-    /// Encodes `headers` into a field section, and appends it to `output`.
+    /// Encodes `fields` into a field section, and appends it to `output`.
+    ///
+    /// - Precondition: `output` has room for ``maxEncodedLength(of:)-(HTTPFields)`` more bytes.
+    public func encode(fields: HTTPFields, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+        output.appendFieldSectionPrefix(Self.staticPrefix)
+        self.append(fields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+    }
+
+    /// The max number of bytes ``encode(fields:into:preferHuffmanEncoding:)-([HTTPField],_,_)`` appends for `fields`.
+    public func maxEncodedLength(of fields: [HTTPField]) -> Int {
+        Self.prefixLength &+ Self.maxEncodedLength(of: fields)
+    }
+
+    /// Encodes `fields` into a field section, and appends it to `output`.
     ///
     /// - Precondition: `output` has room for ``maxEncodedLength(of:)-([HTTPField])`` more bytes.
-    public func encode(headers: [HTTPField], into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+    public func encode(fields: [HTTPField], into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
         output.appendFieldSectionPrefix(Self.staticPrefix)
-        for header in headers {
-            output.appendFieldLine(self.fieldLine(for: header), preferHuffmanEncoding: preferHuffmanEncoding)
-        }
+        self.append(fields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
     }
 
     /// The prefix of every field section this encoder produces: it references no dynamic table entries and is therefore always
@@ -40,7 +51,7 @@ public struct StaticQPACKEncoder {
         FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
     }
 
-    /// The largest number of bytes ``encode(request:into:preferHuffmanEncoding:)`` appends for `request`.
+    /// The max number of bytes ``encode(request:into:preferHuffmanEncoding:)`` appends for `request`.
     public func maxEncodedLength(of request: HTTPRequest) -> Int {
         let pseudo = request.pseudoHeaderFields
         var length = Self.prefixLength &+ Self.maxEncodedLength(of: pseudo.method)
@@ -81,7 +92,7 @@ public struct StaticQPACKEncoder {
         self.append(request.headerFields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
     }
 
-    /// The largest number of bytes ``encode(response:into:preferHuffmanEncoding:)`` appends for `response`.
+    /// The max number of bytes ``encode(response:into:preferHuffmanEncoding:)`` appends for `response`.
     public func maxEncodedLength(of response: HTTPResponse) -> Int {
         Self.prefixLength
             &+ Self.maxEncodedLength(of: response.pseudoHeaderFields.status)
@@ -97,19 +108,6 @@ public struct StaticQPACKEncoder {
         self.append(response.headerFields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
     }
 
-    /// The largest number of bytes ``encode(fields:into:preferHuffmanEncoding:)`` appends for `fields`.
-    public func maxEncodedLength(of fields: HTTPFields) -> Int {
-        Self.prefixLength &+ Self.maxEncodedLength(of: fields)
-    }
-
-    /// Encodes `fields` into a field section, and appends it to `output`.
-    ///
-    /// - Precondition: `output` has room for ``maxEncodedLength(of:)-(HTTPFields)`` more bytes.
-    public func encode(fields: HTTPFields, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
-        output.appendFieldSectionPrefix(Self.staticPrefix)
-        self.append(fields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
-    }
-
     private static var prefixLength: Int {
         QPACKEncodedLength.fieldSectionPrefix(Self.staticPrefix)
     }
@@ -118,12 +116,8 @@ public struct StaticQPACKEncoder {
         QPACKEncodedLength.maxFieldLine(field, indexLimit: StaticHeaderTable.raw.count)
     }
 
-    private static func maxEncodedLength(of fields: HTTPFields) -> Int {
-        var length = 0
-        for field in fields {
-            length &+= Self.maxEncodedLength(of: field)
-        }
-        return length
+    private static func maxEncodedLength(of fields: some Sequence<HTTPField>) -> Int {
+        QPACKEncodedLength.maxFieldLines(fields, indexLimit: StaticHeaderTable.raw.count)
     }
 
     private func append(_ field: HTTPField, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
@@ -131,7 +125,11 @@ public struct StaticQPACKEncoder {
         output.appendFieldLine(fieldLine, preferHuffmanEncoding: preferHuffmanEncoding)
     }
 
-    private func append(_ fields: HTTPFields, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
+    private func append(
+        _ fields: some Sequence<HTTPField>,
+        into output: inout OutputRawSpan,
+        preferHuffmanEncoding: Bool
+    ) {
         for field in fields {
             self.append(field, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
         }
@@ -186,7 +184,7 @@ public struct StaticQPACKEncoder {
 extension QPACKEncodedLength {
     /// The max number of bytes the field lines encoding `headers` take, if every table index the encoder may
     /// reference is below `indexLimit`.
-    static func maxFieldLines(_ headers: [HTTPField], indexLimit: Int) -> Int {
+    static func maxFieldLines(_ headers: some Sequence<HTTPField>, indexLimit: Int) -> Int {
         var length = 0
         for header in headers {
             length &+= Self.maxFieldLine(header, indexLimit: indexLimit)

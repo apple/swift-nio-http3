@@ -82,7 +82,7 @@ public struct DynamicQPACKEncoder {
         return (encoder, result)
     }
 
-    /// The largest number of bytes ``encode(headers:forStream:into:preferHuffmanEncoding:)`` appends for `headers`,
+    /// The max number of bytes ``encode(headers:forStream:into:preferHuffmanEncoding:)`` appends for `headers`,
     /// if it is called next.
     @_spi(PackageInternal)
     public func maxEncodedLength(of headers: [HTTPField]) -> Int {
