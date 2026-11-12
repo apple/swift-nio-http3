@@ -104,11 +104,7 @@ struct HTTP3FrameEncodingTests {
         }
 
         let frame = try decodeFrame(bytes)
-        let expected = FieldSection(
-            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
-            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-        )
-        #expect(frame == .known(.headers(.init(fieldSection: expected))))
+        #expect(frame == .known(.headers(.init(fieldSection: ByteBuffer(bytes: Self.fieldSection)))))
     }
 
     @available(anyAppleOS 27, *)
