@@ -388,6 +388,13 @@ final class HTTP3ConnectionCoordinator<
                     QUICStopSendingEvent(code: QUICApplicationErrorCode(.requestRejected)),
                     promise: nil
                 )
+                streamChannel.triggerUserOutboundEvent(
+                    QUICResetStreamEvent(code: QUICApplicationErrorCode(.requestRejected)),
+                    promise: nil
+                )
+                // Rejected streams count as open, and graceful shutdown waits until none are. With both directions
+                // aborted, nothing else closes this one reliably: the peer may not abort its sending part in return.
+                streamChannel.close(promise: nil)
             }
         }
     }
