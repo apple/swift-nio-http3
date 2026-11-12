@@ -25,26 +25,33 @@ extension ByteBuffer {
     mutating func writeHTTP3PartialFrame(_ frame: HTTP3PartialFrame) {
         switch frame {
         case .data(let payload):
-            self.writeEncodedInteger(HTTP3FrameType.data.rawValue, strategy: .quic)
-            self.writeLengthPrefixedBuffer(payload.payload, strategy: .quic)
+            let payloadLength = payload.payload.readableBytes
+            self.writeWithOutputRawSpan(
+                minimumWritableBytes: HTTP3EncodedLength.dataFrameHeader(payloadLength: payloadLength)
+            ) {
+                $0.appendHTTP3DataFrameHeader(payloadLength: payloadLength)
+            }
+            self.writeImmutableBuffer(payload.payload)
         case .headers:
             fatalError("HEADERS frames are written by the QPACKCoder")
         case .cancelPush(let payload):
-            self.writeEncodedInteger(HTTP3FrameType.cancelPush.rawValue, strategy: .quic)
-            self.writeLengthPrefixedQUICEncodedInteger(payload.pushID.rawValue)
+            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3EncodedLength.cancelPushFrame(payload.pushID)) {
+                $0.appendHTTP3CancelPushFrame(payload.pushID)
+            }
         case .settings(let payload):
-            self.writeEncodedInteger(HTTP3FrameType.settings.rawValue, strategy: .quic)
-            self.writeLengthPrefixed(strategy: .quic(requiredBytesHint: .two)) { tempBuffer in
-                tempBuffer.writeHTTP3Settings(payload.settings)
+            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3EncodedLength.settingsFrame(payload.settings)) {
+                $0.appendHTTP3SettingsFrame(payload.settings)
             }
         case .pushPromise:
             fatalError("Writing PUSH_PROMISE frames is not supported")
         case .goaway(let payload):
-            self.writeEncodedInteger(HTTP3FrameType.goaway.rawValue, strategy: .quic)
-            self.writeLengthPrefixedQUICEncodedInteger(payload.id.rawValue)
+            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3EncodedLength.goawayFrame(payload.id)) {
+                $0.appendHTTP3GoawayFrame(payload.id)
+            }
         case .maxPushID(let payload):
-            self.writeEncodedInteger(HTTP3FrameType.maxPushID.rawValue, strategy: .quic)
-            self.writeLengthPrefixedQUICEncodedInteger(payload.id.rawValue)
+            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3EncodedLength.maxPushIDFrame(payload.id)) {
+                $0.appendHTTP3MaxPushIDFrame(payload.id)
+            }
         }
     }
 }
@@ -59,33 +66,10 @@ extension ByteBuffer {
     ///     `maxPayloadLength` bytes.
     @available(anyAppleOS 27, *)
     mutating func writeHeadersFrame(maxPayloadLength: Int, encodePayload: (inout OutputRawSpan) -> Void) {
-        self.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
-        // Safe to unwrap: `bytesNeededForInteger` only returns 1, 2, 4 or 8.
-        let lengthLength = ByteBuffer.QUICBinaryEncodingStrategy.IntegerLength(
-            rawValue: ByteBuffer.QUICBinaryEncodingStrategy.bytesNeededForInteger(maxPayloadLength)
-        )!
-        self.writeLengthPrefixed(strategy: .quic(requiredBytesHint: lengthLength)) { buffer in
-            let start = buffer.writerIndex
-            buffer.writeWithOutputRawSpan(minimumWritableBytes: maxPayloadLength, initializingWith: encodePayload)
-            let payloadLength = buffer.writerIndex &- start
-            // A longer payload would need a longer length, and be moved to make room for it.
-            assert(payloadLength <= maxPayloadLength, "The payload is longer than its maximum length")
-            return payloadLength
+        self.writeWithOutputRawSpan(
+            minimumWritableBytes: HTTP3EncodedLength.headersFrame(maxPayloadLength: maxPayloadLength)
+        ) { output in
+            output.appendHTTP3HeadersFrame(maxPayloadLength: maxPayloadLength, encodePayload: encodePayload)
         }
-    }
-}
-
-extension ByteBuffer {
-    /// Write `value` as a quic encoded integer, prefixed with the number of bytes needed to write `value`, also as a quic-encoded integer.
-    ///
-    /// E.g. if value is 100:
-    /// 100 needs 2 bytes to be written as quic encoded integer.
-    /// So we first write `2` encoded with quic, followed by `100` encoded with quic (3 bytes total).
-    ///
-    /// Value will need either 1, 2, 4 or 8 bytes, and then the length will add one more byte.
-    /// So the total bytes written is [bytes required to write value] + 1.
-    fileprivate mutating func writeLengthPrefixedQUICEncodedInteger(_ value: some FixedWidthInteger) {
-        self.writeEncodedInteger(ByteBuffer.QUICBinaryEncodingStrategy.bytesNeededForInteger(value), strategy: .quic)
-        self.writeEncodedInteger(value, strategy: .quic)
     }
 }

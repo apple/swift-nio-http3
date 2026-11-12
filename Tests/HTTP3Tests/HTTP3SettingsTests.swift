@@ -99,7 +99,6 @@ struct HTTP3SettingsTests {
 
     @available(anyAppleOS 27, *)
     @Test func settingsCoding() throws {
-        var buffer = ByteBuffer()
         let settings = try HTTP3Settings(parsing: [
             HTTP3Setting(identifier: .qpackBlockedStreams, value: 1),
             HTTP3Setting(identifier: .qpackMaximumTableCapacity, value: 2),
@@ -109,11 +108,15 @@ struct HTTP3SettingsTests {
             HTTP3Setting(identifier: .init(extensionSetting: 20)!, value: 4),
             HTTP3Setting(identifier: .init(extensionSetting: 30)!, value: 5),
         ])
-        let writtenBytes = buffer.writeHTTP3Settings(settings)
-        #expect(writtenBytes == 14)
+        #expect(HTTP3EncodedLength.settingsPayload(settings) == 14)
+        var buffer = ByteBuffer(initialCapacity: HTTP3EncodedLength.settingsFrame(settings)) {
+            $0.appendHTTP3SettingsFrame(settings)
+        }
         #expect(
             [UInt8](buffer: buffer)
                 == [
+                    // SETTINGS, length 14
+                    4, 14,
                     7, 1,
                     1, 2,
                     6, 3,
@@ -123,7 +126,8 @@ struct HTTP3SettingsTests {
                     30, 5,
                 ]
         )
-        // try decoding it back
+        // try decoding the payload back
+        buffer.moveReaderIndex(forwardBy: 2)
         let decoded = try? buffer.readHTTP3Settings()
         #expect(buffer.readableBytes == 0)
         #expect(decoded == settings)
@@ -149,11 +153,11 @@ struct HTTP3SettingsTests {
     @available(anyAppleOS 27, *)
     @Test func settingsCodingIgnoresDefault() {
         let settings = HTTP3Settings(qpackBlockedStreams: 0, h3Datagram: false, enableConnectProtocol: false)
-        var buffer = ByteBuffer()
-        let writtenBytes = buffer.writeHTTP3Settings(settings)
-        // The value is the default, so we don't need to write it out
-        #expect(writtenBytes == 0)
-        #expect(buffer.readableBytes == 0)
+        let buffer = ByteBuffer(initialCapacity: HTTP3EncodedLength.settingsFrame(settings)) {
+            $0.appendHTTP3SettingsFrame(settings)
+        }
+        // Default values are left out, so the frame is empty.
+        #expect([UInt8](buffer: buffer) == [4, 0])
     }
 
     @available(anyAppleOS 27, *)
