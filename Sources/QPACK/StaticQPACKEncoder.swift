@@ -21,7 +21,7 @@ public struct StaticQPACKEncoder {
 
     /// The max number of bytes ``encode(fields:into:preferHuffmanEncoding:)-(HTTPFields,_,_)`` appends for `fields`.
     public func maxEncodedLength(of fields: HTTPFields) -> Int {
-        Self.prefixLength &+ Self.maxEncodedLength(of: fields)
+        Self.prefixLength &+ Self.maxEncodedLengthWithoutPrefix(of: fields)
     }
 
     /// Encodes `fields` into a field section, and appends it to `output`.
@@ -34,7 +34,7 @@ public struct StaticQPACKEncoder {
 
     /// The max number of bytes ``encode(fields:into:preferHuffmanEncoding:)-([HTTPField],_,_)`` appends for `fields`.
     public func maxEncodedLength(of fields: [HTTPField]) -> Int {
-        Self.prefixLength &+ Self.maxEncodedLength(of: fields)
+        Self.prefixLength &+ Self.maxEncodedLengthWithoutPrefix(of: fields)
     }
 
     /// Encodes `fields` into a field section, and appends it to `output`.
@@ -53,50 +53,31 @@ public struct StaticQPACKEncoder {
 
     /// The max number of bytes ``encode(request:into:preferHuffmanEncoding:)`` appends for `request`.
     public func maxEncodedLength(of request: HTTPRequest) -> Int {
-        let pseudo = request.pseudoHeaderFields
-        var length = Self.prefixLength &+ Self.maxEncodedLength(of: pseudo.method)
-        if let scheme = pseudo.scheme {
-            length &+= Self.maxEncodedLength(of: scheme)
-        }
-        if let authority = pseudo.authority {
-            length &+= Self.maxEncodedLength(of: authority)
-        }
-        if let path = pseudo.path {
-            length &+= Self.maxEncodedLength(of: path)
-        }
-        if let extendedConnectProtocol = pseudo.extendedConnectProtocol {
-            length &+= Self.maxEncodedLength(of: extendedConnectProtocol)
-        }
-        return length &+ Self.maxEncodedLength(of: request.headerFields)
+        Self.prefixLength
+            &+ Self.maxEncodedLengthWithoutPrefix(of: RequestPseudoHeaderFieldSequence(request.pseudoHeaderFields))
+            &+ Self.maxEncodedLengthWithoutPrefix(of: request.headerFields)
     }
 
     /// Encodes `request` into a field section, its pseudo header fields first, and appends it to `output`.
     ///
     /// - Precondition: `output` has room for ``maxEncodedLength(of:)-(HTTPRequest)`` more bytes.
     public func encode(request: HTTPRequest, into output: inout OutputRawSpan, preferHuffmanEncoding: Bool) {
-        let pseudo = request.pseudoHeaderFields
         output.appendFieldSectionPrefix(Self.staticPrefix)
-        self.append(pseudo.method, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
-        if let scheme = pseudo.scheme {
-            self.append(scheme, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
-        }
-        if let authority = pseudo.authority {
-            self.append(authority, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
-        }
-        if let path = pseudo.path {
-            self.append(path, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
-        }
-        if let extendedConnectProtocol = pseudo.extendedConnectProtocol {
-            self.append(extendedConnectProtocol, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
-        }
+        // One loop over the pseudo header fields, rather than one call per field, lets the field line encoding be
+        // inlined. The header fields keep a loop of their own, as walking them through the sequence costs more.
+        self.append(
+            RequestPseudoHeaderFieldSequence(request.pseudoHeaderFields),
+            into: &output,
+            preferHuffmanEncoding: preferHuffmanEncoding
+        )
         self.append(request.headerFields, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
     }
 
     /// The max number of bytes ``encode(response:into:preferHuffmanEncoding:)`` appends for `response`.
     public func maxEncodedLength(of response: HTTPResponse) -> Int {
         Self.prefixLength
-            &+ Self.maxEncodedLength(of: response.pseudoHeaderFields.status)
-            &+ Self.maxEncodedLength(of: response.headerFields)
+            &+ Self.maxEncodedLengthOfField(response.pseudoHeaderFields.status)
+            &+ Self.maxEncodedLengthWithoutPrefix(of: response.headerFields)
     }
 
     /// Encodes `response` into a field section, its pseudo header field first, and appends it to `output`.
@@ -112,11 +93,11 @@ public struct StaticQPACKEncoder {
         QPACKEncodedLength.fieldSectionPrefix(Self.staticPrefix)
     }
 
-    private static func maxEncodedLength(of field: HTTPField) -> Int {
+    private static func maxEncodedLengthOfField(_ field: HTTPField) -> Int {
         QPACKEncodedLength.maxFieldLine(field, indexLimit: StaticHeaderTable.raw.count)
     }
 
-    private static func maxEncodedLength(of fields: some Sequence<HTTPField>) -> Int {
+    private static func maxEncodedLengthWithoutPrefix(of fields: some Sequence<HTTPField>) -> Int {
         QPACKEncodedLength.maxFieldLines(fields, indexLimit: StaticHeaderTable.raw.count)
     }
 
@@ -177,6 +158,56 @@ public struct StaticQPACKEncoder {
                 name: header.name,
                 value: header.value
             )
+        }
+    }
+}
+
+/// The pseudo header fields of a request, in the order they are encoded.
+private struct RequestPseudoHeaderFieldSequence: Sequence, IteratorProtocol {
+    private enum Position {
+        case method
+        case scheme
+        case authority
+        case path
+        case extendedConnectProtocol
+        case done
+    }
+
+    private let fields: HTTPRequest.PseudoHeaderFields
+    private var position: Position = .method
+
+    init(_ fields: HTTPRequest.PseudoHeaderFields) {
+        self.fields = fields
+    }
+
+    mutating func next() -> HTTPField? {
+        switch self.position {
+        case .method:
+            self.position = .scheme
+            return self.fields.method
+        case .scheme:
+            self.position = .authority
+            if let scheme = self.fields.scheme {
+                return scheme
+            }
+            fallthrough
+        case .authority:
+            self.position = .path
+            if let authority = self.fields.authority {
+                return authority
+            }
+            fallthrough
+        case .path:
+            self.position = .extendedConnectProtocol
+            if let path = self.fields.path {
+                return path
+            }
+            fallthrough
+        case .extendedConnectProtocol:
+            self.position = .done
+            return self.fields.extendedConnectProtocol
+        case .done:
+            return nil
         }
     }
 }
