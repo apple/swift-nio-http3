@@ -53,7 +53,7 @@ struct HTTP3FrameDecoderStateMachineTests {
         )
         var encodedFrame = ByteBuffer()
         encodedFrame.writeHTTP3PartialFrame(testFrame)
-        #expect(encodedFrame.readableBytes == 6)
+        #expect(encodedFrame.readableBytes == 5)
         let bytes = [UInt8](buffer: encodedFrame)
         // drip in a frame, byte by byte, except for the last one
         var decoder = HTTP3FrameDecoderStateMachine()

@@ -174,9 +174,8 @@ struct HTTP3FrameCodingTests {
         #expect(
             buffer
                 // The frame type is 4
-                // The length is 11, but it's encoded across 2 bytes
-                // First we have 0x40 (to indicate we're using 2 bytes) and then the actual length of 11 (0x0b)
-                == ByteBuffer([0x04, 0x40, 0x0b, 0x07, 0x01, 0x01, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c])
+                // The length is 11 (0x0b)
+                == ByteBuffer([0x04, 0x0b, 0x07, 0x01, 0x01, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c])
         )
     }
 

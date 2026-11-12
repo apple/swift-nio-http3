@@ -360,8 +360,8 @@ struct NIOHTTP3StreamHandlerTests {
         // write out a settings frame
         try channel.writeOutbound(HTTP3Frame.settings(.init()))
         let writtenBytes = try recorderPromise.futureResult.wait()
-        // The type is 4, the length is 0, but the 0 is encoded in 2 bytes because of how `ByteBuffer/writeLengthPrefixed` works
-        #expect(writtenBytes == [.init(bytes: [4, 0x40, 0])])
+        // The type is 4, the length is 0
+        #expect(writtenBytes == [.init(bytes: [4, 0])])
     }
 
     /// Write headers which the encoder inserts into its dynamic table. The peer's decoder must learn of the entry on
