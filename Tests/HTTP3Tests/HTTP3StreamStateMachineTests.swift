@@ -739,6 +739,109 @@ struct HTTP3StreamStateMachineTests {
         expectH3ErrorEqual(error: error, expectedCode: .leftoverBytes, expectedH3ErrorCode: .frameError)
     }
 
+    // MARK: STOP_SENDING
+
+    @available(anyAppleOS 27, *)
+    @Test func stopSendingReceivedFailsLaterWrites() {
+        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: false, preferHuffmanEncoding: false)
+
+        let stopSendingAction = machine.stopSendingReceived(errorCode: QUICApplicationErrorCode(.noError))
+        guard case .closeOutput(let error) = stopSendingAction else {
+            Issue.record("Unexpected action \(String(describing: stopSendingAction))")
+            return
+        }
+        expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
+            throw error
+        }
+
+        // Neither frame gets as far as validation (DATA before HEADERS is invalid) or QPACK.
+        for frame in [self.testDataFrame, .headers(self.testRequestHeaderFields)] {
+            let writeAction = machine.writeFrame(frame: frame)
+            guard case .outputClosed(let writeError) = writeAction else {
+                Issue.record("Unexpected action \(writeAction)")
+                continue
+            }
+            expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
+                throw writeError
+            }
+        }
+
+        // The output is closed already, a second STOP_SENDING changes nothing.
+        #expect(machine.stopSendingReceived(errorCode: QUICApplicationErrorCode(.noError)) == nil)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func stopSendingReceivedKeepsReading() {
+        var machine = HTTP3StreamStateMachine(streamType: .request, incoming: false, preferHuffmanEncoding: false)
+
+        // Before simulating receiving a response, we must send a request.
+        _ = machine.writeFrame(frame: .headers(self.testRequestHeaderFields))
+        machine.buffer(.init(bytes: self.testResponseHeaderFrameBytes))
+        machine.buffer(.init(bytes: self.testDataFrameBytes))
+
+        #expect(machine.stopSendingReceived(errorCode: QUICApplicationErrorCode(.noError)) != nil)
+
+        let decodeAction = machine.decodeNext()
+        guard case .decodeHeader = decodeAction else {
+            Issue.record("Unexpected action \(decodeAction)")
+            return
+        }
+        machine.gotHeaderDecodeResult(self.testResponseHeaderFields)
+        machine.assertReturnFrame(expected: .headers(self.testResponseHeaderFields))
+        machine.assertReturnFrame(expected: self.testDataFrame)
+
+        machine.inputClosed()
+        let closeAction = machine.decodeNext()
+        guard case .inputClosed(.emitEvent) = closeAction else {
+            Issue.record("Unexpected action \(closeAction)")
+            return
+        }
+        #expect(machine.closed() == .streamClosed(seenEOF: true))
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func stopSendingErrorCaughtDependsOnEOF() {
+        // Before the end of the stream, inbound data is lost: that is a stream error.
+        var machineBeforeEOF = HTTP3StreamStateMachine(
+            streamType: .request,
+            incoming: false,
+            preferHuffmanEncoding: false
+        )
+        let actionBeforeEOF = machineBeforeEOF.stopSendingErrorCaught(errorCode: QUICApplicationErrorCode(.noError))
+        guard case .emitStreamError(let streamError) = actionBeforeEOF else {
+            Issue.record("Unexpected action \(String(describing: actionBeforeEOF))")
+            return
+        }
+        expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError, message: "The remote peer closed the stream") {
+            throw streamError
+        }
+
+        // After the end of the stream, nothing is lost: only the output closes.
+        var machineAfterEOF = HTTP3StreamStateMachine(
+            streamType: .request,
+            incoming: false,
+            preferHuffmanEncoding: false
+        )
+        machineAfterEOF.inputClosed()
+        let closeAction = machineAfterEOF.decodeNext()
+        guard case .inputClosed = closeAction else {
+            Issue.record("Unexpected action \(closeAction)")
+            return
+        }
+        let actionAfterEOF = machineAfterEOF.stopSendingErrorCaught(errorCode: QUICApplicationErrorCode(.noError))
+        guard case .closeOutput(let outputError) = actionAfterEOF else {
+            Issue.record("Unexpected action \(String(describing: actionAfterEOF))")
+            return
+        }
+        expectH3Error(
+            code: .remoteStreamError,
+            h3ErrorCode: .noError,
+            message: "The remote peer stopped reading the stream"
+        ) {
+            throw outputError
+        }
+    }
+
     // MARK: Stream closed
 
     @available(anyAppleOS 27, *)
@@ -1072,7 +1175,7 @@ extension HTTP3StreamStateMachine {
         var buffer = ByteBuffer()
         let action = self.writeFrame(frame: frame, into: &buffer)
         switch action {
-        case .previousError:
+        case .previousError, .outputClosed:
             return nil
         case .wroteBytes:
             return .returnBytes(buffer)

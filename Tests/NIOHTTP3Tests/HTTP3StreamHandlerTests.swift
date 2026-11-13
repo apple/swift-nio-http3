@@ -169,6 +169,21 @@ struct NIOHTTP3StreamHandlerTests {
         return buffer
     }
 
+    private var testResponseHeaderFields: [HTTPField] {
+        [.init(name: .status, value: "403")]
+    }
+
+    @available(anyAppleOS 27, *)
+    private var testResponsePartialHeaderBytes: ByteBuffer {
+        let encoder = StaticQPACKEncoder()
+        let fieldSection = ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: self.testResponseHeaderFields)) {
+            encoder.encode(headers: self.testResponseHeaderFields, into: &$0, preferHuffmanEncoding: false)
+        }
+        var buffer = ByteBuffer()
+        buffer.writeHeadersFrame(fieldSection: fieldSection)
+        return buffer
+    }
+
     @available(anyAppleOS 27, *)
     private var testUndecodableRequestPartialHeaderBytes: ByteBuffer {
         var fieldSection = self.testRequestFieldSectionBytes
@@ -855,6 +870,143 @@ struct NIOHTTP3StreamHandlerTests {
         let resetStreamEvent = try #require(recordedOutboundEvents[2].isResetStreamEvent)
         #expect(resetStreamEvent.code == QUICApplicationErrorCode(.messageError))
     }
+
+    /// The peer's STOP_SENDING only ends our sending side: writes fail, but the response still arrives.
+    @available(anyAppleOS 27, *)
+    @Test func stopSendingEventClosesOnlyOutput() throws {
+        let eventLoop = EmbeddedEventLoop()
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
+            streamID: 5,
+            streamType: .request,
+            qpackCoder: makeTestQPACKCoder(),
+            delegate: TestDelegate(
+                onStreamClosed: { _, _, _ in },
+            ),
+            logger: self.logger
+        )
+        let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
+        let inboundEventRecorder = DebugInboundEventsHandler { event, _ in
+            inboundEvents.withLockedValue { $0.append(event) }
+        }
+        let channel = EmbeddedChannel(handlers: [handler, inboundEventRecorder], loop: eventLoop)
+        // Closing fails a write which is still pending.
+        defer { _ = try? channel.close().wait() }
+
+        // Write the request head, but don't flush it yet.
+        let pendingWritePromise = eventLoop.makePromise(of: Void.self)
+        channel.write(HTTP3Frame.headers(self.testRequestHeaderFields), promise: pendingWritePromise)
+
+        channel.pipeline.fireUserInboundEventTriggered(QUICStopSendingEvent(code: QUICApplicationErrorCode(.noError)))
+
+        // The pending write fails, and none of it reaches the QUIC stream.
+        expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
+            try pendingWritePromise.futureResult.wait()
+        }
+        channel.flush()
+        #expect(try channel.readOutbound(as: ByteBuffer.self) == nil)
+
+        // The pipeline learns that it can't write anymore, and the event is passed on. Nothing is reported as an error.
+        let eventsAfterStopSending = inboundEvents.withLockedValue { $0 }
+        try #require(eventsAfterStopSending.count == 3)
+        #expect(eventsAfterStopSending[0].isChannelRegistered)
+        #expect(eventsAfterStopSending[1].isOutputClosedEvent)
+        #expect(eventsAfterStopSending[2].isStopSendingEvent?.code == QUICApplicationErrorCode(.noError))
+
+        // The response still arrives.
+        try channel.writeInbound(self.testResponsePartialHeaderBytes)
+        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+        try handler.channelReadComplete(context: channel.pipeline.syncOperations.context(handler: handler))
+
+        let eventsAfterResponse = Array(inboundEvents.withLockedValue { $0 }.dropFirst(3))
+        try #require(eventsAfterResponse.count == 3)
+        let readFrameAny = try #require(eventsAfterResponse[0].readValue)
+        #expect(handler.unwrapOutboundIn(readFrameAny) == .headers(self.testResponseHeaderFields))
+        #expect(eventsAfterResponse[1].isChannelReadComplete)
+        #expect(eventsAfterResponse[2].isInputClosedEvent)
+
+        // Later writes fail the same way, and add no event to the pipeline.
+        let laterWritePromise = eventLoop.makePromise(of: Void.self)
+        channel.writeAndFlush(HTTP3Frame.data(.init(bytes: [1, 2, 3])), promise: laterWritePromise)
+        expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
+            try laterWritePromise.futureResult.wait()
+        }
+        #expect(inboundEvents.withLockedValue { $0 }.count == 6)
+    }
+
+    /// When a stream closes after the whole response has arrived, NIOQUIC reports the peer's STOP_SENDING as an error.
+    /// Nothing was lost, so nothing is reported.
+    @available(anyAppleOS 27, *)
+    @Test func stopSendingErrorAfterEOFIsNotReported() throws {
+        let eventLoop = EmbeddedEventLoop()
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
+            streamID: 5,
+            streamType: .request,
+            qpackCoder: makeTestQPACKCoder(),
+            delegate: TestDelegate(
+                onStreamClosed: { _, _, _ in },
+            ),
+            logger: self.logger
+        )
+        let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
+        let inboundEventRecorder = DebugInboundEventsHandler { event, _ in
+            inboundEvents.withLockedValue { $0.append(event) }
+        }
+        let channel = EmbeddedChannel(handlers: [handler, inboundEventRecorder], loop: eventLoop)
+
+        // NIOQUIC's sequence: the event, the rest of the response, then the error and the close.
+        try channel.writeOutbound(HTTP3Frame.headers(self.testRequestHeaderFields))
+        channel.pipeline.fireUserInboundEventTriggered(QUICStopSendingEvent(code: QUICApplicationErrorCode(.noError)))
+        try channel.writeInbound(self.testResponsePartialHeaderBytes)
+        channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
+        try handler.channelReadComplete(context: channel.pipeline.syncOperations.context(handler: handler))
+        channel.pipeline.fireErrorCaught(QUICStopSendingError(code: QUICApplicationErrorCode(.noError)))
+        try channel.close().wait()
+
+        let recordedEvents = inboundEvents.withLockedValue { $0 }
+        try #require(recordedEvents.count == 8)
+        #expect(recordedEvents[0].isChannelRegistered)
+        #expect(recordedEvents[1].isOutputClosedEvent)
+        #expect(recordedEvents[2].isStopSendingEvent != nil)
+        let readFrameAny = try #require(recordedEvents[3].readValue)
+        #expect(handler.unwrapOutboundIn(readFrameAny) == .headers(self.testResponseHeaderFields))
+        #expect(recordedEvents[4].isChannelReadComplete)
+        #expect(recordedEvents[5].isInputClosedEvent)
+        #expect(recordedEvents[6].isChannelInactive)
+        #expect(recordedEvents[7].isChannelUnregistered)
+    }
+
+    /// A STOP_SENDING error before the end of the response means the stream closes with inbound data missing. That is
+    /// reported like any other stream error.
+    @available(anyAppleOS 27, *)
+    @Test func stopSendingErrorBeforeEOFIsAStreamError() throws {
+        let eventLoop = EmbeddedEventLoop()
+        let handler = HTTP3StreamHandler(
+            stateMachine: .init(streamType: .request, incoming: false, preferHuffmanEncoding: false),
+            streamID: 5,
+            streamType: .request,
+            qpackCoder: makeTestQPACKCoder(),
+            delegate: TestDelegate(
+                onStreamClosed: { _, _, _ in },
+            ),
+            logger: self.logger
+        )
+        let inboundEvents = NIOLockedValueBox<[DebugInboundEventsHandler.Event]>([])
+        let inboundEventRecorder = DebugInboundEventsHandler { event, _ in
+            inboundEvents.withLockedValue { $0.append(event) }
+        }
+        let channel = EmbeddedChannel(handlers: [handler, inboundEventRecorder], loop: eventLoop)
+
+        channel.pipeline.fireErrorCaught(QUICStopSendingError(code: QUICApplicationErrorCode(.noError)))
+
+        let recordedEvents = inboundEvents.withLockedValue { $0 }
+        try #require(recordedEvents.count == 2)
+        #expect(recordedEvents[0].isChannelRegistered)
+        let error = try #require(recordedEvents[1].isHTTP3Error)
+        #expect(error.code == .remoteStreamError)
+        #expect(error.h3ErrorCode == .noError)
+    }
 }
 
 extension DebugInboundEventsHandler.Event {
@@ -874,6 +1026,26 @@ extension DebugInboundEventsHandler.Event {
         switch self {
         case .errorCaught(let error as HTTP3Error):
             return error
+
+        default:
+            return nil
+        }
+    }
+
+    var isOutputClosedEvent: Bool {
+        switch self {
+        case .userInboundEventTriggered(let event as ChannelEvent):
+            return event == .outputClosed
+
+        default:
+            return false
+        }
+    }
+
+    var isStopSendingEvent: NIOQUICHelpers.QUICStopSendingEvent? {
+        switch self {
+        case .userInboundEventTriggered(let event as NIOQUICHelpers.QUICStopSendingEvent):
+            return event
 
         default:
             return nil
