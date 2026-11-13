@@ -133,12 +133,12 @@ final class HTTP3ConnectionCoordinator<
         return self.connectionStateMachine.sendDatagram(streamID: streamID)
     }
 
-    /// Delivers any datagrams which were buffered for the given stream.
-    ///
-    /// Must only be called once the state machine knows the stream is open, i.e. once it will stop
-    /// buffering datagrams for it, otherwise datagrams can be delivered out of order.
-    private func emitBufferedDatagrams(forStream streamID: QUICStreamID) {
+    /// Delivers any datagrams which were buffered for the given stream, if the stream is open and if both peers have
+    /// advertised support for datagrams.
+    private func emitBufferedDatagramsIfNegotiated(forStream streamID: QUICStreamID) {
         self.eventLoop.assertInEventLoop()
+        guard self.connectionStateMachine.datagramsNegotiated else { return }
+
         assert(self.connectionStateMachine.isStreamOpen(streamID))
         assert(self.connection != nil)
         if let datagrams = self.datagramBuffer.unbufferDatagrams(forStream: streamID) {
@@ -294,7 +294,8 @@ final class HTTP3ConnectionCoordinator<
                             )
                         )
                     }
-                    self.emitBufferedDatagrams(forStream: streamID)
+                    // Until both peers have advertised support, datagrams stay buffered.
+                    self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
                     return HTTP3StreamInitializerParameters(params)
                 }.assumeIsolated().flatMap {
                     streamInitializer($0)
@@ -358,8 +359,9 @@ final class HTTP3ConnectionCoordinator<
                         )
                     )
                 }
-                // State machine now considers the stream to be open: deliver the datagrams now.
-                self.emitBufferedDatagrams(forStream: streamID)
+                // State machine now considers the stream to be open. If both endpoints have advertised support, deliver
+                // the datagrams now.
+                self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
                 return userInboundStreamInitializer.initialize(parameters)
             } catch {
                 self.datagramBuffer.discardDatagrams(forStream: streamID)
@@ -629,9 +631,10 @@ final class HTTP3ConnectionCoordinator<
             } catch {
                 assert(error.isConnectionError)
                 self.emitConnectionErrorFromStream(HTTP3Error(error, location: .here()))
+                return
             }
             let receivedSettings = ReceivedSettings(
-                datagramsSupported: onSettings.datagramsNegotiated,
+                datagramsSupported: onSettings.datagrams.isSupported,
                 extendedConnectSupported: onSettings.extendedConnect.isSupported
             )
 
@@ -642,6 +645,17 @@ final class HTTP3ConnectionCoordinator<
             }
 
             self.connection?.fireReceivedSettingsEvent(receivedSettings)
+
+            switch onSettings.datagrams {
+            case .supported(let streamIDsToNotify):
+                // Deliver datagrams which were buffered for open streams while awaiting the SETTINGS.
+                for streamID in streamIDsToNotify {
+                    self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
+                }
+
+            case .unsupported:
+                self.datagramBuffer.discardAllDatagrams()
+            }
         case .cancelStreams(let ids):
             self.cancelStreamsDueToReceivingGoaway(ids)
         case .closeConnection:
