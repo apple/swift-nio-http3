@@ -96,6 +96,18 @@ final class HTTP3ConnectionCoordinator<
         }
     }
 
+    /// Opt a request stream into half-closure on `STOP_SENDING`, so that a peer's `STOP_SENDING` only ends our sending
+    /// side and we keep reading (RFC 9114 § 4.1).
+    ///
+    /// - Returns: `nil` if the option is set, or a future of setting it on a channel without synchronous options.
+    private static func optIntoHalfClosure(on streamChannel: any Channel) throws -> EventLoopFuture<Void>? {
+        if let sync = streamChannel.syncOptions {
+            try sync.setOption(.halfCloseOnStopSending, value: true)
+            return nil
+        }
+        return streamChannel.setOption(.halfCloseOnStopSending, value: true)
+    }
+
     // MARK: Datagram
 
     enum ReceivedDatagramAction {
@@ -280,6 +292,7 @@ final class HTTP3ConnectionCoordinator<
                 let streamChannel = params.channel
                 let streamID = params.streamID
                 return streamChannel.eventLoop.makeCompletedFuture {
+                    let halfClosureFuture = try Self.optIntoHalfClosure(on: params.channel)
                     self.connectionStateMachine.outboundRequestStreamReady(streamID: streamID)
                     try self.addHTTP3FrameHandlers(
                         streamChannel: streamChannel,
@@ -295,9 +308,13 @@ final class HTTP3ConnectionCoordinator<
                         )
                     }
                     self.emitBufferedDatagrams(forStream: streamID)
-                    return HTTP3StreamInitializerParameters(params)
-                }.assumeIsolated().flatMap {
-                    streamInitializer($0)
+                    return (HTTP3StreamInitializerParameters(params), halfClosureFuture)
+                }.assumeIsolated().flatMap { (params, halfClosureFuture) in
+                    // The future is only set if syncOptions are not available.
+                    if let halfClosureFuture {
+                        return halfClosureFuture.assumeIsolated().flatMap { streamInitializer(params) }.nonisolated()
+                    }
+                    return streamInitializer(params)
                 }.nonisolated()
             }
         case .failedToCreateStream(let error):
@@ -345,6 +362,7 @@ final class HTTP3ConnectionCoordinator<
         switch action {
         case .addHandlers:
             do {
+                let halfClosureFuture = try Self.optIntoHalfClosure(on: streamChannel)
                 try self.addHTTP3FrameHandlers(
                     streamChannel: streamChannel,
                     streamID: streamID,
@@ -360,6 +378,11 @@ final class HTTP3ConnectionCoordinator<
                 }
                 // State machine now considers the stream to be open: deliver the datagrams now.
                 self.emitBufferedDatagrams(forStream: streamID)
+                if let halfClosureFuture {
+                    return halfClosureFuture.assumeIsolated().flatMap {
+                        userInboundStreamInitializer.initialize(parameters)
+                    }.nonisolated()
+                }
                 return userInboundStreamInitializer.initialize(parameters)
             } catch {
                 self.datagramBuffer.discardDatagrams(forStream: streamID)
