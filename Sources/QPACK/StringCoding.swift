@@ -63,20 +63,22 @@ extension RawSpan {
         guard let lengthInt = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: prefix - 1) else {
             return nil
         }
-        // The length comes off the wire, so check it against the bytes we have before forming a range. The integer
-        // reader never reads past the end of the span, so `start` is at most `byteCount` and can't overflow.
         let start = offset &+ lengthInt.bytesRead
-        guard lengthInt.value <= self.byteCount &- start else {
-            return nil
-        }
 
         let string: String
         if huffmanEncoded {
+            // Checks the length against the bytes we have, and returns nil if the string runs past them.
             guard let decoded = self.getHuffmanEncodedString(at: start, length: lengthInt.value) else {
                 return nil
             }
             string = decoded
         } else {
+            // The length comes off the wire, so check it against the bytes we have before forming a range. The
+            // integer reader never reads past the end of the span, so `start` is at most `byteCount` and can't
+            // overflow.
+            guard lengthInt.value <= self.byteCount &- start else {
+                return nil
+            }
             string = self.extracting(start..<(start &+ lengthInt.value)).withUnsafeBytes { bytes in
                 String(decoding: bytes, as: UTF8.self)
             }

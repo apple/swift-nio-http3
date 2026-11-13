@@ -99,7 +99,6 @@ extension RawSpan {
     @available(anyAppleOS 27, *)
     func getHuffmanEncodedString(at offset: Int, length: Int) -> String? {
         guard offset >= 0, offset <= self.byteCount, length >= 0, length <= self.byteCount &- offset else {
-            assertionFailure("Requested range out of bounds: \(offset) + \(length) vs. \(self.byteCount)")
             return nil
         }
         if length == 0 {
