@@ -54,8 +54,8 @@ struct HuffmanCodingTests {
 
         self.assertEqualContents(self.scratchBuffer, bytes, sourceLocation: sourceLocation)
 
-        let decoded = self.scratchBuffer.getHuffmanEncodedString(
-            at: self.scratchBuffer.readerIndex,
+        let decoded = self.scratchBuffer.readableBytesSpan.getHuffmanEncodedString(
+            at: 0,
             length: self.scratchBuffer.readableBytes
         )
         #expect(decoded == string, "Failed to decode '\(string)'", sourceLocation: sourceLocation)
@@ -159,8 +159,8 @@ struct HuffmanCodingTests {
 
                 self.scratchBuffer.clear()
                 self.scratchBuffer.writeBytes(encoded)
-                let decoded = self.scratchBuffer.getHuffmanEncodedString(
-                    at: self.scratchBuffer.readerIndex,
+                let decoded = self.scratchBuffer.readableBytesSpan.getHuffmanEncodedString(
+                    at: 0,
                     length: self.scratchBuffer.readableBytes
                 )
                 #expect(decoded == string)
@@ -190,8 +190,8 @@ struct HuffmanCodingTests {
             let encodedLength = self.scratchBuffer.writeBytes(string.huffmanEncodedBytes)
             #expect(encodedLength == characterCount * 5 / 8, "Input was not maximally compressed")
 
-            let decoded = self.scratchBuffer.getHuffmanEncodedString(
-                at: self.scratchBuffer.readerIndex,
+            let decoded = self.scratchBuffer.readableBytesSpan.getHuffmanEncodedString(
+                at: 0,
                 length: self.scratchBuffer.readableBytes
             )
             #expect(decoded == string)
