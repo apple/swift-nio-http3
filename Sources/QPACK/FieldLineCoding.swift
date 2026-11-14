@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import struct NIOCore.ByteBuffer
+import struct NIOCore.ByteBuffer
 
 /// Represents a FieldSectionPrefix as per RFC 9204 § 4.5.1.
 @available(anyAppleOS 27, *)
@@ -30,6 +30,12 @@ public struct FieldSectionPrefix: Sendable, Hashable {
         self.base = base
     }
 
+    /// MaxEntries of RFC 9204 § 4.5.1.1: the most entries a table with `maxTableCapacity` can hold. Prefixes are
+    /// encoded with the maximum table capacity of the decoder.
+    static func maxEntries(maxTableCapacity: Int) -> Int {
+        maxTableCapacity / 32
+    }
+
     @_spi(PackageInternal)
     public func encode(maxCapacity: Int) -> EncodedFieldSectionPrefix {
         // 4.5.1.1.
@@ -42,7 +48,7 @@ public struct FieldSectionPrefix: Sendable, Hashable {
         if self.requiredInsertCount == 0 {
             return .init(encodedRequiredInsertCount: 0, deltaBase: self.base, signBit: false)
         }
-        let maxEntries = maxCapacity / 32
+        let maxEntries = FieldSectionPrefix.maxEntries(maxTableCapacity: maxCapacity)
         let encodedRequiredInsertCount = (requiredInsertCount % (2 * maxEntries)) + 1
         let deltaBase: Int
         let signBit: Bool
@@ -107,7 +113,7 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
         if self.encodedRequiredInsertCount == 0 {
             return .init(requiredInsertCount: 0, base: self.deltaBase)
         }
-        let maxEntries = maxCapacity / 32
+        let maxEntries = FieldSectionPrefix.maxEntries(maxTableCapacity: maxCapacity)
         let fullRange = 2 * maxEntries
         if self.encodedRequiredInsertCount > fullRange {
             return nil
@@ -145,8 +151,7 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
 
 /// Represents a single field line as per RFC 9204 § 4.5.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
-public enum FieldLine: Sendable, Hashable {
+enum FieldLine: Sendable, Hashable {
     /// 4.5.2. Indexed Field Line.
     case indexed(QPACKReferenceTable, index: Int)
     /// 4.5.3. Indexed Field Line with Post-Base Index.
@@ -164,40 +169,32 @@ public enum FieldLine: Sendable, Hashable {
     case literal(requireLiteralRepresentation: Bool, name: String, value: String)
 }
 
-/// Represents a full field section as per RFC 9204 § 4.5.
-@available(anyAppleOS 27, *)
-@_spi(PackageInternal)
-public struct FieldSection: Sendable, Hashable {
-    /// The field section prefix.
-    @_spi(PackageInternal)
-    public var prefix: EncodedFieldSectionPrefix
-    /// Each line of the field section. A line represents a header.
-    @_spi(PackageInternal)
-    public var lines: [FieldLine]
-
-    @_spi(PackageInternal)
-    public init(prefix: EncodedFieldSectionPrefix, lines: [FieldLine]) {
-        self.prefix = prefix
-        self.lines = lines
-    }
-}
-
 extension ByteBuffer {
     /// Read a single ``FieldLine`` from this `ByteBuffer`.
     /// - Returns: The instruction, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
     mutating func readFieldLine() throws(IntegerReadingError) -> FieldLine? {
-        guard let result = try self.getFieldLine(at: self.readerIndex) else { return nil }
+        guard let result = try self.readableBytesSpan.getFieldLine(at: 0) else { return nil }
         self.moveReaderIndex(forwardBy: result.bytesRead)
         return result.value
     }
 
-    /// Get a single ``FieldLine`` from this `ByteBuffer`.
-    /// Does not move the readerIndex.
-    /// - Returns: The instruction, or nil if it cannot be decoded.
+    /// Read a single ``FieldSectionPrefix`` from this `ByteBuffer`.
+    /// - Returns: The section, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
-    private func getFieldLine(at startIndex: Int) throws(IntegerReadingError) -> Decoded<FieldLine>? {
-        guard let firstByte = self.getInteger(at: startIndex, as: UInt8.self) else {
+    mutating func readFieldSectionPrefix() throws(IntegerReadingError) -> EncodedFieldSectionPrefix? {
+        guard let result = try self.readableBytesSpan.getFieldSectionPrefix(at: 0) else { return nil }
+        self.moveReaderIndex(forwardBy: result.bytesRead)
+        return result.value
+    }
+}
+
+extension RawSpan {
+    /// Get a single ``FieldLine``, which starts `offset` bytes into the span.
+    /// - Returns: The line, or nil if it cannot be decoded.
+    @available(anyAppleOS 27, *)
+    func getFieldLine(at offset: Int) throws(IntegerReadingError) -> Decoded<FieldLine>? {
+        guard let firstByte = self.getByte(at: offset) else {
             return nil
         }
         if firstByte & 0x80 == 0x80 {
@@ -205,7 +202,7 @@ extension ByteBuffer {
             // The 2nd bit represents static table (1) or dynamic table (0)
             let table = QPACKReferenceTable.staticIfTrue(firstByte & 0x40 == 0x40)
             // Remaining 6 bits are start of the integer for the relative index
-            guard let relativeIndex = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 6)
+            guard let relativeIndex = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 6)
             else {
                 return nil
             }
@@ -217,10 +214,10 @@ extension ByteBuffer {
             // 4th bit represents static table (1) or dynamic table (0)
             let table = QPACKReferenceTable.staticIfTrue(firstByte & 0x10 == 0x10)
             // Next 4 bits are the start of the index int
-            guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 4) else {
+            guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 4) else {
                 return nil
             }
-            guard let value = try self.getQPACKEncodedString(at: startIndex + index.bytesRead, withPrefix: 8) else {
+            guard let value = try self.getQPACKEncodedString(at: offset + index.bytesRead, withPrefix: 8) else {
                 return nil
             }
             return .init(
@@ -236,10 +233,10 @@ extension ByteBuffer {
             // First 3 bits are 001. This is Literal Field Line with Literal Name
             // 4th bit is N, if set then the encoded field line MUST always be encoded with a literal representation
             let requireLiteralRepresentation = firstByte & 0x10 == 0x10
-            guard let name = try self.getQPACKEncodedString(at: startIndex, withPrefix: 4) else {
+            guard let name = try self.getQPACKEncodedString(at: offset, withPrefix: 4) else {
                 return nil
             }
-            guard let value = try self.getQPACKEncodedString(at: startIndex + name.bytesRead, withPrefix: 8) else {
+            guard let value = try self.getQPACKEncodedString(at: offset + name.bytesRead, withPrefix: 8) else {
                 return nil
             }
             return .init(
@@ -253,7 +250,7 @@ extension ByteBuffer {
         } else if firstByte & 0x10 == 0x10 {
             // First 4 bits are 0001. This is Indexed Field Line with Post-Base Index
             // Remaining 4 bits are start of the integer for the relative index of the dynamic table
-            guard let relativeIndex = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 4)
+            guard let relativeIndex = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 4)
             else {
                 return nil
             }
@@ -263,10 +260,10 @@ extension ByteBuffer {
             // 5th bit is N, if set then the encoded field line MUST always be encoded with a literal representation
             let requireLiteralRepresentation = firstByte & 0x8 == 0x8
             // Remaining 4 bits are start of the integer for the post-base index of the dynamic table
-            guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 3) else {
+            guard let index = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 3) else {
                 return nil
             }
-            guard let value = try self.getQPACKEncodedString(at: startIndex + index.bytesRead, withPrefix: 8) else {
+            guard let value = try self.getQPACKEncodedString(at: offset + index.bytesRead, withPrefix: 8) else {
                 return nil
             }
             return .init(
@@ -280,52 +277,26 @@ extension ByteBuffer {
         }
     }
 
-    /// Write a single ``FieldLine`` to this buffer.
-    /// - Parameters:
-    ///   - fieldLine: The line to write.
-    ///   - preferHuffmanEncoding: Whether to use huffman coding for strings (where applicable and where it would be more efficient to do so).
-    /// - Returns: The number of bytes written.
+    /// Get a single ``FieldSectionPrefix``, which starts `offset` bytes into the span.
+    /// - Returns: The prefix, or nil if it cannot be decoded.
     @available(anyAppleOS 27, *)
-    @discardableResult
-    @_spi(PackageInternal)
-    public mutating func writeFieldLine(_ fieldLine: FieldLine, preferHuffmanEncoding: Bool) -> Int {
-        let start = self.writerIndex
-        self.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.maxFieldLine(fieldLine)) {
-            $0.appendFieldLine(fieldLine, preferHuffmanEncoding: preferHuffmanEncoding)
-        }
-        return self.writerIndex &- start
-    }
-
-    /// Read a single ``FieldSectionPrefix`` from this `ByteBuffer`.
-    /// - Returns: The section, or nil if it cannot be decoded.
-    @available(anyAppleOS 27, *)
-    mutating func readFieldSectionPrefix() throws(IntegerReadingError) -> EncodedFieldSectionPrefix? {
-        guard let result = try self.getFieldSectionPrefix(at: self.readerIndex) else { return nil }
-        self.moveReaderIndex(forwardBy: result.bytesRead)
-        return result.value
-    }
-
-    @available(anyAppleOS 27, *)
-    private func getFieldSectionPrefix(
-        at startIndex: Int
+    func getFieldSectionPrefix(
+        at offset: Int
     ) throws(IntegerReadingError) -> Decoded<EncodedFieldSectionPrefix>? {
-        guard let requiredInsertCount = try self.getQPACKPrefixedInteger(as: Int.self, at: startIndex, withPrefix: 8)
+        guard let requiredInsertCount = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 8)
         else {
             return nil
         }
 
-        guard let signByte = self.getInteger(at: startIndex + requiredInsertCount.bytesRead, as: UInt8.self) else {
+        let signByteOffset = offset + requiredInsertCount.bytesRead
+        guard let signByte = self.getByte(at: signByteOffset) else {
             return nil
         }
         // 4.5.1.2  the Base is encoded relative to the Required Insert Count using a one-bit sign
         let signBitMask = UInt8.maskForBit(bit: 1)
         let signBit = signBitMask & signByte == signBitMask
         guard
-            let deltaBase = try self.getQPACKPrefixedInteger(
-                as: Int.self,
-                at: startIndex + requiredInsertCount.bytesRead,
-                withPrefix: 7
-            )
+            let deltaBase = try self.getQPACKPrefixedInteger(as: Int.self, at: signByteOffset, withPrefix: 7)
         else {
             return nil
         }
@@ -339,35 +310,6 @@ extension ByteBuffer {
             ),
             bytesRead: bytesRead
         )
-    }
-
-    /// Write a single ``FieldSectionPrefix`` to this buffer.
-    /// - Parameters
-    ///   - prefix: The ``FieldSectionPrefix`` to write.
-    /// - Returns: The number of bytes written.
-    @available(anyAppleOS 27, *)
-    @discardableResult
-    @_spi(PackageInternal)
-    public mutating func writeFieldSectionPrefix(_ prefix: EncodedFieldSectionPrefix) -> Int {
-        let start = self.writerIndex
-        self.writeWithOutputRawSpan(minimumWritableBytes: QPACKEncodedLength.fieldSectionPrefix(prefix)) {
-            $0.appendFieldSectionPrefix(prefix)
-        }
-        return self.writerIndex &- start
-    }
-
-    @available(anyAppleOS 27, *)
-    @_spi(PackageInternal)
-    public mutating func readFieldSection() throws(IntegerReadingError) -> FieldSection? {
-        guard let prefix = try self.readFieldSectionPrefix() else {
-            return nil
-        }
-        var lines = [FieldLine]()
-        lines.reserveCapacity(QPACKConstants.defaultFieldLinesCapacity)
-        while let l = try self.readFieldLine() {
-            lines.append(l)
-        }
-        return FieldSection(prefix: prefix, lines: lines)
     }
 }
 
@@ -426,21 +368,56 @@ extension OutputRawSpan {
         self.appendQPACKPrefixedInteger(prefix.deltaBase, prefix: 7, prefixBits: signBit)
     }
 
-    /// Appends a string literal, encoded as in RFC 9204 § 4.1.2.
+    /// Appends a field section whose prefix is only known once its field lines are written.
+    ///
+    /// `writeLines` appends the field lines to the span it is given, which starts `expectedPrefixLength` bytes after
+    /// the end of this one, and returns the prefix. If the prefix takes a different number of bytes, the lines are
+    /// moved to make room for it, before it is written in front of them. The span `writeLines` is given ends
+    /// `maxPrefixLength - expectedPrefixLength` bytes before the end of this one, so that the lines always fit
+    /// after the longest prefix.
+    ///
+    /// Like `append`, this traps if there isn't enough room: if the span has less than `maxPrefixLength` bytes left,
+    /// or the prefix takes more than `maxPrefixLength` bytes.
+    ///
+    /// - Precondition: `0 <= expectedPrefixLength <= maxPrefixLength`.
     @available(anyAppleOS 27, *)
-    private mutating func appendQPACKEncodedString(
-        _ string: String,
-        preferHuffmanEncoding: Bool,
-        prefix: Int,
-        prefixBits: UInt8 = 0
+    mutating func appendFieldSection(
+        expectedPrefixLength: Int,
+        maxPrefixLength: Int,
+        writeLines: (inout OutputRawSpan) -> EncodedFieldSectionPrefix
     ) {
-        string.withContiguousUTF8 {
-            self.appendQPACKEncodedString(
-                $0,
-                preferHuffmanEncoding: preferHuffmanEncoding,
-                prefix: prefix,
-                prefixBits: prefixBits
+        precondition(expectedPrefixLength >= 0, "Expected a prefix of negative length")
+        precondition(expectedPrefixLength <= maxPrefixLength, "Expected a prefix longer than the longest one")
+        self.withUnsafeMutableBytes { buffer, initializedCount in
+            let prefixStart = initializedCount
+            precondition(prefixStart &+ maxPrefixLength <= buffer.count, "Not enough room for the field section prefix")
+            let linesStart = prefixStart &+ expectedPrefixLength
+            let linesEnd = buffer.count &- (maxPrefixLength &- expectedPrefixLength)
+
+            let linesBuffer = UnsafeMutableRawBufferPointer(rebasing: buffer[linesStart..<linesEnd])
+            var linesOutput = OutputRawSpan(buffer: linesBuffer, initializedCount: 0)
+            let prefix = writeLines(&linesOutput)
+            let linesLength = linesOutput.finalize(for: linesBuffer)
+
+            let prefixLength = QPACKEncodedLength.fieldSectionPrefix(prefix)
+            precondition(prefixLength <= maxPrefixLength, "Not enough room reserved for the field section prefix")
+            if prefixLength != expectedPrefixLength {
+                // Move the lines before the prefix is written, as a longer prefix overwrites their start. The regions
+                // may overlap, which `copyMemory` allows.
+                let base = buffer.baseAddress!
+                (base + (prefixStart &+ prefixLength)).copyMemory(from: base + linesStart, byteCount: linesLength)
+            }
+
+            let prefixBuffer = UnsafeMutableRawBufferPointer(
+                rebasing: buffer[prefixStart..<(prefixStart &+ prefixLength)]
             )
+            var prefixOutput = OutputRawSpan(buffer: prefixBuffer, initializedCount: 0)
+            prefixOutput.appendFieldSectionPrefix(prefix)
+            let writtenPrefixLength = prefixOutput.finalize(for: prefixBuffer)
+            // Anything else would leave uninitialised bytes between the prefix and the lines.
+            precondition(writtenPrefixLength == prefixLength, "Prefix length miscalculated")
+
+            initializedCount = prefixStart &+ prefixLength &+ linesLength
         }
     }
 }
@@ -462,6 +439,18 @@ extension QPACKEncodedLength {
             Self.maxString(byteCount: name.utf8.count, prefix: 4)
                 &+ Self.maxString(byteCount: value.utf8.count, prefix: 8)
         }
+    }
+
+    /// The largest number of bytes ``OutputRawSpan/appendFieldSectionPrefix(_:)`` appends for the prefix of a field
+    /// section whose Required Insert Count is at most `maxRequiredInsertCount` and whose Delta Base is at most
+    /// `maxDeltaBase`, if the decoder's maximum table capacity is `maxTableCapacity`.
+    @available(anyAppleOS 27, *)
+    static func maxFieldSectionPrefix(maxRequiredInsertCount: Int, maxDeltaBase: Int, maxTableCapacity: Int) -> Int {
+        // RFC 9204 § 4.5.1.1: The Required Insert Count is either 0 or encoded as
+        // (ReqInsertCount mod (2 * MaxEntries)) + 1, which is at most 2 * MaxEntries, and at most ReqInsertCount + 1.
+        let maxEntries = FieldSectionPrefix.maxEntries(maxTableCapacity: maxTableCapacity)
+        return Self.prefixedInteger(min(2 &* maxEntries, maxRequiredInsertCount &+ 1), prefix: 8)
+            &+ Self.prefixedInteger(maxDeltaBase, prefix: 7)
     }
 
     /// The number of bytes ``OutputRawSpan/appendFieldSectionPrefix(_:)`` appends for `prefix`.

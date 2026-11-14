@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
-@_spi(PackageInternal) import QPACK
 import Testing
 
 @testable @_spi(PackageInternal) import HTTP3
@@ -25,20 +24,15 @@ struct HTTP3FrameDecoderStateMachineTests {
 
     @available(anyAppleOS 27, *)
     private var testHeader: HTTP3PartialFrame.Headers {
-        let fieldSectionPrefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
-        let line = FieldLine.literal(requireLiteralRepresentation: false, name: "test", value: "hello")
-        return .init(fieldSection: .init(prefix: fieldSectionPrefix, lines: [line]))
+        // Required Insert Count 0 and Base 0, then a literal field line: 001 for literal, 0 for N, 0 for H, 0100 for
+        // the length of the name (4), then 0 for H and 0000101 for the length of the value (5).
+        let fieldSection: [UInt8] = [0, 0, 0b00100100] + "test".utf8 + [0b00000101] + "hello".utf8
+        return .init(fieldSection: ByteBuffer(bytes: fieldSection))
     }
 
     @available(anyAppleOS 27, *)
     private var testHeaderFrameBytes: [UInt8] {
-        let header = self.testHeader
-        var buffer = ByteBuffer()
-        buffer.writeFieldSectionPrefix(header.fieldSection.prefix)
-        for line in header.fieldSection.lines {
-            buffer.writeFieldLine(line, preferHuffmanEncoding: false)
-        }
-        let fieldSectionBytes = [UInt8](buffer: buffer)
+        let fieldSectionBytes = [UInt8](buffer: self.testHeader.fieldSection)
         let prefix: [UInt8] = [1, UInt8(fieldSectionBytes.count)]  // prefix with frame type and length
         return prefix + fieldSectionBytes
     }
@@ -58,8 +52,8 @@ struct HTTP3FrameDecoderStateMachineTests {
             .init(qpackMaximumTableCapacity: 1024, h3Datagram: false, enableConnectProtocol: false)
         )
         var encodedFrame = ByteBuffer()
-        encodedFrame.writeHTTP3PartialFrame(testFrame, preferHuffmanEncoding: false)
-        #expect(encodedFrame.readableBytes == 6)
+        encodedFrame.writeHTTP3PartialFrame(testFrame)
+        #expect(encodedFrame.readableBytes == 5)
         let bytes = [UInt8](buffer: encodedFrame)
         // drip in a frame, byte by byte, except for the last one
         var decoder = HTTP3FrameDecoderStateMachine()
@@ -207,7 +201,7 @@ struct HTTP3FrameDecoderStateMachineTests {
 
         let largePayload = ByteBuffer(repeating: 1, count: 2048)
         var encoded = ByteBuffer()
-        encoded.writeHTTP3PartialFrame(.data(.init(payload: largePayload)), preferHuffmanEncoding: false)
+        encoded.writeHTTP3PartialFrame(.data(.init(payload: largePayload)))
 
         decoder.buffer(encoded)
         // When `buffer()` is called on an idle state machine, the provided ByteBuffer is used directly as the internal
@@ -268,12 +262,12 @@ struct HTTP3FrameDecoderStateMachineTests {
         // Encode the settings frame and split it. The first byte goes into the initial buffer, and the remainder will
         // be buffered later.
         var settingsEncoded = ByteBuffer()
-        settingsEncoded.writeHTTP3PartialFrame(settingsFrame, preferHuffmanEncoding: false)
+        settingsEncoded.writeHTTP3PartialFrame(settingsFrame)
         let settingsFirstByte = settingsEncoded.readSlice(length: 1)!
         let settingsRemainder = settingsEncoded
 
         var encoded = ByteBuffer()
-        encoded.writeHTTP3PartialFrame(.data(.init(payload: largePayload)), preferHuffmanEncoding: false)
+        encoded.writeHTTP3PartialFrame(.data(.init(payload: largePayload)))
         // Write only the first byte of the settings frame.
         encoded.writeImmutableBuffer(settingsFirstByte)
 

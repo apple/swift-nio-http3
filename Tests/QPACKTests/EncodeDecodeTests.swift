@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPTypes
+import NIOCore
 import NIOQUICHelpers
 @_spi(PackageInternal) import QPACK
 import Testing
@@ -155,6 +156,7 @@ struct EncodeDecodeTests {
 
         var encoderInstructions = [QPACKEncoderInstruction]()
         var (encoder, instruction1) = DynamicQPACKEncoder.create(
+            peersDecoderTableMaxCapacity: dynamicTableMaxCapacity,
             dynamicTableMaxCapacity: dynamicTableMaxCapacity,
             dynamicTableInitialCapacity: dynamicTableInitialCapacity,
             maxBlockedStreams: 100,  // We're not testing the max behaviour, so we set it high
@@ -208,6 +210,10 @@ extension QPACKDecoder {
         guard let prefix = self.decodeFieldSectionPrefix(fieldSection.prefix) else {
             return .error(QPACKDecoderError.invalidFieldSection)
         }
-        return self.decodeFieldSection(prefix: prefix, lines: fieldSection.lines, streamID: streamID)
+        return self.decodeFieldSection(
+            prefix: prefix,
+            lines: ByteBuffer(fieldLines: fieldSection.lines),
+            streamID: streamID
+        )
     }
 }

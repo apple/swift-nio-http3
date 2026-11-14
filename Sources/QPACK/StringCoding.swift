@@ -33,11 +33,24 @@ extension ByteBuffer {
         at: Int,
         withPrefix prefix: Int
     ) throws(IntegerReadingError) -> Decoded<String>? {
+        // An index far below the reader index wraps around to an offset far past the end of the span, which the
+        // span reader rejects like any other offset outside the span.
+        try self.readableBytesSpan.getQPACKEncodedString(at: at &- self.readerIndex, withPrefix: prefix)
+    }
+}
+
+extension RawSpan {
+    /// Get one QPACK encoded string, which starts `offset` bytes into the span.
+    @available(anyAppleOS 27, *)
+    func getQPACKEncodedString(
+        at offset: Int,
+        withPrefix prefix: Int
+    ) throws(IntegerReadingError) -> Decoded<String>? {
         /// RFC 9204 4.1.2: The prefix size, N, can have a value between 2 and 8, inclusive. The remainder of the string literal is unmodified.
         precondition(prefix >= 2)
         precondition(prefix <= 8)
         // peek to read the encoding bit
-        guard let initialByte: UInt8 = self.getInteger(at: at) else {
+        guard let initialByte = self.getByte(at: offset) else {
             return nil
         }
         // We are using huffman encoding if the first bit after the prefix is 1
@@ -47,54 +60,30 @@ extension ByteBuffer {
         let huffmanEncoded = initialByte & huffmanMask == huffmanMask
 
         // read the length; the prefix is now one bit less (one-bit encoding flag above)
-        guard let lengthInt = try self.getQPACKPrefixedInteger(as: Int.self, at: at, withPrefix: prefix - 1) else {
+        guard let lengthInt = try self.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: prefix - 1) else {
             return nil
         }
+        let start = offset &+ lengthInt.bytesRead
 
+        let string: String
         if huffmanEncoded {
-            guard
-                let string = self.getHuffmanEncodedString(
-                    at: at + lengthInt.bytesRead,
-                    length: lengthInt.value
-                )
-            else { return nil }
-            return Decoded<String>(value: string, bytesRead: lengthInt.bytesRead + lengthInt.value)
-        } else {
-            guard let string = self.getString(at: at + lengthInt.bytesRead, length: lengthInt.value) else {
+            // Checks the length against the bytes we have, and returns nil if the string runs past them.
+            guard let decoded = self.getHuffmanEncodedString(at: start, length: lengthInt.value) else {
                 return nil
             }
-            return Decoded<String>(value: string, bytesRead: lengthInt.bytesRead + lengthInt.value)
-        }
-    }
-
-    /// Write a string to this buffer, encoded for QPACK.
-    /// The prefix must be between 2 and 8
-    /// Parameters:
-    /// - preferHuffmanEncoding: If true, huffman encoding will be used only if it will save space. If false, huffman encoding will not be used.
-    /// - prefix: The number of bits in the first byte leave before starting the string
-    /// - prefixBits: The bits to use in the first byte before the string begins.
-    @available(anyAppleOS 27, *)
-    @discardableResult
-    mutating func writeQPACKEncodedString(
-        _ string: String,
-        preferHuffmanEncoding: Bool,
-        prefix: Int,
-        prefixBits: UInt8 = 0
-    ) -> Int {
-        let start = self.writerIndex
-        self.writeWithOutputRawSpan(
-            minimumWritableBytes: QPACKEncodedLength.maxString(byteCount: string.utf8.count, prefix: prefix)
-        ) { output in
-            string.withContiguousUTF8 {
-                output.appendQPACKEncodedString(
-                    $0,
-                    preferHuffmanEncoding: preferHuffmanEncoding,
-                    prefix: prefix,
-                    prefixBits: prefixBits
-                )
+            string = decoded
+        } else {
+            // The length comes off the wire, so check it against the bytes we have before forming a range. The
+            // integer reader never reads past the end of the span, so `start` is at most `byteCount` and can't
+            // overflow.
+            guard lengthInt.value <= self.byteCount &- start else {
+                return nil
+            }
+            string = self.extracting(start..<(start &+ lengthInt.value)).withUnsafeBytes { bytes in
+                String(decoding: bytes, as: UTF8.self)
             }
         }
-        return self.writerIndex &- start
+        return Decoded<String>(value: string, bytesRead: lengthInt.bytesRead &+ lengthInt.value)
     }
 }
 
@@ -149,6 +138,26 @@ extension OutputRawSpan {
         // So the prefix is reduced by one
         self.appendQPACKPrefixedInteger(bytes.count, prefix: prefix - 1, prefixBits: prefixBits)
         self.appendBytes(bytes)
+    }
+
+    /// Appends a string literal, encoded as in RFC 9204 § 4.1.2.
+    ///
+    /// - Precondition: The span has room for ``QPACKEncodedLength/maxString(byteCount:prefix:)`` more bytes.
+    @available(anyAppleOS 27, *)
+    mutating func appendQPACKEncodedString(
+        _ string: String,
+        preferHuffmanEncoding: Bool,
+        prefix: Int,
+        prefixBits: UInt8 = 0
+    ) {
+        string.withContiguousUTF8 {
+            self.appendQPACKEncodedString(
+                $0,
+                preferHuffmanEncoding: preferHuffmanEncoding,
+                prefix: prefix,
+                prefixBits: prefixBits
+            )
+        }
     }
 
     /// Appends `bytes` as they are.

@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOCore
 import NIOQUICHelpers
 import Testing
 
@@ -26,9 +27,8 @@ struct FieldSectionQueueTests {
     ) -> FieldSectionQueue<Int>.Entry {
         let prefix = FieldSectionPrefix(requiredInsertCount: requiredInsertCount, base: 0)
         return FieldSectionQueue.Entry(
-            fieldSection: .init(prefix: prefix.encode(maxCapacity: 100), lines: []),
             prefix: prefix,
-            lines: [],
+            lines: ByteBuffer(),
             streamID: streamID,
             context: context
         )

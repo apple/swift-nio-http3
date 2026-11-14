@@ -43,7 +43,7 @@ jobs:
     uses: apple/swift-nio/.github/workflows/macos_tests.yml@main
     with:
       runner_pool: general
-      build_scheme: swift-nio-http3
+      build_scheme: swift-nio-http3-Package
       swift_6_1_enabled: false
       swift_6_2_enabled: false
       swift_6_3_enabled: false

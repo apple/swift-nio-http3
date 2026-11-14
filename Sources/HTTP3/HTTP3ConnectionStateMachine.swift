@@ -16,7 +16,6 @@ public import Logging
 public import NIOQUICHelpers
 
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public enum HTTP3ConnectionType: Sendable {
     case client
     case server

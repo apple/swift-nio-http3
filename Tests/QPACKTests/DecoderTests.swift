@@ -78,7 +78,7 @@ struct DecoderTests {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 100)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
-            lines: [.indexed(.staticTable, index: 10000)],
+            lines: ByteBuffer(fieldLines: [.indexed(.staticTable, index: 10000)]),
             streamID: 0
         )
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
@@ -89,14 +89,14 @@ struct DecoderTests {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 100)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
-            lines: [
+            lines: ByteBuffer(fieldLines: [
                 .literalWithNameReference(
                     requireLiteralRepresentation: false,
                     table: .staticTable,
                     index: 10000,
                     value: "hi"
                 )
-            ],
+            ]),
             streamID: 0
         )
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
@@ -270,14 +270,14 @@ struct DecoderTests {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
-            lines: [
+            lines: ByteBuffer(fieldLines: [
                 .literalWithNameReference(
                     requireLiteralRepresentation: false,
                     table: .dynamicTable,
                     index: 0,  // this entry doesn't exist (in fact, none do)
                     value: "hi"
                 )
-            ],
+            ]),
             streamID: 0
         )
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
@@ -288,13 +288,13 @@ struct DecoderTests {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
-            lines: [
+            lines: ByteBuffer(fieldLines: [
                 .literalWithNameReferenceWithPostBase(
                     requireLiteralRepresentation: false,
                     index: 0,  // this entry doesn't exist (in fact, none do)
                     value: "hi"
                 )
-            ],
+            ]),
             streamID: 0
         )
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
@@ -354,7 +354,7 @@ struct DecoderTests {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 0, base: 0),
-            lines: [.indexedWithPostBase(index: 0)],  // entry doesn't exist
+            lines: ByteBuffer(fieldLines: [.indexedWithPostBase(index: 0)]),  // entry doesn't exist
             streamID: 0
         )
         #expect(throws: QPACKDecoderError.invalidReference) { try result.unwrap() }
@@ -372,6 +372,54 @@ struct DecoderTests {
         let line = FieldLine.indexed(.dynamicTable, index: 0)  // invalid because table only has 1 entry
         #expect(throws: QPACKDecoderError.invalidReference) {
             try tester.decodeFieldSection(prefix, lines: [line]).unwrap()
+        }
+        tester.assertNoMoreInstructions()
+    }
+
+    // MARK: Test malformed field lines
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeNoLines() throws {
+        let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
+
+        let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0)
+        let fields = try tester.decodeFieldSection(prefix, lines: ByteBuffer()).unwrap()
+        tester.assertNoMoreInstructions()
+
+        #expect(fields == [])
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeTruncatedLine() throws {
+        let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
+
+        let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0)
+        var lines = ByteBuffer(
+            fieldLines: [
+                .indexed(.staticTable, index: 46),
+                .literal(requireLiteralRepresentation: false, name: "hello", value: "World"),
+            ]
+        )
+        // Cut the last byte off the literal's value. The line before it is still whole.
+        lines.moveWriterIndex(to: lines.writerIndex - 1)
+        #expect(throws: QPACKDecoderError.invalidFieldSection) {
+            try tester.decodeFieldSection(prefix, lines: lines).unwrap()
+        }
+        tester.assertNoMoreInstructions()
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLineWithUnrepresentableIndex() throws {
+        let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
+
+        let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0)
+        var lines = ByteBuffer()
+        // An indexed field line (11 for indexed and static) whose index is larger than an Int.
+        lines.writeWithOutputRawSpan(minimumWritableBytes: 11) {
+            $0.appendQPACKPrefixedInteger(UInt.max, prefix: 6, prefixBits: 0xC0)
+        }
+        #expect(throws: QPACKDecoderError.invalidFieldSection) {
+            try tester.decodeFieldSection(prefix, lines: lines).unwrap()
         }
         tester.assertNoMoreInstructions()
     }
@@ -502,7 +550,7 @@ struct DecoderTests {
         // The only entry in the table should now be name: a, value: c
         let result = decoder.decodeFieldSection(
             prefix: .init(requiredInsertCount: 2, base: 1),
-            lines: [.indexedWithPostBase(index: 0)],
+            lines: ByteBuffer(fieldLines: [.indexedWithPostBase(index: 0)]),
             streamID: 1
         )
         let unwrapped = try? result.unwrap()
@@ -583,6 +631,14 @@ private class QPACKDecoderTester {
     func decodeFieldSection(
         _ prefix: FieldSectionPrefix,
         lines: [FieldLine],
+        streamID: QUICStreamID = 1
+    ) -> QPACKDecodeResult {
+        self.decodeFieldSection(prefix, lines: ByteBuffer(fieldLines: lines), streamID: streamID)
+    }
+
+    func decodeFieldSection(
+        _ prefix: FieldSectionPrefix,
+        lines: ByteBuffer,
         streamID: QUICStreamID = 1
     ) -> QPACKDecodeResult {
         let result = self.decoder.decodeFieldSection(prefix: prefix, lines: lines, streamID: streamID)

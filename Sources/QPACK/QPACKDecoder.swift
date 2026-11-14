@@ -15,6 +15,8 @@
 public import HTTPTypes
 public import NIOQUICHelpers
 
+public import struct NIOCore.ByteBuffer
+
 @available(anyAppleOS 27, *)
 @_spi(PackageInternal)
 public enum QPACKDecoderError: Error, Sendable, Hashable {
@@ -141,21 +143,30 @@ public struct QPACKDecoder {
         }
     }
 
-    /// Return a list of headers for a FieldSection, if the required insert count is met.
+    /// Return a list of headers for a field section, if the required insert count is met.
     /// Otherwise, return ``QPACKDecodeResult/missingInsertCount``.
+    ///
+    /// `lines` are the encoded field lines which follow the field section's prefix. They are read one at a time, so
+    /// that no list of them is ever built.
     @_spi(PackageInternal)
     public mutating func decodeFieldSection(
         prefix: FieldSectionPrefix,
-        lines: [FieldLine],
+        lines: ByteBuffer,
         streamID: QUICStreamID
     ) -> QPACKFullDecodeResult {
         guard prefix.requiredInsertCount <= self.dynamicTable.insertCount else {
             return .missingInsertCount
         }
+        var lines = lines
         do {
             var fields = [HTTPField]()
-            fields.reserveCapacity(lines.count)
-            for line in lines {
+            fields.reserveCapacity(QPACKConstants.defaultFieldLinesCapacity)
+            while lines.readableBytes > 0 {
+                // A line which ends early, or holds an integer too large to represent, can't be decoded. RFC 9204 § 6
+                // makes that a connection error of type QPACK_DECOMPRESSION_FAILED.
+                guard let line = try? lines.readFieldLine() else {
+                    return .error(.invalidFieldSection)
+                }
                 try fields.append(self.decodeLine(line, prefix: prefix))
             }
             self.stateSynchronizer.sectionProcessed(withRequiredInsertCount: prefix.requiredInsertCount)
