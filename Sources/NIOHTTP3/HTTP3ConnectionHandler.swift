@@ -215,9 +215,6 @@ public final class HTTP3ConnectionHandler<
     }
 
     /// Internal version of the above, allows accessing internal inbound streams.
-    ///
-    /// > Note: WebTransport API
-    ///
     /// - Parameters:
     ///   - eventLoop: The event loop of the channel this handler will be on.
     ///   - configuration: Configuration for the handler.
@@ -228,7 +225,7 @@ public final class HTTP3ConnectionHandler<
     ///   - internalInboundStreamInitializer: A closure which will be called for every incoming non-push stream.
     /// - Returns: A ``HTTP3ConnectionHandler``.
     @inlinable
-    public static func client(
+    static func client(
         eventLoop: any EventLoop,
         configuration: HTTP3ClientConfiguration,
         settings: HTTP3Settings,
