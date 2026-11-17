@@ -85,8 +85,8 @@ extension HTTP3Error {
                 errorCode: .qpackDecompressionFailed,
                 location: location
             )
-        case .decodeError(.invalidHeaderName):
-            // The field section decoded fine, but a field name isn't valid in HTTP/3: a malformed message.
+        case .decodeError(.invalidHeaderName), .decodeError(.invalidHeaderValue):
+            // The field section decoded fine, but a field name or value isn't valid in HTTP/3: a malformed message.
             self.init(
                 code: .qpackDecoderError,
                 message: "Could not decode QPACK headers",

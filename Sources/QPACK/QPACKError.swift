@@ -43,24 +43,19 @@ public enum QPACKError: Error, Sendable, Hashable {
 
     /// Whether the failure is fatal to the connection, rather than only to the stream it happened on.
     ///
-    /// Everything which may leave the two dynamic tables out of sync is a connection error. The only stream error
-    /// is a field section which decoded fine, but whose field names are not valid in HTTP/3, such as upper case
-    /// ones: the message is malformed, but the connection is not at fault.
+    /// Everything which may leave the two dynamic tables out of sync is a connection error. The only stream errors
+    /// are field sections which decoded fine, but whose field names or values are not valid in HTTP/3, such as upper
+    /// case names: the message is malformed, but the connection is not at fault.
     public var isConnectionError: Bool {
         switch self {
-        case .decodeError(.invalidHeaderName):
-            return false
+        case .decodeError(let decoderError):
+            return decoderError.isConnectionError
         case .duplicateSettings,
             .invalidEncoderInstruction,
             .decoderInstructionWithoutDynamicTable,
             .invalidDecoderInstruction,
             .invalidFieldSectionPrefix,
-            .decodeError(.invalidReference),
-            .decodeError(.invalidFieldSection),
             .tooManyBlockedStreams:
-            // RFC 9204 § 2.2.3: a reference to a dynamic table entry that has already been evicted or that has an
-            // absolute index greater than or equal to the declared Required Insert Count MUST be treated as a
-            // connection error of type QPACK_DECOMPRESSION_FAILED.
             return true
         }
     }

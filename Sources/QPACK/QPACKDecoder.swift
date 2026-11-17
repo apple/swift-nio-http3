@@ -17,17 +17,87 @@ public import NIOQUICHelpers
 
 public import struct NIOCore.ByteBuffer
 
+/// Why a field section could not be decoded.
+///
+/// The cases fall into two groups, which call for different handling. ``isConnectionError`` tells them apart.
+///
+/// - ``invalidHeaderName`` and ``invalidHeaderValue``: the field section decoded fine, but the message it carries
+///   is malformed (RFC 9114 § 4.1.2). Only the stream the section arrived on is at fault: reset it with
+///   H3_MESSAGE_ERROR, and keep the connection open.
+/// - ``invalidReference`` and ``invalidFieldSection``: the peer's encoder produced something malformed.
+///   That is a connection error of type QPACK_DECOMPRESSION_FAILED (RFC 9204 § 6).
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
+@nonexhaustive
 public enum QPACKDecoderError: Error, Sendable, Hashable {
+    /// Whether the failure is fatal to the connection, as a QPACK_DECOMPRESSION_FAILED error, rather than only to
+    /// the stream whose field section it is.
+    var isConnectionError: Bool {
+        switch self {
+        case .invalidHeaderName, .invalidHeaderValue:
+            return false
+        case .invalidReference, .invalidFieldSection:
+            // RFC 9204 § 2.2.3: a reference to a dynamic table entry that has already been evicted or that has an
+            // absolute index greater than or equal to the declared Required Insert Count MUST be treated as a
+            // connection error of type QPACK_DECOMPRESSION_FAILED. RFC 9204 § 6 says the same of anything else
+            // which can't be decoded.
+            return true
+        }
+    }
+
+    /// A field name is not valid in HTTP/3, for example because it holds upper case characters (RFC 9114 § 4.2).
     case invalidHeaderName
+
+    /// A field value holds a character which isn't permitted: a control character other than HTAB, such as
+    /// CR, LF or NUL, or DEL (RFC 9114 § 10.3, RFC 9110 § 5.5).
+    case invalidHeaderValue
+
+    /// A field line references a table entry which doesn't exist (RFC 9204 § 2.2.3).
     case invalidReference
+
+    /// The field section's prefix or one of its field lines can't be decoded: it ends early, holds an integer too
+    /// large to represent, a malformed Huffman string, or a prefix which needs a dynamic table the decoder doesn't
+    /// have (RFC 9204 § 4.5).
     case invalidFieldSection
+}
+
+extension HTTPField {
+    /// A field whose value comes from the wire.
+    ///
+    /// `HTTPField(name:value:)` on its own would replace characters which aren't permitted with spaces. RFC 9114
+    /// § 10.3 requires a message with such a value to be treated as malformed instead, so it is rejected here.
+    /// Leading and trailing whitespace is permitted, just not part of the value: `HTTPField` trims it.
+    @available(anyAppleOS 27, *)
+    init(name: HTTPField.Name, decodedValue value: String) throws(QPACKDecoderError) {
+        self.init(name: name, value: value)
+        // `HTTPField` already scans the value, and keeps it as it is if it is valid. Then this compares the string
+        // with itself, which takes no time. Only a value `HTTPField` changed needs the second, exact scan: it may
+        // just have trimmed whitespace, which is fine.
+        if self.value != value && !HTTPField.isPermittedValue(value) {
+            throw QPACKDecoderError.invalidHeaderValue
+        }
+    }
+
+    /// Whether `value` holds only characters RFC 9110 § 5.5 permits in a field value: visible characters, SP, HTAB
+    /// and obs-text. DEL and every control character other than HTAB are not permitted, CR, LF and NUL included.
+    ///
+    /// Unlike `HTTPField.isValidValue`, this permits leading and trailing whitespace. That isn't part of the value
+    /// according to the grammar, but RFC 9114 § 10.3 only makes characters which aren't permitted malformed.
+    @available(anyAppleOS 27, *)
+    static func isPermittedValue(_ value: String) -> Bool {
+        let bytes = value.utf8.span
+        // Index loop rather than `for byte in bytes`, which compiles to slower code (Swift 6.4).
+        for index in bytes.indices {
+            let byte = bytes[index]
+            if (byte < 0x20 && byte != 0x09) || byte == 0x7F {
+                return false
+            }
+        }
+        return true
+    }
 }
 
 /// The result of decoding a field section, plus the instruction which need to be sent back, if any.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public enum QPACKFullDecodeResult: Sendable {
     /// The section cannot not be decoded because we don't have the required insert count. You can try again later.
     case missingInsertCount
@@ -117,6 +187,13 @@ public struct QPACKDecoder {
         named name: HTTPField.Name,
         value: String
     ) throws -> QPACKDecoderInstruction? {
+        // The table keeps an `HTTPField`, which would replace characters which aren't permitted with spaces. This is
+        // the only place which sees the value as it was sent, so it has to be checked here, not by `decodeLine`.
+        // Unlike in a field line, this is a connection error: the encoder has already counted the insert, so skipping
+        // it would leave the two tables out of sync. The caller reports it as an invalid encoder instruction.
+        guard HTTPField.isPermittedValue(value) else {
+            throw QPACKDecoderError.invalidHeaderValue
+        }
         try self.dynamicTable.addHeader(named: name, value: value)
         let insertCount = self.dynamicTable.insertCount
         let shouldAck = self.stateSynchronizer.dynamicTableEntryAdded(insertCount: insertCount)
@@ -148,7 +225,6 @@ public struct QPACKDecoder {
     ///
     /// `lines` are the encoded field lines which follow the field section's prefix. They are read one at a time, so
     /// that no list of them is ever built.
-    @_spi(PackageInternal)
     public mutating func decodeFieldSection(
         prefix: FieldSectionPrefix,
         lines: ByteBuffer,
@@ -206,7 +282,7 @@ public struct QPACKDecoder {
             guard let fieldName = HTTPField.Name(parsed: name) else {
                 throw QPACKDecoderError.invalidHeaderName
             }
-            return .init(name: fieldName, value: value)
+            return try HTTPField(name: fieldName, decodedValue: value)
         case .literalWithNameReference(_, let table, let index, let value):
             let name: HTTPField.Name
             switch table {
@@ -222,7 +298,7 @@ public struct QPACKDecoder {
                 let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
                 name = entry.name
             }
-            return .init(name: name, value: value)
+            return try HTTPField(name: name, decodedValue: value)
         case .indexedWithPostBase(let index):
             // Post-Base indices are used in field line representations for entries with absolute indices greater
             // than or equal to Base, starting at 0 for the entry with absolute index equal to Base and increasing
@@ -241,7 +317,7 @@ public struct QPACKDecoder {
                 throw QPACKDecoderError.invalidReference
             }
             let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
-            return .init(name: entry.name, value: value)
+            return try HTTPField(name: entry.name, decodedValue: value)
         }
     }
 
