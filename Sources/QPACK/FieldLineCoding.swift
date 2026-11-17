@@ -111,6 +111,11 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
         // if ReqInsertCount == 0:
         //     Error
         if self.encodedRequiredInsertCount == 0 {
+            // RFC 9204 § 4.5.1.2: a Sign bit of 1 is invalid when the Required Insert Count is less than or equal to
+            // the Delta Base, which a count of zero always is.
+            if self.signBit {
+                return nil
+            }
             return .init(requiredInsertCount: 0, base: self.deltaBase)
         }
         let maxEntries = FieldSectionPrefix.maxEntries(maxTableCapacity: maxCapacity)
