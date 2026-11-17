@@ -874,7 +874,7 @@ public struct HTTP3StreamStateMachine: ~Copyable {
         case emitStreamError(HTTP3Error)
     }
 
-    /// Inform the state machine that the stream closes because the peer asked us to stop sending.
+    /// Inform the state machine that the stream closed because the peer asked us to stop sending.
     ///
     /// SwiftNIO QUIC reports STOP_SENDING as an error when it closes the whole stream because of it. Once the
     /// read side has seen the end of the stream, that only ends our sending side. Before that, inbound data is lost,
