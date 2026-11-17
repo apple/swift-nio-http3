@@ -29,7 +29,7 @@ public enum QPACKBenchmarks {
     public static func staticEncode(headers: [HTTPField]) -> Int {
         let encoder = StaticQPACKEncoder()
         return Self.withOutputRawSpan(capacity: encoder.maxEncodedLength(of: headers)) { output in
-            encoder.encode(headers: headers, into: &output, preferHuffmanEncoding: true)
+            encoder.encode(fields: headers, into: &output, preferHuffmanEncoding: true)
         }
     }
 

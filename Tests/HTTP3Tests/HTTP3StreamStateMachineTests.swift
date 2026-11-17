@@ -71,7 +71,7 @@ struct HTTP3StreamStateMachineTests {
     private func fieldSectionBytes(_ fields: [HTTPField]) -> ByteBuffer {
         let encoder = StaticQPACKEncoder()
         return ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: fields)) {
-            encoder.encode(headers: fields, into: &$0, preferHuffmanEncoding: false)
+            encoder.encode(fields: fields, into: &$0, preferHuffmanEncoding: false)
         }
     }
 
@@ -81,7 +81,7 @@ struct HTTP3StreamStateMachineTests {
         let encoder = StaticQPACKEncoder()
         var buffer = ByteBuffer()
         buffer.writeHeadersFrame(maxPayloadLength: encoder.maxEncodedLength(of: fields)) {
-            encoder.encode(headers: fields, into: &$0, preferHuffmanEncoding: false)
+            encoder.encode(fields: fields, into: &$0, preferHuffmanEncoding: false)
         }
         return .init(buffer: buffer)
     }
@@ -1056,7 +1056,7 @@ extension HTTP3StreamStateMachine {
     ) -> HeaderEncodeResultAction {
         let encoder = StaticQPACKEncoder()
         return self.writeHeadersFrame(maxPayloadLength: encoder.maxEncodedLength(of: fields), into: &buffer) {
-            encoder.encode(headers: fields, into: &$0, preferHuffmanEncoding: $1)
+            encoder.encode(fields: fields, into: &$0, preferHuffmanEncoding: $1)
         }
     }
 

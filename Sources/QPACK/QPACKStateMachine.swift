@@ -163,15 +163,15 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
         ) -> [QPACKEncoderInstruction] {
             switch consume self.state {
             case .initial(let initial):
-                initial.encoder.encode(headers: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+                initial.encoder.encode(fields: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
                 self = .init(state: .initial(initial))
                 return []
             case .awaitingStream(let awaiting):
-                awaiting.encoder.encode(headers: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+                awaiting.encoder.encode(fields: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
                 self = .init(state: .awaitingStream(awaiting))
                 return []
             case .withoutDynamic(let woDynamic):
-                woDynamic.encoder.encode(headers: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
+                woDynamic.encoder.encode(fields: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
                 self = .init(state: .withoutDynamic(woDynamic))
                 return []
             case .withDynamic(var withDynamic):
