@@ -155,6 +155,22 @@ struct FieldLineCodingTests {
         expectEncoding(original: 17, expect: 6)
     }
 
+    /// RFC 9204 § 4.5.1.2: a Sign bit of 1 is invalid when the Required Insert Count is less than or equal to the
+    /// Delta Base, which a count of zero always is.
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeRequiredInsertCountZeroRejectsTheSignBit() {
+        for maxCapacity in [0, 100] {
+            for deltaBase in [0, 1, 5] {
+                let encoded = EncodedFieldSectionPrefix(
+                    encodedRequiredInsertCount: 0,
+                    deltaBase: deltaBase,
+                    signBit: true
+                )
+                #expect(encoded.decode(totalInserts: 0, maxCapacity: maxCapacity) == nil)
+            }
+        }
+    }
+
     @available(anyAppleOS 27, *)
     @Test func testDecodeRequiredInsertCountZero() {
         for maxCapacity in 0...100 {
