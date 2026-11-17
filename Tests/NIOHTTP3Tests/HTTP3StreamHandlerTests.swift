@@ -177,7 +177,7 @@ struct NIOHTTP3StreamHandlerTests {
     private var testResponsePartialHeaderBytes: ByteBuffer {
         let encoder = StaticQPACKEncoder()
         let fieldSection = ByteBuffer(initialCapacity: encoder.maxEncodedLength(of: self.testResponseHeaderFields)) {
-            encoder.encode(headers: self.testResponseHeaderFields, into: &$0, preferHuffmanEncoding: false)
+            encoder.encode(fields: self.testResponseHeaderFields, into: &$0, preferHuffmanEncoding: false)
         }
         var buffer = ByteBuffer()
         buffer.writeHeadersFrame(fieldSection: fieldSection)

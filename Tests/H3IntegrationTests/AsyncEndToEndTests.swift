@@ -584,12 +584,12 @@ struct AsyncEndToEndTests {
             serverName = name
         }
 
-        let (serverChannel, serverMultiplexer) = try await makeHTTP3Server(
+        let (serverChannel, serverConnectionStream) = try await makeHTTP3Server(
             credentials: credentials,
             settings: .init(),
             logger: serverLogger
         )
-        let (clientChannel, clientMultiplexer) = try await makeHTTP3Client(
+        let (clientChannel, client) = try await makeHTTP3Client(
             credentials: credentials,
             settings: .init(),
             logger: clientLogger
@@ -604,10 +604,10 @@ struct AsyncEndToEndTests {
         try await withThrowingTaskGroup(of: Void.self) { group in
             // Server: answers the request head alone, without reading the request body.
             group.addTask {
-                var inboundConnections = serverMultiplexer.inboundConnections.makeAsyncIterator()
-                let inboundConnection = try #require(await inboundConnections.next())
+                var inboundConnections = serverConnectionStream.makeAsyncIterator()
+                let (_, inboundConnection) = try #require(await inboundConnections.next())
 
-                var inboundStreams = inboundConnection.inboundStreams.makeAsyncIterator()
+                var inboundStreams = inboundConnection.inbound.makeAsyncIterator()
                 let inboundStream = try #require(await inboundStreams.next())
 
                 try await inboundStream.executeThenClose { inboundParts, outbound in
@@ -627,7 +627,7 @@ struct AsyncEndToEndTests {
             // Client: keeps uploading the request body until it is told to stop.
             group.addTask {
                 defer { clientSawWriteFailContinuation.finish() }
-                let clientConnection = try await clientMultiplexer.concurrencyView.createConnection(
+                let (_, clientConnection) = try await client.createConnection(
                     serverName: serverName,
                     remoteAddress: serverChannel.localAddress!,
                     inboundPushStreamInitializer: { _ in
@@ -635,7 +635,7 @@ struct AsyncEndToEndTests {
                     }
                 )
 
-                let requestStream = try await clientConnection.concurrencyView.createRequestStream {
+                let requestStream = try await clientConnection.createRequestStream {
                     let streamChannel = $0.channel
                     return streamChannel.eventLoop.makeCompletedFuture {
                         try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
