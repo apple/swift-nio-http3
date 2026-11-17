@@ -16,6 +16,7 @@ import HTTP3
 import HTTPTypes
 import Logging
 import NIOCore
+import NIOExtras
 import NIOHTTPTypes
 import NIOPosix
 import NIOQUICHelpers
@@ -624,6 +625,8 @@ struct AsyncEndToEndTests {
                 }
             }
 
+            let receivedStopSendingPromise = clientChannel.eventLoop.makePromise(of: Void.self)
+
             // Client: keeps uploading the request body until it is told to stop.
             group.addTask {
                 defer { clientSawWriteFailContinuation.finish() }
@@ -638,7 +641,14 @@ struct AsyncEndToEndTests {
                 let requestStream = try await clientConnection.createRequestStream {
                     let streamChannel = $0.channel
                     return streamChannel.eventLoop.makeCompletedFuture {
-                        try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
+                        try streamChannel.pipeline.syncOperations.addHandler(
+                            DebugInboundEventsHandler { event, _ in
+                                if case .userInboundEventTriggered(let event) = event, event is QUICStopSendingEvent {
+                                    receivedStopSendingPromise.succeed()
+                                }
+                            }
+                        )
+                        return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
                             wrappingChannelSynchronously: streamChannel,
                             configuration: .init(isOutboundHalfClosureEnabled: true)
                         )
@@ -650,17 +660,10 @@ struct AsyncEndToEndTests {
                     var inboundPartIterator = inboundParts.makeAsyncIterator()
                     try await #expect(inboundPartIterator.next() == .head(testResponse))
 
-                    // Writes only enqueue, so pause between them to give the STOP_SENDING time to arrive.
-                    var writeError: (any Error)?
-                    for _ in 0..<50 where writeError == nil {
-                        do {
-                            try await outbound.write(.body(ByteBuffer(string: "more body")))
-                            try await Task.sleep(for: .milliseconds(10))
-                        } catch {
-                            writeError = error
-                        }
+                    try await receivedStopSendingPromise.futureResult.get()
+                    await #expect(throws: NIOAsyncWriterError.alreadyFinished()) {
+                        try await outbound.write(.body(ByteBuffer(string: "more body")))
                     }
-                    #expect(writeError as? NIOAsyncWriterError == .alreadyFinished())
                     clientSawWriteFailContinuation.finish()
 
                     try await #expect(inboundPartIterator.next() == .end(nil))
