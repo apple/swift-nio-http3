@@ -492,6 +492,24 @@ struct QPACKStateMachineTests {
         Self.expectConnectionError(action, .invalidFieldSectionPrefix, context: 7)
     }
 
+    /// RFC 9204 § 4.5.1.2: a Sign bit of 1 with a Required Insert Count of zero would make Base negative.
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [false, true])
+    func testDecodeFieldSectionPrefixWithSignBitAndZeroRequiredInsertCount(withDynamicTable: Bool) {
+        var stateMachine = QPACKStateMachine<Int>(decoderTableMaxCapacity: 1024, decoderMaxBlockedStreams: 100)
+        if withDynamicTable {
+            stateMachine.setupRemoteDynamicTable(maxSize: 1024)
+            stateMachine.setupLocalDynamicTable(maxSize: 1024)
+            stateMachine.setupOutboundDecoderStream()
+        }
+        let fieldSection = FieldSection(
+            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: true),
+            lines: [.literal(requireLiteralRepresentation: false, name: "cookie", value: "test")]
+        )
+        let action = stateMachine.decodeHeaders(fieldSection.bytes(), forStream: 0, context: 7)
+        Self.expectConnectionError(action, .invalidFieldSectionPrefix, context: 7)
+    }
+
     @available(anyAppleOS 27, *)
     @Test func testDecodeTruncatedFieldLine() {
         var stateMachine = QPACKStateMachine<Int>(decoderTableMaxCapacity: 1024, decoderMaxBlockedStreams: 100)
