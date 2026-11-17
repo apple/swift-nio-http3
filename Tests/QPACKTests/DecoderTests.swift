@@ -441,6 +441,38 @@ struct DecoderTests {
         }
     }
 
+    /// A Base of up to `Int.max` decodes from a Required Insert Count of zero, so adding a post-Base index to it must
+    /// not trap.
+    @available(anyAppleOS 27, *)
+    @Test func testDecodePostBaseIndexPastIntMax() throws {
+        let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 100)
+        let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: .max)
+        for line in [
+            FieldLine.indexedWithPostBase(index: 1),
+            .literalWithNameReferenceWithPostBase(requireLiteralRepresentation: false, index: .max, value: "v"),
+        ] {
+            let lines = ByteBuffer(fieldLines: [line])
+            #expect(throws: QPACKDecoderError.invalidReference, "\(line)") {
+                try tester.decodeFieldSection(prefix, lines: lines).unwrap()
+            }
+        }
+    }
+
+    /// A relative index larger than Base would reach an absolute index below zero, as far as `Int.min`.
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeRelativeIndexPastBase() throws {
+        let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 100)
+        try tester.processInstruction(.setDynamicTableCapacity(100))
+        try tester.processInstruction(.insertWithLiteralName(name: "x-a", value: "a"))
+        let prefix = FieldSectionPrefix(requiredInsertCount: 1, base: 0)
+        for index in [0, 1, Int.max] {
+            let lines = ByteBuffer(fieldLines: [.indexed(.dynamicTable, index: index)])
+            #expect(throws: QPACKDecoderError.invalidReference, "index \(index)") {
+                try tester.decodeFieldSection(prefix, lines: lines).unwrap()
+            }
+        }
+    }
+
     // MARK: Test processing instructions
 
     @available(anyAppleOS 27, *)

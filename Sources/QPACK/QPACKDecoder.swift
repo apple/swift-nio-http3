@@ -195,6 +195,7 @@ public struct QPACKDecoder {
                 value = entry.1
             case .dynamicTable:
                 // In a field line representation, a relative index of 0 refers to the entry with absolute index equal to Base - 1
+                // `index` comes from the wire and can be larger than Base, which yields a negative absolute index.
                 let absoluteIndex = prefix.base - 1 - index
                 let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
                 name = entry.name
@@ -216,6 +217,7 @@ public struct QPACKDecoder {
                 name = entry.0
             case .dynamicTable:
                 // In a field line representation, a relative index of 0 refers to the entry with absolute index equal to Base - 1
+                // `index` comes from the wire and can be larger than Base, which yields a negative absolute index.
                 let absoluteIndex = prefix.base - 1 - index
                 let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
                 name = entry.name
@@ -225,11 +227,19 @@ public struct QPACKDecoder {
             // Post-Base indices are used in field line representations for entries with absolute indices greater
             // than or equal to Base, starting at 0 for the entry with absolute index equal to Base and increasing
             // in the same direction as the absolute index.
-            let absoluteIndex = prefix.base + index
+            // With a Required Insert Count of zero, Base is the peer's Delta Base, which can be `Int.max`.
+            let (absoluteIndex, overflow) = prefix.base.addingReportingOverflow(index)
+            guard !overflow else {
+                throw QPACKDecoderError.invalidReference
+            }
             let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
             return .init(name: entry.name, value: entry.value)
         case .literalWithNameReferenceWithPostBase(_, let index, let value):
-            let absoluteIndex = prefix.base + index
+            // With a Required Insert Count of zero, Base is the peer's Delta Base, which can be `Int.max`.
+            let (absoluteIndex, overflow) = prefix.base.addingReportingOverflow(index)
+            guard !overflow else {
+                throw QPACKDecoderError.invalidReference
+            }
             let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
             return .init(name: entry.name, value: value)
         }
@@ -241,8 +251,8 @@ public struct QPACKDecoder {
         prefix: FieldSectionPrefix
     ) throws(QPACKDecoderError) -> HeaderTableEntry {
         // RFC 9204 § 2.2.3: a reference to an absolute index greater than or equal to the Required Insert Count is
-        // an error, even if the table holds the entry.
-        guard absoluteIndex < prefix.requiredInsertCount,
+        // an error, even if the table holds the entry. `DynamicHeaderTable` overflows on a negative absolute index.
+        guard absoluteIndex >= 0, absoluteIndex < prefix.requiredInsertCount,
             let entry = self.dynamicTable.get(absoluteIndex: absoluteIndex)
         else {
             throw QPACKDecoderError.invalidReference
