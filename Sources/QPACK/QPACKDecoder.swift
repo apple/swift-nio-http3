@@ -196,9 +196,7 @@ public struct QPACKDecoder {
             case .dynamicTable:
                 // In a field line representation, a relative index of 0 refers to the entry with absolute index equal to Base - 1
                 let absoluteIndex = prefix.base - 1 - index
-                guard let entry = self.dynamicTable.get(absoluteIndex: absoluteIndex) else {
-                    throw QPACKDecoderError.invalidReference
-                }
+                let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
                 name = entry.name
                 value = entry.value
             }
@@ -219,9 +217,7 @@ public struct QPACKDecoder {
             case .dynamicTable:
                 // In a field line representation, a relative index of 0 refers to the entry with absolute index equal to Base - 1
                 let absoluteIndex = prefix.base - 1 - index
-                guard let entry = self.dynamicTable.get(absoluteIndex: absoluteIndex) else {
-                    throw QPACKDecoderError.invalidReference
-                }
+                let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
                 name = entry.name
             }
             return .init(name: name, value: value)
@@ -230,17 +226,28 @@ public struct QPACKDecoder {
             // than or equal to Base, starting at 0 for the entry with absolute index equal to Base and increasing
             // in the same direction as the absolute index.
             let absoluteIndex = prefix.base + index
-            guard let entry = self.dynamicTable.get(absoluteIndex: absoluteIndex) else {
-                throw QPACKDecoderError.invalidReference
-            }
+            let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
             return .init(name: entry.name, value: entry.value)
         case .literalWithNameReferenceWithPostBase(_, let index, let value):
             let absoluteIndex = prefix.base + index
-            guard let entry = self.dynamicTable.get(absoluteIndex: absoluteIndex) else {
-                throw QPACKDecoderError.invalidReference
-            }
+            let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
             return .init(name: entry.name, value: value)
         }
+    }
+
+    /// The dynamic table entry with `absoluteIndex`, if the field section may reference it.
+    private func dynamicTableEntry(
+        absoluteIndex: Int,
+        prefix: FieldSectionPrefix
+    ) throws(QPACKDecoderError) -> HeaderTableEntry {
+        // RFC 9204 § 2.2.3: a reference to an absolute index greater than or equal to the Required Insert Count is
+        // an error, even if the table holds the entry.
+        guard absoluteIndex < prefix.requiredInsertCount,
+            let entry = self.dynamicTable.get(absoluteIndex: absoluteIndex)
+        else {
+            throw QPACKDecoderError.invalidReference
+        }
+        return entry
     }
 
     @_spi(PackageInternal)
