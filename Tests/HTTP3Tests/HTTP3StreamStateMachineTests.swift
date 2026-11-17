@@ -750,9 +750,7 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(String(describing: stopSendingAction))")
             return
         }
-        expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
-            throw error
-        }
+        expectH3ErrorEqual(error: error, expectedCode: .remoteStreamError, expectedH3ErrorCode: .noError)
 
         // Neither frame gets as far as validation (DATA before HEADERS is invalid) or QPACK.
         for frame in [self.testDataFrame, .headers(self.testRequestHeaderFields)] {
@@ -761,9 +759,7 @@ struct HTTP3StreamStateMachineTests {
                 Issue.record("Unexpected action \(writeAction)")
                 continue
             }
-            expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError) {
-                throw writeError
-            }
+            expectH3ErrorEqual(error: writeError, expectedCode: .remoteStreamError, expectedH3ErrorCode: .noError)
         }
 
         // The output is closed already, a second STOP_SENDING changes nothing.
@@ -812,9 +808,12 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(String(describing: actionBeforeEOF))")
             return
         }
-        expectH3Error(code: .remoteStreamError, h3ErrorCode: .noError, message: "The remote peer closed the stream") {
-            throw streamError
-        }
+        expectH3ErrorEqual(
+            error: streamError,
+            expectedCode: .remoteStreamError,
+            expectedH3ErrorCode: .noError,
+            expectedMessage: "The remote peer closed the stream"
+        )
 
         // After the end of the stream, nothing is lost: only the output closes.
         var machineAfterEOF = HTTP3StreamStateMachine(
@@ -833,13 +832,12 @@ struct HTTP3StreamStateMachineTests {
             Issue.record("Unexpected action \(String(describing: actionAfterEOF))")
             return
         }
-        expectH3Error(
-            code: .remoteStreamError,
-            h3ErrorCode: .noError,
-            message: "The remote peer stopped reading the stream"
-        ) {
-            throw outputError
-        }
+        expectH3ErrorEqual(
+            error: outputError,
+            expectedCode: .remoteStreamError,
+            expectedH3ErrorCode: .noError,
+            expectedMessage: "The remote peer stopped reading the stream"
+        )
     }
 
     // MARK: Stream closed
