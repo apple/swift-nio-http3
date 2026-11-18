@@ -144,7 +144,7 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
         } else {
             // Delta Base comes from the wire and can be as large as `Int.max`.
             let (sum, overflow) = reqInsertCount.addingReportingOverflow(self.deltaBase)
-            guard !overflow else {
+            if overflow {
                 return nil
             }
             base = sum
