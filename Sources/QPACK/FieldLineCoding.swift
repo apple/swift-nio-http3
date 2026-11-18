@@ -142,7 +142,12 @@ public struct EncodedFieldSectionPrefix: Sendable, Hashable {
         if self.signBit {
             base = reqInsertCount - self.deltaBase - 1
         } else {
-            base = reqInsertCount + self.deltaBase
+            // Delta Base comes from the wire and can be as large as `Int.max`.
+            let (sum, overflow) = reqInsertCount.addingReportingOverflow(self.deltaBase)
+            if overflow {
+                return nil
+            }
+            base = sum
         }
         if base < 0 {
             // RFC 9204 § 4.5.1.2: The value of Base MUST NOT be negative.
