@@ -171,6 +171,13 @@ struct FieldLineCodingTests {
         }
     }
 
+    /// Delta Base comes from the wire, so adding it to the Required Insert Count must not trap.
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeDeltaBasePastIntMax() {
+        let encoded = EncodedFieldSectionPrefix(encodedRequiredInsertCount: 2, deltaBase: .max, signBit: false)
+        #expect(encoded.decode(totalInserts: 5, maxCapacity: 4096) == nil)
+    }
+
     @available(anyAppleOS 27, *)
     @Test func testDecodeRequiredInsertCountZero() {
         for maxCapacity in 0...100 {
