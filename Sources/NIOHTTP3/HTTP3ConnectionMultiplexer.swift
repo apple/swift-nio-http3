@@ -88,4 +88,15 @@ public struct HTTP3ClientConnection<
             self.h3Handler.value.createRequestStream(streamInitializer: streamInitializer)
         }.get()
     }
+
+    /// The QUIC stream creator associated with this connection.
+    ///
+    /// > Note: WebTransport API
+    public var streamCreator: StreamCreator {
+        get async throws {
+            try await self.h3Handler.eventLoop.submit {
+                self.h3Handler.value.coordinator.streamCreator
+            }.get()
+        }
+    }
 }

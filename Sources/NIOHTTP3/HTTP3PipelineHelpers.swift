@@ -72,6 +72,7 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - logger: A logger.
     ///   - inboundPushStreamInitializer: Called for every inbound push stream. This argument is currently ignored as
     ///     push streams are not supported yet. See https://github.com/apple/swift-nio-http3/issues/1.
+    ///   - internalInboundStreamInitializer: WebTransport API
     /// - Returns: A ``HTTP3ClientConnection`` for creating request streams.
     /// - Throws: If the handler could not be added to the pipeline.
     public func configureAsyncHTTP3ClientPipeline<
@@ -82,7 +83,10 @@ extension ChannelPipeline.SynchronousOperations {
         settings: HTTP3Settings = .init(),
         streamCreator: StreamCreator,
         logger: Logger,
-        inboundPushStreamInitializer: @Sendable @escaping (HTTP3StreamInitializerParameters) throws -> Output
+        inboundPushStreamInitializer: @Sendable @escaping (HTTP3StreamInitializerParameters) throws -> Output,
+        internalInboundStreamInitializer: (
+            (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
+        )? = nil
     ) throws -> HTTP3ClientConnection<Output, StreamCreator> {
         let handler = HTTP3ConnectionHandler.client(
             eventLoop: self.eventLoop,
@@ -94,7 +98,8 @@ extension ChannelPipeline.SynchronousOperations {
             // Push streams are not supported yet.
             inboundPushStreamInitializer: HTTP3ClosureInboundStreamInitializer {
                 $0.channel.eventLoop.makeSucceededVoidFuture()
-            }
+            },
+            internalInboundStreamInitializer: internalInboundStreamInitializer
         )
         try self.addHandler(handler)
         return HTTP3ClientConnection(
