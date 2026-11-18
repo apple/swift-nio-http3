@@ -14,10 +14,8 @@
 
 import Benchmark
 import HTTPTypes
-import NIOCore
 @_spi(Benchmarks) import NIOHTTP3
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 
 /// A realistic request header set for a browser GET, exercising a mix of exact
 /// static-table matches (`:method GET`), name-only matches (`:authority`) and
@@ -38,7 +36,7 @@ let requestHeaders: [HTTPField] = [
 ]
 
 let benchmarks: @Sendable () -> Void = {
-    // Exercises StaticHeaderTable.find on every header, with no dynamic table.
+    // Exercises StaticHeaderTable.find on every header and writes the field section, with no dynamic table.
     Benchmark(
         "QPACKStaticEncode_BrowserGET",
         configuration: .init(
@@ -52,33 +50,7 @@ let benchmarks: @Sendable () -> Void = {
         }
     }
 
-    // Exercises the static-table lookup plus serialization: string coding and
-    // Huffman encoding, which the two benchmarks above never reach.
-    Benchmark(
-        "QPACKEncode",
-        configuration: .init(
-            metrics: [.mallocCountTotal, .instructions, .wallClock],
-            units: [.instructions: .count],
-            scalingFactor: .kilo
-        )
-    ) { benchmark in
-        let fieldLines = requestHeaders.map {
-            FieldLine.literal(requireLiteralRepresentation: true, name: $0.name.canonicalName, value: $0.value)
-        }
-        var result = ByteBuffer()
-        result.reserveCapacity(1024)
-
-        benchmark.startMeasurement()
-        for _ in benchmark.scaledIterations {
-            result.clear()
-            for line in fieldLines {
-                result.writeFieldLine(line, preferHuffmanEncoding: true)
-            }
-            blackHole(result)
-        }
-    }
-
-    // Exercises the static-table lookup plus the dynamic table on every header.
+    // Exercises the static-table lookup plus the dynamic table on every header and writes the field section.
     Benchmark(
         "QPACKDynamicEncode_BrowserGET",
         configuration: .init(

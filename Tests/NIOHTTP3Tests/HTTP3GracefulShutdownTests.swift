@@ -16,6 +16,7 @@ import Logging
 import NIOConcurrencyHelpers
 import NIOCore
 import NIOEmbedded
+import NIOExtras
 import NIOQUICHelpers
 import Testing
 
@@ -135,6 +136,57 @@ struct HTTP3GracefulShutdownTests {
         }
     }
 
+    @available(anyAppleOS 27, *)
+    @Test func rejectedRequestStreamIsAbortedInBothDirections() throws {
+        var configuration = HTTP3ServerConfiguration.defaults
+        configuration.rttProvider = { .milliseconds(20) }
+
+        let (connectionChannel, handler, streamChannel) = try self.makeServerHandler(configuration: configuration)
+        defer { try? connectionChannel.close().wait() }
+
+        let connectPromise = connectionChannel.eventLoop.makePromise(of: Void.self)
+        try connectionChannel.connect(to: .init(ipAddress: "127.0.0.1", port: 8000), promise: connectPromise)
+        try connectPromise.futureResult.wait()
+
+        // Accept stream 0 between the two GOAWAYs, so that the second one carries ID 4.
+        try handler.initiateGracefulShutdown()
+        let acceptedStreamChannel = EmbeddedChannel()
+        try acceptedStreamChannel.syncOptions?.setOption(.quicStreamID, value: 0)
+        try handler.inboundStreamReceived(acceptedStreamChannel).wait()
+        connectionChannel.embeddedEventLoop.advanceTime(by: .milliseconds(20))
+
+        var decoder = HTTP3FrameDecoder()
+        _ = try streamChannel.readOutbound(as: ByteBuffer.self)
+        _ = try streamChannel.readOutbound(as: ByteBuffer.self)
+        var firstGOAWAY = try #require(try streamChannel.readOutbound(as: ByteBuffer.self))
+        #expect(try decoder.decode(buffer: &firstGOAWAY) == .known(.goaway(.maxServerValue)))
+        var secondGOAWAY = try #require(try streamChannel.readOutbound(as: ByteBuffer.self))
+        #expect(try decoder.decode(buffer: &secondGOAWAY) == .known(.goaway(4)))
+
+        // Stream 4 is above the GOAWAY ID, so it is rejected.
+        let outboundEvents = NIOLockedValueBox<[DebugOutboundEventsHandler.Event]>([])
+        let rejectedStreamChannel = EmbeddedChannel(
+            handler: DebugOutboundEventsHandler { event, _ in
+                outboundEvents.withLockedValue { $0.append(event) }
+            }
+        )
+        try rejectedStreamChannel.syncOptions?.setOption(.quicStreamID, value: 4)
+        try handler.inboundStreamReceived(rejectedStreamChannel).wait()
+
+        let recordedOutboundEvents = outboundEvents.withLockedValue { $0 }
+        #expect(recordedOutboundEvents[0].isChannelRegistered)
+        let stopSendingEvent = try #require(recordedOutboundEvents[1].isStopSendingEvent)
+        let resetStreamEvent = try #require(recordedOutboundEvents[2].isResetStreamEvent)
+        #expect(stopSendingEvent.code == QUICApplicationErrorCode(.requestRejected))
+        #expect(resetStreamEvent.code == QUICApplicationErrorCode(.requestRejected))
+
+        // A rejected stream counts as open until it closes, and graceful shutdown waits for it.
+        // Read the flag first: on failure, `#expect` would describe the channel, and that traps in
+        // `ChannelPipeline.debugDescription`.
+        let rejectedStreamIsActive = rejectedStreamChannel.isActive
+        #expect(!rejectedStreamIsActive)
+    }
+
     @Test
     @available(anyAppleOS 27, *)
     func testGOAWAYSentByClient() throws {
@@ -165,13 +217,38 @@ struct HTTP3GracefulShutdownTests {
             try connectionChannel.throwIfErrorCaught()
         }
     }
+
+    @available(anyAppleOS 27, *)
+    @Test func inboundRequestStreamOptsIntoHalfCloseOnStopSending() throws {
+        let (connectionChannel, handler, _) = try self.makeServerHandler()
+        defer { try? connectionChannel.close().wait() }
+
+        let connectPromise = connectionChannel.eventLoop.makePromise(of: Void.self)
+        try connectionChannel.connect(to: .init(ipAddress: "127.0.0.1", port: 8000), promise: connectPromise)
+        try connectPromise.futureResult.wait()
+
+        // A client's STOP_SENDING must only end the response, not the request (RFC 9000 § 3.5). By default,
+        // the channel-based API of swift-nio-quic closes the whole stream.
+        let requestStreamChannel = EmbeddedChannel()
+        try requestStreamChannel.syncOptions?.setOption(.quicStreamID, value: 0)
+        try requestStreamChannel.syncOptions?.setOption(.halfCloseOnStopSending, value: false)
+        try handler.inboundStreamReceived(requestStreamChannel).wait()
+
+        let halfCloseOnStopSending = try requestStreamChannel.syncOptions?.getOption(.halfCloseOnStopSending)
+        #expect(halfCloseOnStopSending == true)
+    }
 }
 
 @available(anyAppleOS 27, *)
 extension HTTP3GracefulShutdownTests {
+    private typealias ConnectionHandler = HTTP3ConnectionHandler<
+        SingleChannelStreamCreator,
+        HTTP3ClosureInboundStreamInitializer
+    >
+
     private func makeClientHandler(
         configuration: HTTP3ClientConfiguration = .defaults
-    ) throws -> (EmbeddedChannel, HTTP3ConnectionHandler<SingleChannelStreamCreator>, EmbeddedChannel) {
+    ) throws -> (EmbeddedChannel, ConnectionHandler, EmbeddedChannel) {
         let loop = EmbeddedEventLoop()
         let streamChannel = EmbeddedChannel()
 
@@ -181,13 +258,13 @@ extension HTTP3GracefulShutdownTests {
             embeddedStreamChannel: streamChannel
         )
 
-        let handler = HTTP3ConnectionHandler<SingleChannelStreamCreator>.client(
+        let handler = HTTP3ConnectionHandler.client(
             eventLoop: loop,
             configuration: configuration,
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundPushStreamInitializer: { _ in
+            inboundPushStreamInitializer: HTTP3ClosureInboundStreamInitializer { _ in
                 fatalError("Push streams are not supported")
             }
         )
@@ -197,7 +274,7 @@ extension HTTP3GracefulShutdownTests {
 
     private func makeServerHandler(
         configuration: HTTP3ServerConfiguration = .defaults
-    ) throws -> (EmbeddedChannel, HTTP3ConnectionHandler<SingleChannelStreamCreator>, EmbeddedChannel) {
+    ) throws -> (EmbeddedChannel, ConnectionHandler, EmbeddedChannel) {
         let loop = EmbeddedEventLoop()
         let streamChannel = EmbeddedChannel()
 
@@ -207,13 +284,15 @@ extension HTTP3GracefulShutdownTests {
             embeddedStreamChannel: streamChannel
         )
 
-        let handler = HTTP3ConnectionHandler<SingleChannelStreamCreator>.server(
+        let handler = HTTP3ConnectionHandler.server(
             eventLoop: loop,
             configuration: configuration,
             settings: HTTP3Settings(),
             streamCreator: streamCreator,
             logger: self.logger,
-            inboundRequestStreamInitializer: { _ in loop.makeSucceededVoidFuture() }
+            inboundRequestStreamInitializer: HTTP3ClosureInboundStreamInitializer {
+                $0.channel.eventLoop.makeSucceededVoidFuture()
+            }
         )
         let connectionChannel = EmbeddedChannel(handler: handler, loop: loop)
         return (connectionChannel, handler, streamChannel)

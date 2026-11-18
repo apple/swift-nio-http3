@@ -220,10 +220,10 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
                 self.logger.trace("HTTP3StreamHandler waiting for QPACK decode")
                 self.qpackCoder.decodeFields(partialHeader.fieldSection, streamID: self.streamID, decodeReceiver: self)
             case .emitStreamError(let error):
-                context.triggerUserOutboundEvent(
-                    QUICStopSendingEvent(code: QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)),
-                    promise: nil
-                )
+                // Abort both directions (read and write), so that the peer doesn't wait for a response either.
+                let code = QUICApplicationErrorCode(error.h3ErrorCode ?? .noError)
+                context.triggerUserOutboundEvent(QUICStopSendingEvent(code: code), promise: nil)
+                context.triggerUserOutboundEvent(QUICResetStreamEvent(code: code), promise: nil)
                 context.fireErrorCaught(error)
             case .emitConnectionError(let error):
                 self.delegate.onConnectionError(error)
@@ -269,10 +269,18 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
             context.fireErrorCaught(error)
             promise?.fail(error)
         case .encodeHeaders(let fields):
-            let encoded = HTTP3PartialFrame.Headers(
-                fieldSection: self.qpackCoder.encodeHeaders(fields, streamID: self.streamID)
-            )
-            let action = self.stateMachine.gotHeaderEncodeResult(encoded, into: &self.pendingBytes!)
+            var instructions: [QPACKEncoderInstruction] = []
+            let action = self.stateMachine.writeHeadersFrame(
+                maxPayloadLength: self.qpackCoder.maxEncodedLength(of: fields),
+                into: &self.pendingBytes!
+            ) { output, preferHuffmanEncoding in
+                instructions = self.qpackCoder.encodeHeaders(
+                    fields,
+                    streamID: self.streamID,
+                    into: &output,
+                    preferHuffmanEncoding: preferHuffmanEncoding
+                )
+            }
 
             switch action {
             case .previousError(let previousError):
@@ -285,11 +293,19 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
                         location: .here()
                     )
                 )
+
             case .wroteBytes:
                 self.pendingPromise.setOrCascade(to: promise)
+
+                // Sending flushes the encoder stream, so it waits until the frame and its promise are settled: anything
+                // the flush triggers may call back into this handler. The frame's bytes are only emitted on our own
+                // flush, so the instructions still reach the peer first.
+                self.qpackCoder.sendEncoderInstructions(instructions)
+
             case .alreadyClosed:
                 promise?.fail(ChannelError.ioOnClosedChannel)
             }
+
         }
     }
 

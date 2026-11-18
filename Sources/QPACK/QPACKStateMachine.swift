@@ -16,6 +16,8 @@ import DequeModule
 import HTTPTypes
 import NIOQUICHelpers
 
+import struct NIOCore.ByteBuffer
+
 /// A state machine which holds qpack encoder and decoder.
 /// You can ask it to encode/decode things, and inform it of incoming instructions.
 /// It will then return actions to be taken.
@@ -43,7 +45,8 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
             struct AwaitingStream: ~Copyable {
                 var encoder: StaticQPACKEncoder
                 let maxQueueSize: Int
-                let dynamicTableSize: Int
+                let encoderTableCapacity: Int
+                let peersDecoderTableMaxCapacity: Int
             }
 
             struct WithDynamic: ~Copyable {
@@ -67,12 +70,16 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
 
         mutating func receivedRemoteSettings(
             maxQueueSize: Int,
-            effectiveDynamicTableSize: Int
+            encoderTableMaxCapacity: Int,
+            peersDecoderTableMaxCapacity: Int
         ) -> GotRemoteSettingsAction? {
             switch consume self.state {
             case .initial(let initial):
+                // RFC 9204 § 3.2.3: The encoder's table can't be larger than the peer's decoder allows, and this
+                // endpoint may want it smaller still.
+                let encoderTableCapacity = min(encoderTableMaxCapacity, peersDecoderTableMaxCapacity)
                 // RFC 9204 § 4.2: An endpoint MAY avoid creating an encoder stream if it will not be used
-                if effectiveDynamicTableSize == 0 {
+                if encoderTableCapacity == 0 {
                     self = .init(
                         state: .withoutDynamic(
                             .init(encoder: initial.encoder)
@@ -85,7 +92,8 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
                             .init(
                                 encoder: initial.encoder,
                                 maxQueueSize: maxQueueSize,
-                                dynamicTableSize: effectiveDynamicTableSize
+                                encoderTableCapacity: encoderTableCapacity,
+                                peersDecoderTableMaxCapacity: peersDecoderTableMaxCapacity
                             )
                         )
                     )
@@ -117,8 +125,9 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
                 fatalError("Encoder stream created when not needed or already made")
             case .awaitingStream(let awaitingStream):
                 let (dynamicEncoder, instruction) = DynamicQPACKEncoder.create(
-                    dynamicTableMaxCapacity: awaitingStream.dynamicTableSize,
-                    dynamicTableInitialCapacity: awaitingStream.dynamicTableSize,
+                    peersDecoderTableMaxCapacity: awaitingStream.peersDecoderTableMaxCapacity,
+                    dynamicTableMaxCapacity: awaitingStream.encoderTableCapacity,
+                    dynamicTableInitialCapacity: awaitingStream.encoderTableCapacity,
                     maxBlockedStreams: awaitingStream.maxQueueSize,
                     targetEvictableFraction: QPACKConstants.defaultTargetEvictableFraction
                 )
@@ -133,30 +142,47 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
             }
         }
 
-        mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
+        func maxEncodedLength(of headers: [HTTPField]) -> Int {
+            switch self.state {
+            case .initial(let initial):
+                initial.encoder.maxEncodedLength(of: headers)
+            case .awaitingStream(let awaiting):
+                awaiting.encoder.maxEncodedLength(of: headers)
+            case .withoutDynamic(let woDynamic):
+                woDynamic.encoder.maxEncodedLength(of: headers)
+            case .withDynamic(let withDynamic):
+                withDynamic.encoder.maxEncodedLength(of: headers)
+            }
+        }
+
+        mutating func encodeHeaders(
+            _ headers: [HTTPField],
+            forStream streamID: QUICStreamID,
+            into output: inout OutputRawSpan,
+            preferHuffmanEncoding: Bool
+        ) -> [QPACKEncoderInstruction] {
             switch consume self.state {
             case .initial(let initial):
-                let result = QPACKEncodeResult(fieldSection: initial.encoder.encode(headers: headers), instructions: [])
+                initial.encoder.encode(fields: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
                 self = .init(state: .initial(initial))
-                return result
+                return []
             case .awaitingStream(let awaiting):
-                let result = QPACKEncodeResult(
-                    fieldSection: awaiting.encoder.encode(headers: headers),
-                    instructions: []
-                )
+                awaiting.encoder.encode(fields: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
                 self = .init(state: .awaitingStream(awaiting))
-                return result
+                return []
             case .withoutDynamic(let woDynamic):
-                let result = QPACKEncodeResult(
-                    fieldSection: woDynamic.encoder.encode(headers: headers),
-                    instructions: []
-                )
+                woDynamic.encoder.encode(fields: headers, into: &output, preferHuffmanEncoding: preferHuffmanEncoding)
                 self = .init(state: .withoutDynamic(woDynamic))
-                return result
+                return []
             case .withDynamic(var withDynamic):
-                let result = withDynamic.encoder.encode(headers: headers, forStream: streamID)
+                let instructions = withDynamic.encoder.encode(
+                    headers: headers,
+                    forStream: streamID,
+                    into: &output,
+                    preferHuffmanEncoding: preferHuffmanEncoding
+                )
                 self = .init(state: .withDynamic(withDynamic))
-                return result
+                return instructions
             }
         }
 
@@ -260,9 +286,9 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
     private var decoderQueue: FieldSectionQueue<DecodeContext>
     private var outboundDecoderInstructionQueue: OutboundDecoderInstructionQueue
 
-    init(decoderMaxTableSize: Int, decoderMaxBlockedStreams: Int) {
+    init(decoderTableMaxCapacity: Int, decoderMaxBlockedStreams: Int) {
         self.encoderState = .init()
-        self.qpackDecoder = .init(dynamicTableMaxCapacity: decoderMaxTableSize)
+        self.qpackDecoder = .init(dynamicTableMaxCapacity: decoderTableMaxCapacity)
         self.decoderQueue = .init(maxItems: decoderMaxBlockedStreams)
         self.outboundDecoderInstructionQueue = .init()
     }
@@ -276,13 +302,19 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
     ///
     /// The peer may only send SETTINGS once: a second call returns ``GotRemoteSettingsAction/emitConnectionError(_:)``
     /// and leaves the encoder state untouched.
+    ///
+    /// The encoder's dynamic table takes the smaller of `encoderTableMaxCapacity`, the most this endpoint is willing
+    /// to use, and `peersDecoderTableMaxCapacity`, the peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`. Field section prefixes
+    /// are encoded with the peer's, whatever the table's.
     mutating func receivedRemoteSettings(
         maxQueueSize: Int,
-        effectiveDynamicTableSize: Int
+        encoderTableMaxCapacity: Int,
+        peersDecoderTableMaxCapacity: Int
     ) -> GotRemoteSettingsAction? {
         self.encoderState.receivedRemoteSettings(
             maxQueueSize: maxQueueSize,
-            effectiveDynamicTableSize: effectiveDynamicTableSize
+            encoderTableMaxCapacity: encoderTableMaxCapacity,
+            peersDecoderTableMaxCapacity: peersDecoderTableMaxCapacity
         )
     }
 
@@ -312,8 +344,22 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
         }
     }
 
-    mutating func encodeHeaders(_ headers: [HTTPField], forStream streamID: QUICStreamID) -> QPACKEncodeResult {
-        self.encoderState.encodeHeaders(headers, forStream: streamID)
+    func maxEncodedLength(of headers: [HTTPField]) -> Int {
+        self.encoderState.maxEncodedLength(of: headers)
+    }
+
+    mutating func encodeHeaders(
+        _ headers: [HTTPField],
+        forStream streamID: QUICStreamID,
+        into output: inout OutputRawSpan,
+        preferHuffmanEncoding: Bool
+    ) -> [QPACKEncoderInstruction] {
+        self.encoderState.encodeHeaders(
+            headers,
+            forStream: streamID,
+            into: &output,
+            preferHuffmanEncoding: preferHuffmanEncoding
+        )
     }
 
     enum DecodeHeaderAction {
@@ -353,20 +399,26 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
         }
     }
 
+    /// `fieldSection` is the encoded field section: its prefix, followed by its field lines.
     mutating func decodeHeaders(
-        _ fieldSection: FieldSection,
+        _ fieldSection: ByteBuffer,
         forStream streamID: QUICStreamID,
         context: DecodeContext
     ) -> DecodeHeaderAction? {
-        guard let prefix = self.qpackDecoder.decodeFieldSectionPrefix(fieldSection.prefix) else {
-            // The field section prefix can't have been produced by a conformant encoder
+        var lines = fieldSection
+        guard let encodedPrefix = try? lines.readFieldSectionPrefix(),
+            let prefix = self.qpackDecoder.decodeFieldSectionPrefix(encodedPrefix)
+        else {
+            // The field section prefix is truncated, holds an integer too large to represent, or can't have been
+            // produced by a conformant encoder
             // RFC 9204 4.5.1.1: If the decoder encounters a value of EncodedInsertCount that could not have been produced by a
             // conformant encoder, it MUST treat this as a connection error of type QPACK_DECOMPRESSION_FAILED.
+            // RFC 9204 6: QPACK_DECOMPRESSION_FAILED: The decoder failed to interpret an encoded field section.
             return .emitConnectionError(.invalidFieldSectionPrefix, context)
         }
         let result = self.qpackDecoder.decodeFieldSection(
             prefix: prefix,
-            lines: fieldSection.lines,
+            lines: lines,
             streamID: streamID
         )
         switch result {
@@ -389,9 +441,8 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
             do {
                 try self.decoderQueue.add(
                     .init(
-                        fieldSection: fieldSection,
                         prefix: prefix,
-                        lines: fieldSection.lines,
+                        lines: lines,
                         streamID: streamID,
                         context: context
                     )

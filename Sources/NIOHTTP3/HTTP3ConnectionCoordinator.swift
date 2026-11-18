@@ -12,17 +12,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_spi(PackageInternal) import HTTP3
+@_spi(PackageInternal) public import HTTP3
 import HTTPTypes
-import Logging
-import NIOCore
-import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
+public import Logging
+public import NIOCore
+public import NIOQUICHelpers
+@_spi(PackageInternal) public import QPACK
 
 /// This class owns the connection state machine and is responsible for opening streams and sending frames.
 /// I.e. it coordinates everything across the connection, including qpack.
 @available(anyAppleOS 27, *)
-final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator> {
+@usableFromInline
+final class HTTP3ConnectionCoordinator<
+    QUICStreamCreator: NIOQUICHelpers.QUICStreamCreator,
+    InboundStreamInitializer: HTTP3InboundStreamInitializer
+> {
 
     /// The QPACK coder used by all streams of this connection. The coordinator is both the QPACK
     /// connection delegate and the stream delegate of every stream handler.
@@ -38,13 +42,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     ///
     /// Setting this creates a strong retain cycle which is broken by the connection handler when
     /// it's removed from the channel pipeline.
-    private var connection: HTTP3ConnectionHandler<QUICStreamCreator>?
+    private var connection: HTTP3ConnectionHandler<QUICStreamCreator, InboundStreamInitializer>?
     private let preferHuffmanEncoding: Bool
     private let logger: Logger
     /// Instances of stream handlers which need to be pinged whenever a dynamic table entry is added.
     private var streamHandlers = [QUICStreamID: StreamHandler]()
     private var datagramBuffer: HTTP3DatagramBuffer
 
+    @usableFromInline
     init(
         eventLoop: any EventLoop,
         localSettings: HTTP3Settings,
@@ -64,14 +69,14 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         self.datagramBuffer = HTTP3DatagramBuffer(maxAllowedSize: maxBufferedDatagramBytes)
 
         self.qpackCoder = QPACKCoder(
-            encoderMaxTableSize: Int(clamping: localSettings.qpackMaximumTableCapacity),
-            decoderMaxTableSize: Int(clamping: localSettings.qpackMaximumTableCapacity),
+            encoderTableMaxCapacity: Int(clamping: localSettings.qpackMaximumTableCapacity),
+            decoderTableMaxCapacity: Int(clamping: localSettings.qpackMaximumTableCapacity),
             decoderMaxBlockedStreams: Int(clamping: localSettings.qpackBlockedStreams),
             errorDelegate: self
         )
     }
 
-    func setConnectionHandler(_ handler: HTTP3ConnectionHandler<QUICStreamCreator>?) {
+    func setConnectionHandler(_ handler: HTTP3ConnectionHandler<QUICStreamCreator, InboundStreamInitializer>?) {
         self.eventLoop.preconditionInEventLoop()
         self.connection = handler
     }
@@ -89,6 +94,18 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         case .none:
             break
         }
+    }
+
+    /// Opt a request stream into half-closure on `STOP_SENDING`, so that a peer's `STOP_SENDING` only ends our sending
+    /// side and we keep reading (RFC 9114 § 4.1).
+    ///
+    /// - Returns: `nil` if the option is set, or a future of setting it on a channel without synchronous options.
+    private static func optIntoHalfClosure(on streamChannel: any Channel) throws -> EventLoopFuture<Void>? {
+        if let sync = streamChannel.syncOptions {
+            try sync.setOption(.halfCloseOnStopSending, value: true)
+            return nil
+        }
+        return streamChannel.setOption(.halfCloseOnStopSending, value: true)
     }
 
     // MARK: Datagram
@@ -144,7 +161,9 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
     // MARK: Outbound streams
 
     /// Create an outbound stream, write the stream type, add the handlers and hand the stream to the QPACK coder.
-    private func createQPACKEncoderInstructionStream() {
+    @usableFromInline
+    // private but usableFromInline
+    func createQPACKEncoderInstructionStream() {
         self.eventLoop.assertInEventLoop()
         self.createOutboundUnidirectionalStream(ofType: .qpackEncoder) {
             let streamChannel = $0.channel
@@ -273,6 +292,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 let streamChannel = params.channel
                 let streamID = params.streamID
                 return streamChannel.eventLoop.makeCompletedFuture {
+                    let halfClosureFuture = try Self.optIntoHalfClosure(on: params.channel)
                     self.connectionStateMachine.outboundRequestStreamReady(streamID: streamID)
                     try self.addHTTP3FrameHandlers(
                         streamChannel: streamChannel,
@@ -288,9 +308,13 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                         )
                     }
                     self.emitBufferedDatagrams(forStream: streamID)
-                    return HTTP3StreamInitializerParameters(params)
-                }.assumeIsolated().flatMap {
-                    streamInitializer($0)
+                    return (HTTP3StreamInitializerParameters(params), halfClosureFuture)
+                }.assumeIsolated().flatMap { (params, halfClosureFuture) in
+                    // The future is only set if syncOptions are not available.
+                    if let halfClosureFuture {
+                        return halfClosureFuture.assumeIsolated().flatMap { streamInitializer(params) }.nonisolated()
+                    }
+                    return streamInitializer(params)
                 }.nonisolated()
             }
         case .failedToCreateStream(let error):
@@ -300,16 +324,15 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
 
     // MARK: - New Inbound streams -
 
-    func inboundStreamInitializer<Output: Sendable>(
+    func inboundStreamInitializer(
         parameters: HTTP3StreamInitializerParameters,
         addTypeHandlers: Bool,
-        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>,
+        userInboundStreamInitializer: InboundStreamInitializer,
         internalInboundStreamInitializer: (
             (
                 any Channel, QUICStreamID, HTTP3StreamType.Unidirectional
             ) -> EventLoopFuture<Void>
-        )?,
-        onUserStream: @escaping @Sendable (Output) -> Void
+        )?
     ) -> EventLoopFuture<Void> {
         self.eventLoop.preconditionInEventLoop()
         if parameters.streamID.isBidirectional {
@@ -318,8 +341,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             return self.inboundRequestStreamInitializer(
                 parameters: parameters,
                 addTypeHandlers: addTypeHandlers,
-                userInboundStreamInitializer: userInboundStreamInitializer,
-                onUserStream: onUserStream
+                userInboundStreamInitializer: userInboundStreamInitializer
             )
         } else {
             return self.inboundUnidirectionalStreamInitializer(
@@ -329,11 +351,10 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         }
     }
 
-    private func inboundRequestStreamInitializer<Output: Sendable>(
+    private func inboundRequestStreamInitializer(
         parameters: HTTP3StreamInitializerParameters,
         addTypeHandlers: Bool,
-        userInboundStreamInitializer: @escaping (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>,
-        onUserStream: @escaping @Sendable (Output) -> Void
+        userInboundStreamInitializer: InboundStreamInitializer
     ) -> EventLoopFuture<Void> {
         let streamID = parameters.streamID
         let streamChannel = parameters.channel
@@ -341,6 +362,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
         switch action {
         case .addHandlers:
             do {
+                let halfClosureFuture = try Self.optIntoHalfClosure(on: streamChannel)
                 try self.addHTTP3FrameHandlers(
                     streamChannel: streamChannel,
                     streamID: streamID,
@@ -356,7 +378,12 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                 }
                 // State machine now considers the stream to be open: deliver the datagrams now.
                 self.emitBufferedDatagrams(forStream: streamID)
-                return userInboundStreamInitializer(parameters).map(onUserStream)
+                if let halfClosureFuture {
+                    return halfClosureFuture.assumeIsolated().flatMap {
+                        userInboundStreamInitializer.initialize(parameters)
+                    }.nonisolated()
+                }
+                return userInboundStreamInitializer.initialize(parameters)
             } catch {
                 self.datagramBuffer.discardDatagrams(forStream: streamID)
                 return streamChannel.eventLoop.makeFailedFuture(error)
@@ -384,6 +411,13 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
                     QUICStopSendingEvent(code: QUICApplicationErrorCode(.requestRejected)),
                     promise: nil
                 )
+                streamChannel.triggerUserOutboundEvent(
+                    QUICResetStreamEvent(code: QUICApplicationErrorCode(.requestRejected)),
+                    promise: nil
+                )
+                // Rejected streams count as open, and graceful shutdown waits until none are. With both directions
+                // aborted, nothing else closes this one reliably: the peer may not abort its sending part in return.
+                streamChannel.close(promise: nil)
             }
         }
     }
@@ -616,7 +650,7 @@ final class HTTP3ConnectionCoordinator<QUICStreamCreator: NIOQUICHelpers.QUICStr
             do {
                 try qpackCoder.receivedRemoteSettings(
                     maxQueueSize: Int(clamping: onSettings.qpackBlockedStreams),
-                    peersDynamicTableSize: Int(clamping: onSettings.qpackMaximumTableCapacity)
+                    peersDecoderTableMaxCapacity: Int(clamping: onSettings.qpackMaximumTableCapacity)
                 )
             } catch {
                 assert(error.isConnectionError)
@@ -882,8 +916,9 @@ extension HTTP3ConnectionCoordinator: Sendable {}
 extension Channel {
     @available(anyAppleOS 27, *)
     fileprivate func writeStreamType(_ streamType: HTTP3StreamType.Unidirectional) {
-        var buffer = ByteBuffer()
-        buffer.writeEncodedInteger(streamType.rawValue, strategy: .quic)
+        let buffer = self.allocator.buffer(capacity: HTTP3EncodedLength.streamType(streamType)) {
+            $0.appendHTTP3StreamType(streamType)
+        }
         self.writeAndFlush(buffer, promise: nil)
     }
 }
@@ -903,6 +938,7 @@ extension HTTP3ConnectionCoordinator: HTTP3StreamDelegate {
 
 @available(anyAppleOS 27, *)
 extension HTTP3ConnectionCoordinator: QPACKConnectionDelegate {
+    @inlinable
     func makeOutboundEncoderStream() {
         self.createQPACKEncoderInstructionStream()
     }

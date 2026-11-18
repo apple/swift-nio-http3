@@ -220,4 +220,28 @@ struct IntegerCodingTests {
     mutating func testIntegerDecodingNotEnoughBytes(prefix: Int) throws {
         try #expect(self.decodeInteger(from: [255, 128], prefix: prefix) == nil)
     }
+
+    static let truncationValues: [Int] = [
+        0, 1, 30, 31, 126, 127, 128, 254, 255, 256, 1 << 14, 1 << 21, Int(UInt32.max), .max,
+    ]
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: 1...8, Self.truncationValues)
+    func decodeEveryTruncation(prefix: Int, value: Int) throws {
+        // The bits ahead of the prefix are all set, so that they are not mistaken for part of the integer.
+        let prefixBits = ~UInt8(truncatingIfNeeded: (1 << prefix) - 1)
+        let encoded = encodedBytes { $0.appendQPACKPrefixedInteger(value, prefix: prefix, prefixBits: prefixBits) }
+        try expectEveryTruncationIsIncomplete(encoded, decodingTo: value) { span, offset throws(IntegerReadingError) in
+            try span.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: prefix)
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func decodeAtAnOffsetOutsideTheSpan() throws {
+        let encoded = encodedBytes { $0.appendQPACKPrefixedInteger(1000, prefix: 5) }
+        let span = encoded.span.bytes
+        for offset in offsetsOutsideASpan(of: span.byteCount) {
+            #expect(try span.getQPACKPrefixedInteger(as: Int.self, at: offset, withPrefix: 5) == nil)
+        }
+    }
 }

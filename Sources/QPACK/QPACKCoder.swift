@@ -15,6 +15,8 @@
 public import HTTPTypes
 public import NIOQUICHelpers
 
+public import struct NIOCore.ByteBuffer
+
 /// A stream to send encoder instructions on, which the peer can then use in its QPACKDecoder
 ///
 /// This is the unidirectional QPACK encoder stream of RFC 9204 § 4.2.1. It only exists if the peer's settings
@@ -42,10 +44,9 @@ public protocol QPACKOutboundDecoderStream: ~Copyable {
 
 /// An object representing an HTTP3Connection, which opens the outbound encoder stream on request.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public protocol QPACKConnectionDelegate {
     /// Open a unidirectional `HTTP3StreamType.Unidirectional.qpackEncoder` stream and pass it to
-    /// ``QPACKCoder/outboundEncoderStreamReady(_:)``.
+    /// `QPACKCoder/outboundEncoderStreamReady(_:)`.
     ///
     /// Called at most once per connection, and only if the peer permits the dynamic table. Until the stream is
     /// handed back the coder encodes with the static table only.
@@ -84,10 +85,10 @@ public protocol QPACKDecodeReceiver {
 ///    imposes on its own encoder.
 /// 2. Call ``outboundDecoderStreamReady(_:)`` once that stream exists. Instructions produced before this are
 ///    buffered and flushed then.
-/// 3. Call ``receivedRemoteSettings(maxQueueSize:peersDynamicTableSize:)`` when the peer's SETTINGS arrive. If
+/// 3. Call ``receivedRemoteSettings(maxQueueSize:peersDecoderTableMaxCapacity:)`` when the peer's SETTINGS arrive. If
 ///    the peer permits the dynamic table, and this endpoint is willing to use one, the coder asks for an encoder
 ///    stream via ``ConnectionDelegate/makeOutboundEncoderStream()``; supply it with
-///    ``outboundEncoderStreamReady(_:)``. Until then — and forever, if either side put the table size at zero —
+///    ``outboundEncoderStreamReady(_:)``. Until then — and forever, if either side put the table capacity at zero —
 ///    encoding uses the static table only.
 ///
 /// Failures are reported to whoever caused them: methods called for input from the peer's control, encoder and
@@ -125,15 +126,16 @@ public final class QPACKCoder<
 
     private let connection: ConnectionDelegate
 
-    private let encoderMaxTableSize: Int
+    private let encoderTableMaxCapacity: Int
 
     /// Create a new ``QPACKCoder``.
     ///
     /// - Parameters:
-    ///   - encoderMaxTableSize: Maximum size in bytes this endpoint is willing to use for its own encoder's
+    ///   - encoderTableMaxCapacity: Maximum capacity in bytes this endpoint is willing to use for its own encoder's
     ///     dynamic table. `0` means the encoder never uses the dynamic table, however large a table the peer
     ///     offers, and therefore never asks for an encoder stream.
-    ///   - decoderMaxTableSize: Maximum size in bytes of this endpoint's dynamic table. `0` refuses it entirely.
+    ///   - decoderTableMaxCapacity: Maximum capacity in bytes of this endpoint's dynamic table. `0` refuses it
+    ///     entirely.
     ///   - decoderMaxBlockedStreams: How many streams may be blocked at once waiting for entries which haven't
     ///     arrived on the peer's encoder stream yet. Exceeding this is a connection error.
     ///   - errorDelegate: Receives the request for an outbound encoder stream.
@@ -144,16 +146,16 @@ public final class QPACKCoder<
     ///   advertises when sending its own SETTINGS frame.
     @_spi(PackageInternal)
     public init(
-        encoderMaxTableSize: Int,
-        decoderMaxTableSize: Int,
+        encoderTableMaxCapacity: Int,
+        decoderTableMaxCapacity: Int,
         decoderMaxBlockedStreams: Int,
         errorDelegate: ConnectionDelegate
     ) {
         self.stateMachine = QPACKStateMachine(
-            decoderMaxTableSize: decoderMaxTableSize,
+            decoderTableMaxCapacity: decoderTableMaxCapacity,
             decoderMaxBlockedStreams: decoderMaxBlockedStreams
         )
-        self.encoderMaxTableSize = encoderMaxTableSize
+        self.encoderTableMaxCapacity = encoderTableMaxCapacity
         self.connection = errorDelegate
     }
 
@@ -161,9 +163,9 @@ public final class QPACKCoder<
     /// settings stream. When receiving settings for the first time, the QPACKCoder will
     /// call its ``ConnectionDelegate``, to open the outbound encoder stream.
     ///
-    /// The table the encoder ends up using is the smaller of `peersDynamicTableSize` and the
-    /// `encoderMaxTableSize` given at init. If that is zero — because the peer advertised a zero sized dynamic
-    /// table, or because this endpoint refuses to use one — no encoder stream is requested, since it would never
+    /// The table the encoder ends up using is the smaller of `peersDecoderTableMaxCapacity` and the
+    /// `encoderTableMaxCapacity` given at init. If that is zero — because the peer advertised a zero capacity
+    /// dynamic table, or because this endpoint refuses to use one — no encoder stream is requested, since it would never
     /// be used. See RFC 9204 § 4.2.
     ///
     /// - Important: The peer may only send SETTINGS once. Calling this a second time leaves the coder's state
@@ -171,16 +173,17 @@ public final class QPACKCoder<
     ///
     /// - Parameters:
     ///   - maxQueueSize: The peer's `SETTINGS_QPACK_BLOCKED_STREAMS`.
-    ///   - peersDynamicTableSize: The peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`.
+    ///   - peersDecoderTableMaxCapacity: The peer's `SETTINGS_QPACK_MAX_TABLE_CAPACITY`.
     /// - Throws: A connection error.
     @_spi(PackageInternal)
     public func receivedRemoteSettings(
         maxQueueSize: Int,
-        peersDynamicTableSize: Int
+        peersDecoderTableMaxCapacity: Int
     ) throws(QPACKError) {
         let action = self.stateMachine.receivedRemoteSettings(
             maxQueueSize: maxQueueSize,
-            effectiveDynamicTableSize: min(self.encoderMaxTableSize, peersDynamicTableSize)
+            encoderTableMaxCapacity: self.encoderTableMaxCapacity,
+            peersDecoderTableMaxCapacity: peersDecoderTableMaxCapacity
         )
 
         switch action {
@@ -195,27 +198,56 @@ public final class QPACKCoder<
 
     // MARK: Encode
 
-    /// QPACK encode your HTTP fields. If new instructions need to be send to the peer as a side-effect of the encode the
-    /// QPACKCoder will inform the ``QPACKOutboundEncoderStream`` via the ``QPACKOutboundEncoderStream/sendInstructions(_:)``
-    /// method call.
+    /// The largest number of bytes ``encodeHeaders(_:streamID:into:preferHuffmanEncoding:)`` appends for `fields`.
+    ///
+    /// - Important: The bound only holds for the next encode: every encode changes the state of the dynamic table.
+    @_spi(PackageInternal)
+    public func maxEncodedLength(of fields: [HTTPField]) -> Int {
+        self.stateMachine.maxEncodedLength(of: fields)
+    }
+
+    /// QPACK encode your HTTP fields into `output`, as the payload of a HEADERS frame.
     ///
     /// Use this method for headers and trailers.
     ///
-    /// - Important: The returned field section references the dynamic table as it stands now, so it must be written
-    ///   to the stream in the order it was encoded. Otherwise the peer's decoder sees references it can't resolve.
+    /// The encode may produce instructions for the peer's decoder. Pass them to ``sendEncoderInstructions(_:)`` once
+    /// you're done with `output`. They aren't sent from here because sending writes to the encoder stream, and that
+    /// mustn't happen while the caller is still writing into `output`.
     ///
-    /// - Returns: The encoded field section, ready to be framed as a HEADERS frame.
+    /// - Important: The field section references the dynamic table as it stands now, so it must be written to the
+    ///   stream in the order it was encoded. Otherwise the peer's decoder sees references it can't resolve.
+    ///
+    /// - Parameters:
+    ///   - fields: The fields to encode.
+    ///   - streamID: The stream the field section is sent on.
+    ///   - output: The span to append the field section to.
+    ///   - preferHuffmanEncoding: Whether to Huffman encode strings, where that makes them shorter.
+    /// - Precondition: `output` has room for ``maxEncodedLength(of:)`` more bytes, asked for right before.
+    /// - Returns: The encoder instructions to pass to ``sendEncoderInstructions(_:)``.
     @_spi(PackageInternal)
-    public func encodeHeaders(_ fields: [HTTPField], streamID: QUICStreamID) -> FieldSection {
-        let result = self.stateMachine.encodeHeaders(fields, forStream: streamID)
+    public func encodeHeaders(
+        _ fields: [HTTPField],
+        streamID: QUICStreamID,
+        into output: inout OutputRawSpan,
+        preferHuffmanEncoding: Bool
+    ) -> [QPACKEncoderInstruction] {
+        self.stateMachine.encodeHeaders(
+            fields,
+            forStream: streamID,
+            into: &output,
+            preferHuffmanEncoding: preferHuffmanEncoding
+        )
+    }
 
-        if !result.instructions.isEmpty {
+    /// Send the instructions returned by ``encodeHeaders(_:streamID:into:preferHuffmanEncoding:)`` to the peer, via
+    /// the ``QPACKOutboundEncoderStream/sendInstructions(_:)`` method call. Call this before the field section is sent.
+    @_spi(PackageInternal)
+    public func sendEncoderInstructions(_ instructions: [QPACKEncoderInstruction]) {
+        if !instructions.isEmpty {
             // Safe to unwrap: instructions imply the encoder is using the dynamic table, which it only does once
             // the stream is set. See `outboundEncoderStream`.
-            self.outboundEncoderStream!.sendInstructions(result.instructions)
+            self.outboundEncoderStream!.sendInstructions(instructions)
         }
-
-        return result.fieldSection
     }
 
     /// Call this method as a response to the ``ConnectionDelegate/makeOutboundEncoderStream()``
@@ -274,12 +306,13 @@ public final class QPACKCoder<
     ///              will invoke the ``QPACKDecodeReceiver/decodeResult(_:)`` method syncronously.
     ///
     /// - Parameters:
-    ///   - fieldSection: The field section to QPACK decode
+    ///   - fieldSection: The QPACK encoded field section, e.g. the payload of a HEADERS frame. A malformed one is a
+    ///     connection error, like any other field section the decoder can't interpret (RFC 9204 § 6).
     ///   - streamID: The stream id of the stream, that received the header frame
     ///   - decodeReceiver: The object that needs to be informed about the decode result.
     @_spi(PackageInternal)
     public func decodeFields(
-        _ fieldSection: FieldSection,
+        _ fieldSection: ByteBuffer,
         streamID: QUICStreamID,
         decodeReceiver: DecodeReceiver
     ) {

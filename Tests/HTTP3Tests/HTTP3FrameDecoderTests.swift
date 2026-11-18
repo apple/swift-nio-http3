@@ -14,7 +14,6 @@
 
 import NIOCore
 import NIOTestUtils
-@_spi(PackageInternal) import QPACK
 import Testing
 
 @testable @_spi(PackageInternal) import HTTP3
@@ -39,15 +38,16 @@ private struct HTTP3FrameByteToMessageDecoder: NIOSingleStepByteToMessageDecoder
 struct HTTP3FrameDecoderTests {
     @available(anyAppleOS 27, *)
     private var testHeader: HTTP3PartialFrame.Headers {
-        let fieldSectionPrefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0).encode(maxCapacity: 0)
-        let line = FieldLine.literal(requireLiteralRepresentation: false, name: "test", value: "hello")
-        return .init(fieldSection: .init(prefix: fieldSectionPrefix, lines: [line]))
+        // Required Insert Count 0 and Base 0, then a literal field line: 001 for literal, 0 for N, 0 for H, 0100 for
+        // the length of the name (4), then 0 for H and 0000101 for the length of the value (5).
+        let fieldSection: [UInt8] = [0, 0, 0b00100100] + "test".utf8 + [0b00000101] + "hello".utf8
+        return .init(fieldSection: ByteBuffer(bytes: fieldSection))
     }
 
     @available(anyAppleOS 27, *)
     private func encode(_ frame: HTTP3PartialFrame) -> ByteBuffer {
         var buffer = ByteBuffer()
-        buffer.writeHTTP3PartialFrame(frame, preferHuffmanEncoding: false)
+        buffer.writeTestFrame(frame)
         return buffer
     }
 

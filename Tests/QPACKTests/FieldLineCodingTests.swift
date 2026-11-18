@@ -155,6 +155,29 @@ struct FieldLineCodingTests {
         expectEncoding(original: 17, expect: 6)
     }
 
+    /// RFC 9204 § 4.5.1.2: a Sign bit of 1 is invalid when the Required Insert Count is less than or equal to the
+    /// Delta Base, which a count of zero always is.
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeRequiredInsertCountZeroRejectsTheSignBit() {
+        for maxCapacity in [0, 100] {
+            for deltaBase in [0, 1, 5] {
+                let encoded = EncodedFieldSectionPrefix(
+                    encodedRequiredInsertCount: 0,
+                    deltaBase: deltaBase,
+                    signBit: true
+                )
+                #expect(encoded.decode(totalInserts: 0, maxCapacity: maxCapacity) == nil)
+            }
+        }
+    }
+
+    /// Delta Base comes from the wire, so adding it to the Required Insert Count must not trap.
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeDeltaBasePastIntMax() {
+        let encoded = EncodedFieldSectionPrefix(encodedRequiredInsertCount: 2, deltaBase: .max, signBit: false)
+        #expect(encoded.decode(totalInserts: 5, maxCapacity: 4096) == nil)
+    }
+
     @available(anyAppleOS 27, *)
     @Test func testDecodeRequiredInsertCountZero() {
         for maxCapacity in 0...100 {
@@ -282,6 +305,51 @@ struct FieldLineCodingTests {
                     }
                 }
             }
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func shorterPrefixThanExpectedMovesTheLinesBack() {
+        let prefix = EncodedFieldSectionPrefix(encodedRequiredInsertCount: 3, deltaBase: 0, signBit: true)
+        let buffer = ByteBuffer(initialCapacity: 8) { output in
+            output.append(0xAA)
+            // Three bytes expected and four reserved, of which the prefix needs two.
+            output.appendFieldSection(expectedPrefixLength: 3, maxPrefixLength: 4) { lines in
+                lines.append(0xBB)
+                lines.append(0xCC)
+                return prefix
+            }
+        }
+        #expect(Array(buffer.readableBytesView) == [0xAA, 3, 0b10000000, 0xBB, 0xCC])
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func longerPrefixThanExpectedMovesTheLinesForward() {
+        // The Delta Base takes two bytes.
+        let prefix = EncodedFieldSectionPrefix(encodedRequiredInsertCount: 3, deltaBase: 127, signBit: false)
+        let buffer = ByteBuffer(initialCapacity: 8) { output in
+            output.append(0xAA)
+            // Two bytes expected and four reserved, of which the prefix needs three.
+            output.appendFieldSection(expectedPrefixLength: 2, maxPrefixLength: 4) { lines in
+                lines.append(0xBB)
+                lines.append(0xCC)
+                return prefix
+            }
+        }
+        #expect(Array(buffer.readableBytesView) == [0xAA, 3, 0x7F, 0x00, 0xBB, 0xCC])
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func linesGetTheRoomLeftAfterTheLongestPrefix() {
+        var bytes = [UInt8](repeating: 0, count: 6)
+        bytes.withUnsafeMutableBytes { buffer in
+            var output = OutputRawSpan(buffer: buffer, initializedCount: 0)
+            output.appendFieldSection(expectedPrefixLength: 2, maxPrefixLength: 4) { lines in
+                // Six bytes, less the four of the longest prefix.
+                #expect(lines.freeCapacity == 2)
+                return EncodedFieldSectionPrefix(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false)
+            }
+            #expect(output.finalize(for: buffer) == 2)
         }
     }
 
@@ -415,6 +483,83 @@ struct FieldLineCodingTests {
 
         let decoded = try buffer.readFieldLine()
         #expect(decoded == .literal(requireLiteralRepresentation: false, name: "custom-key", value: "custom-value"))
+    }
+
+    @available(anyAppleOS 27, *)
+    static var truncationFieldLines: [FieldLine] {
+        [
+            .indexed(.staticTable, index: 17),
+            .indexed(.dynamicTable, index: 1000),
+            .indexedWithPostBase(index: 3),
+            .indexedWithPostBase(index: 1000),
+            .literalWithNameReference(requireLiteralRepresentation: false, table: .staticTable, index: 2, value: "abc"),
+            .literalWithNameReference(
+                requireLiteralRepresentation: true,
+                table: .dynamicTable,
+                index: 1000,
+                value: String(repeating: "v", count: 200)
+            ),
+            .literalWithNameReferenceWithPostBase(requireLiteralRepresentation: false, index: 1, value: "abc"),
+            .literalWithNameReferenceWithPostBase(
+                requireLiteralRepresentation: true,
+                index: 1000,
+                value: "custom-value"
+            ),
+            .literal(requireLiteralRepresentation: false, name: "custom-key", value: "custom-value"),
+            .literal(requireLiteralRepresentation: true, name: String(repeating: "n", count: 200), value: ""),
+        ]
+    }
+
+    @available(anyAppleOS 27, *)
+    static var truncationFieldSectionPrefixes: [EncodedFieldSectionPrefix] {
+        [
+            .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
+            .init(encodedRequiredInsertCount: 5, deltaBase: 4, signBit: true),
+            .init(encodedRequiredInsertCount: 300, deltaBase: 200, signBit: false),
+            .init(encodedRequiredInsertCount: 1000, deltaBase: 1000, signBit: true),
+        ]
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [false, true])
+    func decodeEveryTruncatedFieldLine(preferHuffmanEncoding: Bool) throws {
+        // `FieldLine` is only available from anyAppleOS 27 on, so it can't be a test argument.
+        for fieldLine in Self.truncationFieldLines {
+            let encoded = encodedBytes { $0.appendFieldLine(fieldLine, preferHuffmanEncoding: preferHuffmanEncoding) }
+            try expectEveryTruncationIsIncomplete(encoded, decodingTo: fieldLine) {
+                span,
+                offset throws(IntegerReadingError) in
+                try span.getFieldLine(at: offset)
+            }
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func decodeEveryTruncatedFieldSectionPrefix() throws {
+        for prefix in Self.truncationFieldSectionPrefixes {
+            let encoded = encodedBytes { $0.appendFieldSectionPrefix(prefix) }
+            try expectEveryTruncationIsIncomplete(encoded, decodingTo: prefix) {
+                span,
+                offset throws(IntegerReadingError) in
+                try span.getFieldSectionPrefix(at: offset)
+            }
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func decodeAtAnOffsetOutsideTheSpan() throws {
+        let encoded = encodedBytes {
+            $0.appendFieldSectionPrefix(.init(encodedRequiredInsertCount: 300, deltaBase: 200, signBit: false))
+            $0.appendFieldLine(
+                .literal(requireLiteralRepresentation: false, name: "custom-key", value: "custom-value"),
+                preferHuffmanEncoding: false
+            )
+        }
+        let span = encoded.span.bytes
+        for offset in offsetsOutsideASpan(of: span.byteCount) {
+            #expect(try span.getFieldLine(at: offset) == nil)
+            #expect(try span.getFieldSectionPrefix(at: offset) == nil)
+        }
     }
 }
 

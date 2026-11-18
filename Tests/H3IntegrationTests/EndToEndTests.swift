@@ -25,7 +25,7 @@ import Testing
 import X509
 
 @_spi(PackageInternal) @testable import HTTP3
-@_spi(HTTP3AsyncInterface) @testable import NIOHTTP3
+@testable import NIOHTTP3
 @_spi(PackageInternal) @testable import QPACK
 
 /// Buffers incoming body data until end. Then echoes it all back with a 200 status header.
@@ -692,11 +692,12 @@ struct EndToEndTests {
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler
         _ = requestStreamChannel.eventLoop.submit {
             let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(
-                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>.StreamHandler.self
+                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator, HTTP3ClosureInboundStreamInitializer>
+                    .StreamHandler.self
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             var buffer = ByteBuffer()
-            buffer.writeHTTP3PartialFrame(.settings(HTTP3Settings()), preferHuffmanEncoding: false)
+            buffer.writeHTTP3PartialFrame(.settings(HTTP3Settings()))
             streamHandlerContext.writeAndFlush(NIOAny(buffer), promise: nil)
         }
 
@@ -932,22 +933,17 @@ struct EndToEndTests {
         // Our outbound handlers will prevent writing an invalid frame, so we need to skip past the stream handler.
         _ = requestStreamChannel.eventLoop.submit {
             let streamHandler = try requestStreamChannel.pipeline.syncOperations.handler(
-                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator>.StreamHandler.self
+                type: HTTP3ConnectionCoordinator<NIOQUIC.QUICStreamCreator, HTTP3ClosureInboundStreamInitializer>
+                    .StreamHandler.self
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
+            // Required Insert Count 0 and Base 0, then a literal field line: 001 for literal, 0 for N, 0 for H, 0001 for
+            // the length of the name (1), then 0 for H and 0000001 for the length of the value (1).
+            // Uppercase field names are illegal
+            let fieldSection: [UInt8] = [0, 0, 0b00100001, UInt8(ascii: "A"), 0b00000001, UInt8(ascii: "B")]
             var buffer = ByteBuffer()
-            buffer.writeHTTP3PartialFrame(
-                .headers(
-                    .init(
-                        fieldSection: .init(
-                            prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
-                            // Uppercase field names are illegal
-                            lines: [.literal(requireLiteralRepresentation: false, name: "A", value: "B")]
-                        )
-                    )
-                ),
-                preferHuffmanEncoding: false
-            )
+            buffer.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
+            buffer.writeLengthPrefixedBuffer(ByteBuffer(bytes: fieldSection), strategy: .quic)
             streamHandlerContext.writeAndFlush(NIOAny(buffer), promise: nil)
         }
 
@@ -1198,10 +1194,11 @@ struct EndToEndTests {
                 switch streamType {
                 case .qpackEncoder:
                     // Write a bad instruction inbound, as if the peer has sent it
-                    var buffer = ByteBuffer()
                     /// 0x20 followed by UInt.max means set the dynamic table size to UInt.max.
                     /// This is always an error on any platform, because UInt.max is always more than Int.max and therefore we don't allow it.
-                    buffer.writeQPACKPrefixedInteger(UInt.max, prefix: 5, prefixBits: 0x20)
+                    let buffer = ByteBuffer(initialCapacity: QPACKEncodedLength.maxPrefixedInteger(UInt.self)) {
+                        $0.appendQPACKPrefixedInteger(UInt.max, prefix: 5, prefixBits: 0x20)
+                    }
                     streamChannel.pipeline.fireChannelRead(buffer)
                 case .qpackDecoder, .control:
                     break  // Not interested in these
@@ -1420,7 +1417,7 @@ struct EndToEndTests {
         // Server sends GOAWAY(12) - stream 8 < 12, so it's allowed to complete
         // Streams 0, 4 already completed. Stream 8 is active, so connection stays open.
         let serverH3HandlerFuture = inboundConnectionChannels[0].pipeline.handler(
-            type: HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>.self
+            type: QUICHTTP3ConnectionHandler.self
         )
         try await serverH3HandlerFuture.flatMapThrowing {
             try $0.sendGoaway(id: 12)

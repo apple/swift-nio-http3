@@ -14,7 +14,6 @@
 
 import HTTPTypes
 import NIOCore
-@_spi(PackageInternal) import QPACK
 import Testing
 
 @_spi(PackageInternal) @testable import HTTP3
@@ -49,7 +48,7 @@ struct HTTP3FrameCodingTests {
         let dataFrameBuffer = ByteBuffer(string: "Test")
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer))
 
         #expect(buffer == ByteBuffer([0x00, 0x04, 0x54, 0x65, 0x73, 0x74]))
     }
@@ -60,7 +59,7 @@ struct HTTP3FrameCodingTests {
         let dataFrameBuffer = ByteBuffer(string: "Test")
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.data(dataFrameBuffer)))
@@ -74,8 +73,8 @@ struct HTTP3FrameCodingTests {
         let dataFrameBuffer2 = ByteBuffer(string: "Test2")
         var out = ByteBuffer()
 
-        out.writeHTTP3PartialFrame(.data(dataFrameBuffer1), preferHuffmanEncoding: false)
-        out.writeHTTP3PartialFrame(.data(dataFrameBuffer2), preferHuffmanEncoding: false)
+        out.writeHTTP3PartialFrame(.data(dataFrameBuffer1))
+        out.writeHTTP3PartialFrame(.data(dataFrameBuffer2))
         let frame1 = try decoder.decode(buffer: &out)
         let frame2 = try decoder.decode(buffer: &out)
 
@@ -140,10 +139,7 @@ struct HTTP3FrameCodingTests {
     @Test func encodeCancelPushFrame() {
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(
-            .cancelPush(HTTP3PushID(rawValue: 151_288_809_941_952_652)),
-            preferHuffmanEncoding: false
-        )
+        buffer.writeHTTP3PartialFrame(.cancelPush(HTTP3PushID(rawValue: 151_288_809_941_952_652)))
 
         #expect(buffer == ByteBuffer([0x03, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
     }
@@ -154,7 +150,7 @@ struct HTTP3FrameCodingTests {
         let pushID = HTTP3PushID(rawValue: 151_288_809_941_952_652)
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.cancelPush(pushID), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.cancelPush(pushID))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.cancelPush(pushID)))
@@ -173,14 +169,13 @@ struct HTTP3FrameCodingTests {
         )
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.settings(settings), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.settings(settings))
 
         #expect(
             buffer
                 // The frame type is 4
-                // The length is 11, but it's encoded across 2 bytes
-                // First we have 0x40 (to indicate we're using 2 bytes) and then the actual length of 11 (0x0b)
-                == ByteBuffer([0x04, 0x40, 0x0b, 0x07, 0x01, 0x01, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c])
+                // The length is 11 (0x0b)
+                == ByteBuffer([0x04, 0x0b, 0x07, 0x01, 0x01, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c])
         )
     }
 
@@ -193,7 +188,7 @@ struct HTTP3FrameCodingTests {
         )
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.settings(settings), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.settings(settings))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.settings(settings)))
@@ -206,7 +201,7 @@ struct HTTP3FrameCodingTests {
         let settings = HTTP3Settings()
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.settings(settings), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.settings(settings))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.settings(settings)))
@@ -219,7 +214,7 @@ struct HTTP3FrameCodingTests {
     @Test func encodeGoawayFrame() {
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.goaway(151_288_809_941_952_652), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.goaway(151_288_809_941_952_652))
 
         #expect(buffer == ByteBuffer([0x07, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
     }
@@ -230,7 +225,7 @@ struct HTTP3FrameCodingTests {
         let pushID: HTTP3GoawayID = 151_288_809_941_952_652
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.goaway(pushID), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.goaway(pushID))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.goaway(pushID)))
@@ -269,10 +264,7 @@ struct HTTP3FrameCodingTests {
     @Test func encodeMaxPushIDFrame() {
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(
-            .maxPushID(HTTP3PushID(rawValue: 151_288_809_941_952_652)),
-            preferHuffmanEncoding: false
-        )
+        buffer.writeHTTP3PartialFrame(.maxPushID(HTTP3PushID(rawValue: 151_288_809_941_952_652)))
 
         #expect(buffer == ByteBuffer([0x0d, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
     }
@@ -283,7 +275,7 @@ struct HTTP3FrameCodingTests {
         let pushID = HTTP3PushID(rawValue: 151_288_809_941_952_652)
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.maxPushID(pushID), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.maxPushID(pushID))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.maxPushID(pushID)))
@@ -293,106 +285,13 @@ struct HTTP3FrameCodingTests {
     // MARK: PUSH_PROMISE frames
 
     @available(anyAppleOS 27, *)
-    @Test func encodePushPromiseFrame() {
-        var buffer = ByteBuffer()
-
-        let testFieldSection = FieldSection(
-            prefix: .init(
-                encodedRequiredInsertCount: 0,
-                deltaBase: 0,
-                signBit: false
-            ),
-            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-        )
-        buffer.writeHTTP3PartialFrame(
-            .pushPromise(.init(pushID: 77, fieldSection: testFieldSection)),
-            preferHuffmanEncoding: false
-        )
-
-        #expect(
-            buffer
-                == ByteBuffer([
-                    // frame type 5
-                    5,
-                    // Fields are length 13, the push id itself is length 2 (numbers over 64 need 2 bytes to encode)
-                    // Total length 15, but it's encoded across 4 bytes because of the way NIO's ByteBuffer/writeLengthPrefixed function works
-                    // First we have 0x80 (to indicate we're using 4 bytes, see RFC 9000) and then the actual length of 15 in the 4th byte
-                    0x80, 0, 0, 15,
-                    // Push ID (77, but encoded in QUIC, so we need to prefix with 64)
-                    64, 77,
-                    // required insert count, delta and base are 0
-                    0, 0,
-                    // field line
-                    // 001 for literal, 0 for N, 0100 for length of name (4)
-                    0b00100100,
-                    // "test"
-                    0b01110100, 0b01100101, 0b01110011, 0b01110100,
-                    // 0 (no huffman) then length of value 0000101 (5)
-                    0b00000101,
-                    // "value"
-                    0b01110110, 0b01100001, 0b01101100, 0b01110101, 0b01100101,
-                ])
-        )
-    }
-
-    @available(anyAppleOS 27, *)
-    @Test func encodePushPromiseFrameWithHuffman() {
-        var buffer = ByteBuffer()
-
-        let testFieldSection = FieldSection(
-            prefix: .init(
-                encodedRequiredInsertCount: 0,
-                deltaBase: 0,
-                signBit: false
-            ),
-            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-        )
-        buffer.writeHTTP3PartialFrame(
-            .pushPromise(.init(pushID: 77, fieldSection: testFieldSection)),
-            preferHuffmanEncoding: true
-        )
-
-        #expect(
-            buffer
-                == ByteBuffer(
-                    [
-                        // frame type 5
-                        5,
-                        // Fields are length 11, the push id itself is length 2 (numbers over 64 need 2 bytes to encode)
-                        // Total length 13, but it's encoded across 4 bytes because of the way NIO's ByteBuffer/writeLengthPrefixed function works
-                        // First we have 0x80 (to indicate we're using 4 bytes, see RFC 9000) and then the actual length of 13 in the 4th byte
-                        0x80, 0, 0, 13,
-                        // Push ID (77, but encoded in QUIC, so we need to prefix with 64)
-                        64, 77,
-                        // required insert count, delta and base are 0
-                        0, 0,
-                        // field line
-                        // 001 for literal, 0 for N, 1 for H, 011 for length of name (3 when huffman encoded)
-                        0b00101011,
-                    ] + "test".huffmanEncodedBytes
-                        // 1 (huffman) then length of value 0000100 (4 when huffman encoded)
-                        + [0b10000100]
-                        // "value"
-                        + "value".huffmanEncodedBytes
-                )
-        )
-    }
-
-    @available(anyAppleOS 27, *)
     @Test(arguments: [true, false])
     func encodeDecodePushPromiseFrame(preferHuffmanEncoding: Bool) throws {
         var decoder = HTTP3FrameDecoder()
         var buffer = ByteBuffer()
-        let testFieldSection = FieldSection(
-            prefix: .init(
-                encodedRequiredInsertCount: 0,
-                deltaBase: 0,
-                signBit: false
-            ),
-            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-        )
+        let testFieldSection = ByteBuffer(bytes: Self.fieldSectionBytes(preferHuffmanEncoding: preferHuffmanEncoding))
         let testFrame = HTTP3PartialFrame.pushPromise(.init(pushID: 38, fieldSection: testFieldSection))
-        buffer.writeHTTP3PartialFrame(testFrame, preferHuffmanEncoding: preferHuffmanEncoding)
+        buffer.writeTestFrame(testFrame)
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(testFrame))
@@ -401,78 +300,73 @@ struct HTTP3FrameCodingTests {
 
     // MARK: HEADER frames
 
+    /// The payload of ``writeHeadersFrame(maxPayloadLength:encodePayload:)`` in the tests below: 13 bytes.
+    private static let literalFieldSectionBytes: [UInt8] =
+        [
+            // required insert count, delta and base are 0
+            0, 0,
+            // 001 for literal, 0 for N, 0 for H, 0100 for length of name (4)
+            0b00100100,
+        ] + "test".utf8
+        // 0 (no huffman) then length of value 0000101 (5)
+        + [0b00000101] + "value".utf8
+
+    /// ``literalFieldSectionBytes`` with Huffman coding: 11 bytes.
     @available(anyAppleOS 27, *)
-    @Test func encodeHeaders() throws {
-        var buffer = ByteBuffer()
-
-        let testFieldSection = FieldSection(
-            prefix: .init(
-                encodedRequiredInsertCount: 0,
-                deltaBase: 0,
-                signBit: false
-            ),
-            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-        )
-        buffer.writeHTTP3PartialFrame(.headers(.init(fieldSection: testFieldSection)), preferHuffmanEncoding: false)
-
-        #expect(
-            buffer
-                == ByteBuffer([
-                    // frame type 1
-                    1,
-                    // length 13, but it's encoded across 4 bytes because of the way NIO's ByteBuffer/writeLengthPrefixed function works
-                    // First we have 0x80 (to indicate we're using 4 bytes, see RFC 9000) and then the actual length of 13 in the 4th byte
-                    0x80, 0, 0, 13,
-                    // required insert count, delta and base are 0
-                    0, 0,
-                    // field line
-                    // 001 for literal, 0 for N, 0100 for length of name (4)
-                    0b00100100,
-                    // "test"
-                    0b01110100, 0b01100101, 0b01110011, 0b01110100,
-                    // 0 (no huffman) then length of value 0000101 (5)
-                    0b00000101,
-                    // "value"
-                    0b01110110, 0b01100001, 0b01101100, 0b01110101, 0b01100101,
-                ])
-        )
+    private static var huffmanLiteralFieldSectionBytes: [UInt8] {
+        [
+            // required insert count, delta and base are 0
+            0, 0,
+            // 001 for literal, 0 for N, 1 for H, 0011 for length of name (3 when huffman encoded)
+            0b00101011,
+        ] + "test".huffmanEncodedBytes
+            // 1 (huffman) then length of value 0000100 (4 when huffman encoded)
+            + [0b10000100] + "value".huffmanEncodedBytes
     }
 
     @available(anyAppleOS 27, *)
-    @Test func encodeHeadersWithHuffman() throws {
+    private static func fieldSectionBytes(preferHuffmanEncoding: Bool) -> [UInt8] {
+        preferHuffmanEncoding ? Self.huffmanLiteralFieldSectionBytes : Self.literalFieldSectionBytes
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func writeHeadersFrame() throws {
         var buffer = ByteBuffer()
+        buffer.writeHeadersFrame(maxPayloadLength: Self.literalFieldSectionBytes.count) { output in
+            for byte in Self.literalFieldSectionBytes {
+                output.append(byte)
+            }
+        }
 
-        let testFieldSection = FieldSection(
-            prefix: .init(
-                encodedRequiredInsertCount: 0,
-                deltaBase: 0,
-                signBit: false
-            ),
-            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-        )
-        buffer.writeHTTP3PartialFrame(.headers(.init(fieldSection: testFieldSection)), preferHuffmanEncoding: true)
+        // frame type 1, then the length 13, which takes one byte
+        #expect(buffer == ByteBuffer([1, 13] + Self.literalFieldSectionBytes))
 
-        #expect(
-            buffer
-                == ByteBuffer(
-                    [
-                        // frame type 1
-                        1,
-                        // length 11, but it's encoded across 4 bytes because of the way NIO's ByteBuffer/writeLengthPrefixed function works
-                        // First we have 0x80 (to indicate we're using 4 bytes, see RFC 9000) and then the actual length of 11 in the 4th byte
-                        0x80, 0, 0, 11,
-                        // required insert count, delta and base are 0
-                        0, 0,
-                        // field line
-                        // 001 for literal, 0 for N, 1 for H, 0011 for length of name (3 when huffman encoded)
-                        0b00101011,
-                        // "test"
-                    ] + "test".huffmanEncodedBytes
-                        // 1 (huffman) then length of value 0000100 (4 when huffman encoded)
-                        + [0b10000100]
-                        + "value".huffmanEncodedBytes
-                )
-        )
+        var decoder = HTTP3FrameDecoder()
+        let frame = try decoder.decode(buffer: &buffer)
+        let expected = ByteBuffer(bytes: Self.literalFieldSectionBytes)
+        #expect(frame == .known(.headers(.init(fieldSection: expected))))
+        #expect(buffer.readableBytes == 0)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func writeHeadersFrameSizesTheLengthForTheLongestPayload() throws {
+        var buffer = ByteBuffer()
+        // The payload might have been up to 64 bytes long, which takes two bytes to encode as a QUIC integer.
+        buffer.writeHeadersFrame(maxPayloadLength: 64) { output in
+            for byte in Self.literalFieldSectionBytes {
+                output.append(byte)
+            }
+        }
+
+        // frame type 1, then the length 13, encoded across 2 bytes: 0x40 indicates the 2 byte encoding (RFC 9000)
+        #expect(buffer == ByteBuffer([1, 0x40, 13] + Self.literalFieldSectionBytes))
+
+        var decoder = HTTP3FrameDecoder()
+        guard case .known(.headers) = try decoder.decode(buffer: &buffer) else {
+            Issue.record("Expected a HEADERS frame")
+            return
+        }
+        #expect(buffer.readableBytes == 0)
     }
 
     @available(anyAppleOS 27, *)
@@ -481,18 +375,8 @@ struct HTTP3FrameCodingTests {
         var decoder = HTTP3FrameDecoder()
 
         var buffer = ByteBuffer()
-        let testFieldSection = FieldSection(
-            prefix: .init(
-                encodedRequiredInsertCount: 0,
-                deltaBase: 0,
-                signBit: false
-            ),
-            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-        )
-        buffer.writeHTTP3PartialFrame(
-            .headers(.init(fieldSection: testFieldSection)),
-            preferHuffmanEncoding: preferHuffmanEncoding
-        )
+        let testFieldSection = ByteBuffer(bytes: Self.fieldSectionBytes(preferHuffmanEncoding: preferHuffmanEncoding))
+        buffer.writeTestFrame(.headers(.init(fieldSection: testFieldSection)))
 
         let frame = try decoder.decode(buffer: &buffer)
         guard case .known(.headers(let partialHeader)) = frame else {
@@ -509,21 +393,15 @@ struct HTTP3FrameCodingTests {
 
         var out = ByteBuffer()
 
-        let headers1 = HTTP3PartialFrame.Headers(
-            fieldSection: .init(
-                prefix: .init(encodedRequiredInsertCount: 0, deltaBase: 0, signBit: false),
-                lines: [.literal(requireLiteralRepresentation: false, name: "hello", value: "world")]
-            )
-        )
+        let fieldSectionBytes = Self.fieldSectionBytes(preferHuffmanEncoding: preferHuffmanEncoding)
+        let headers1 = HTTP3PartialFrame.Headers(fieldSection: ByteBuffer(bytes: fieldSectionBytes))
+        // The same field line, behind a prefix with Required Insert Count 1, so that the two frames differ.
         let headers2 = HTTP3PartialFrame.Headers(
-            fieldSection: .init(
-                prefix: .init(encodedRequiredInsertCount: 1, deltaBase: 0, signBit: false),
-                lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-            )
+            fieldSection: ByteBuffer(bytes: [1, 0] + fieldSectionBytes.dropFirst(2))
         )
 
-        out.writeHTTP3PartialFrame(.headers(headers1), preferHuffmanEncoding: preferHuffmanEncoding)
-        out.writeHTTP3PartialFrame(.headers(headers2), preferHuffmanEncoding: preferHuffmanEncoding)
+        out.writeTestFrame(.headers(headers1))
+        out.writeTestFrame(.headers(headers2))
         let frame1 = try decoder.decode(buffer: &out)
         let frame2 = try decoder.decode(buffer: &out)
 
@@ -534,50 +412,31 @@ struct HTTP3FrameCodingTests {
 
     @available(anyAppleOS 27, *)
     @Test(arguments: [true, false])
-    func decodeHeadersRedundantBytes(preferHuffmanEncoding: Bool) throws {
+    func decodeHeadersLeavesTrailingBytesToQPACK(preferHuffmanEncoding: Bool) throws {
         var buffer = ByteBuffer()
-        let testFieldSection = FieldSection(
-            prefix: .init(
-                encodedRequiredInsertCount: 0,
-                deltaBase: 0,
-                signBit: false
-            ),
-            lines: [.literal(requireLiteralRepresentation: false, name: "test", value: "value")]
-        )
         // We make a buffer containing almost a normal headers frame...but we add a 0 to the end.
         // The length field of the frame includes the 0.
-        // That means the actual content of the frame finishes one byte before the end of the frame.
-        // That's an error.
+        let testFieldSection = Self.fieldSectionBytes(preferHuffmanEncoding: preferHuffmanEncoding) + [0]
         buffer.writeEncodedInteger(HTTP3FrameType.headers.rawValue, strategy: .quic)
-        buffer.writeLengthPrefixed(strategy: .quic) { tempBuffer in
-            var bytesWritten = 0
-            bytesWritten += tempBuffer.writeFieldSectionPrefix(testFieldSection.prefix)
-            for line in testFieldSection.lines {
-                bytesWritten += tempBuffer.writeFieldLine(line, preferHuffmanEncoding: preferHuffmanEncoding)
-            }
-            // write 1 extra byte
-            bytesWritten += tempBuffer.writeBytes([0])
-            return bytesWritten
-        }
+        buffer.writeLengthPrefixedBuffer(ByteBuffer(bytes: testFieldSection), strategy: .quic)
 
+        // The field section takes up the whole payload, so the frame decoder can't tell that the 0 is redundant. It
+        // passes it on with the rest, and the QPACK decoder fails to decode it: RFC 9204 § 6.
         var decoder = HTTP3FrameDecoder()
-        expectH3Error(
-            code: .invalidFramePayload,
-            h3ErrorCode: .frameError,
-            message: "Frame length longer than payload"
-        ) {
-            _ = try decoder.decode(buffer: &buffer)
-        }
+        let frame = try decoder.decode(buffer: &buffer)
+        #expect(frame == .known(.headers(.init(fieldSection: ByteBuffer(bytes: testFieldSection)))))
+        #expect(buffer.readableBytes == 0)
     }
 
     @available(anyAppleOS 27, *)
-    @Test func decodeHeadersNotEnoughBytes() throws {
+    @Test func decodeHeadersLeavesTruncatedFieldSectionToQPACK() throws {
         // Type 1 (headers) but not enough bytes to actually make a full header field section
         var buffer = ByteBuffer(bytes: [1, 1, 0])
+        // The frame decoder doesn't parse the field section. The QPACK decoder rejects the truncated prefix.
         var decoder = HTTP3FrameDecoder()
-        expectH3Error(code: .invalidFramePayload, h3ErrorCode: .frameError, message: "Invalid frame payload") {
-            _ = try decoder.decode(buffer: &buffer)
-        }
+        let frame = try decoder.decode(buffer: &buffer)
+        #expect(frame == .known(.headers(.init(fieldSection: ByteBuffer(bytes: [0])))))
+        #expect(buffer.readableBytes == 0)
     }
 
     // MARK: Unknown type
@@ -609,7 +468,7 @@ struct HTTP3FrameCodingTests {
         var buffer = ByteBuffer()
         buffer.writeEncodedInteger(frameType, strategy: .quic)
         buffer.writeLengthPrefixedString(payload, strategy: .quic)
-        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer), preferHuffmanEncoding: false)
+        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer))
 
         let frame1 = try decoder.decode(buffer: &buffer)
         let frame2 = try decoder.decode(buffer: &buffer)
