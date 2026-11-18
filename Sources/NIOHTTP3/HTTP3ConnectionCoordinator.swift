@@ -37,7 +37,7 @@ final class HTTP3ConnectionCoordinator<
     private var qpackCoder: QPACKCoder?
     private var connectionStateMachine: HTTP3ConnectionStateMachine
     private let outboundControlStreamHandler: HTTP3OutboundControlStreamHandler
-    let streamCreator: QUICStreamCreator
+    private let streamCreator: QUICStreamCreator
     /// The connection handler.
     ///
     /// Setting this creates a strong retain cycle which is broken by the connection handler when
