@@ -508,6 +508,9 @@ final class HTTP3ConnectionCoordinator<
                 streamType: .unidirectional(streamType)
             )
             throw error
+        case .doNothing:
+            // WebTransport stream
+            break
         }
 
     }

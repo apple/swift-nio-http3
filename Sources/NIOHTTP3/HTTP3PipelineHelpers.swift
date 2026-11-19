@@ -32,6 +32,7 @@ extension ChannelPipeline.SynchronousOperations {
     ///   - streamCreator: For creating outbound streams.
     ///   - logger: A logger.
     ///   - streamInitializer: Called for every inbound request stream.
+    ///   - internalInboundStreamInitializer: WebTransport API
     /// - Returns: A ``HTTP3ServerConnection`` for iterating the inbound request streams.
     /// - Throws: If the handler could not be added to the pipeline.
     public func configureAsyncHTTP3ServerPipeline<
@@ -42,7 +43,10 @@ extension ChannelPipeline.SynchronousOperations {
         settings: HTTP3Settings = .init(),
         streamCreator: StreamCreator,
         logger: Logger,
-        streamInitializer: @escaping @Sendable (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>
+        streamInitializer: @escaping @Sendable (HTTP3StreamInitializerParameters) -> EventLoopFuture<Output>,
+        internalInboundStreamInitializer: (
+            (any Channel, QUICStreamID, HTTP3StreamType.Unidirectional) -> EventLoopFuture<Void>
+        )? = nil
     ) throws -> HTTP3ServerConnection<Output> {
         let (stream, continuation) = AsyncStream<Output>.makeStream()
         let handler = HTTP3ConnectionHandler.server(
@@ -54,7 +58,8 @@ extension ChannelPipeline.SynchronousOperations {
             inboundRequestStreamInitializer: HTTP3AsyncInboundStreamInitializer(
                 yieldingTo: continuation,
                 streamInitializer: streamInitializer
-            )
+            ),
+            internalInboundStreamInitializer: internalInboundStreamInitializer
         )
         try self.addHandler(handler)
         return HTTP3ServerConnection(inbound: .init(stream: stream))
