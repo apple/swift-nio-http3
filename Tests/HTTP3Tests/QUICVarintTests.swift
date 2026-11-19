@@ -82,8 +82,18 @@ struct QUICVarintTests {
 
     @available(anyAppleOS 27, *)
     @Test(arguments: [0, 1, 4])
-    func offsetAtTheEndIsIncomplete(count: Int) {
-        let bytes = [UInt8](repeating: 0, count: count)
-        #expect(QUICVarint.read(bytes.span.bytes, at: count) == .incomplete(needed: 1))
+    func offsetOutOfBoundsTraps(count: Int) async {
+        await #expect(processExitsWith: .failure) { [count] in
+            let bytes = [UInt8](repeating: 0, count: count)
+            _ = QUICVarint.read(bytes.span.bytes, at: count)
+        }
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func negativeOffsetTraps() async {
+        await #expect(processExitsWith: .failure) {
+            let bytes = [UInt8](repeating: 0, count: 10)
+            _ = QUICVarint.read(bytes.span.bytes, at: -1)
+        }
     }
 }

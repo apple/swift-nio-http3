@@ -26,6 +26,7 @@ enum QUICVarint {
     /// Reads the integer which starts `offset` bytes into `bytes`.
     /// - Precondition: `offset` needs to be in the `bytes` range.
     static func read(_ bytes: borrowing RawSpan, at offset: Int) -> ReadResult {
+        precondition(offset >= 0, "Offset must not be negative")
         let available = bytes.byteCount &- offset
         guard available > 0 else {
             precondition(bytes.byteOffsets.contains(offset), "offset: \(offset), bytes: \(bytes.byteCount)")
