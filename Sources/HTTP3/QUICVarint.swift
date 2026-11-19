@@ -16,7 +16,7 @@
 @available(anyAppleOS 27, *)
 enum QUICVarint {
     /// The outcome of reading an integer.
-    enum ReadResult {
+    enum ReadResult: Equatable {
         /// The integer and the number of bytes it took.
         case value(UInt64, length: Int)
         /// `bytes` ends before the integer does: at least `needed` bytes are needed, counted from `offset`.

@@ -43,23 +43,7 @@ struct EncodedVarint: Sendable, CustomTestStringConvertible {
     ]
 }
 
-/// A `QUICVarint.ReadResult` which can be compared.
-enum VarintReadResult: Equatable {
-    case value(UInt64, length: Int)
-    case incomplete(needed: Int)
-}
-
 struct QUICVarintTests {
-    @available(anyAppleOS 27, *)
-    static func read(_ bytes: [UInt8], at offset: Int) -> VarintReadResult {
-        switch QUICVarint.read(bytes.span.bytes, at: offset) {
-        case .value(let value, let length):
-            return .value(value, length: length)
-        case .incomplete(let needed):
-            return .incomplete(needed: needed)
-        }
-    }
-
     @available(anyAppleOS 27, *)
     @Test func lengthComesFromTheTwoMostSignificantBits() {
         for byte in UInt8.min...UInt8.max {
@@ -72,14 +56,14 @@ struct QUICVarintTests {
     @Test(arguments: EncodedVarint.examples)
     func readsValue(_ encoded: EncodedVarint) {
         #expect(QUICVarint.length(firstByte: encoded.bytes[0]) == encoded.bytes.count)
-        #expect(Self.read(encoded.bytes, at: 0) == .value(encoded.value, length: encoded.bytes.count))
+        #expect(QUICVarint.read(encoded.bytes.span.bytes, at: 0) == .value(encoded.value, length: encoded.bytes.count))
     }
 
     @available(anyAppleOS 27, *)
     @Test(arguments: EncodedVarint.examples)
     func readsValueAtOffsetIgnoringSurroundingBytes(_ encoded: EncodedVarint) {
         let bytes: [UInt8] = [0xff, 0x00, 0x40] + encoded.bytes + [0xff, 0xff]
-        #expect(Self.read(bytes, at: 3) == .value(encoded.value, length: encoded.bytes.count))
+        #expect(QUICVarint.read(bytes.span.bytes, at: 3) == .value(encoded.value, length: encoded.bytes.count))
     }
 
     @available(anyAppleOS 27, *)
@@ -88,8 +72,11 @@ struct QUICVarintTests {
         // `needed` is the integer's whole length, counted from the offset, at every truncation point.
         for available in 1..<encoded.bytes.count {
             let truncated = Array(encoded.bytes.prefix(available))
-            #expect(Self.read(truncated, at: 0) == .incomplete(needed: encoded.bytes.count), "\(available) bytes")
-            #expect(Self.read([0xff] + truncated, at: 1) == .incomplete(needed: encoded.bytes.count))
+            #expect(
+                QUICVarint.read(truncated.span.bytes, at: 0) == .incomplete(needed: encoded.bytes.count),
+                "\(available) bytes"
+            )
+            #expect(QUICVarint.read(([0xff] + truncated).span.bytes, at: 1) == .incomplete(needed: encoded.bytes.count))
         }
     }
 
@@ -97,6 +84,6 @@ struct QUICVarintTests {
     @Test(arguments: [0, 1, 4])
     func offsetAtTheEndIsIncomplete(count: Int) {
         let bytes = [UInt8](repeating: 0, count: count)
-        #expect(Self.read(bytes, at: count) == .incomplete(needed: 1))
+        #expect(QUICVarint.read(bytes.span.bytes, at: count) == .incomplete(needed: 1))
     }
 }
