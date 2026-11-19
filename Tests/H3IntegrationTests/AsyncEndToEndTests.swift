@@ -15,6 +15,7 @@
 import HTTP3
 import HTTPTypes
 import Logging
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOExtras
 import NIOHTTPTypes
@@ -679,6 +680,160 @@ struct AsyncEndToEndTests {
         try await serverChannel.close()
     }
 
+    /// The server stops reading the request only after the client has read the whole response. NIOQUIC then closes the
+    /// stream and reports the STOP\_SENDING as an error, which doesn't reach the application.
+    ///
+    /// This also pins down the order of NIOQUIC's events that the HTTP/3 handlers rely on: the end of the stream is
+    /// followed by a read complete, so it has reached the application before the error arrives.
+    @available(anyAppleOS 27, *)
+    @Test(arguments: Self.standardAuthenticationConfigurations)
+    func stopSendingAfterCompleteResponseIsNotReported(
+        authenticationConfiguration: AuthenticationConfiguration
+    ) async throws {
+        let serverLogger = Logger(label: "Server")
+        let clientLogger = Logger(label: "Client")
+
+        let credentials = try TestCertificates.makeCredentials(for: authenticationConfiguration)
+        let serverName: String
+        switch credentials {
+        case .rawKeys(let name, _, _, _):
+            serverName = name
+        case .certificates(let name, _, _, _):
+            serverName = name
+        }
+
+        let (serverChannel, serverConnectionStream) = try await makeHTTP3Server(
+            credentials: credentials,
+            settings: .init(),
+            logger: serverLogger
+        )
+        let (clientChannel, client) = try await makeHTTP3Client(
+            credentials: credentials,
+            settings: .init(),
+            logger: clientLogger
+        )
+
+        let testRequest = HTTPRequest(method: .post, scheme: "https", authority: "test", path: "/")
+        let testResponse = HTTPResponse(status: .ok)
+        let stopSendingCode = QUICApplicationErrorCode(HTTP3ErrorCode.noError.rawValue)!
+
+        // The server sends STOP_SENDING only once the client has read the whole response.
+        let (clientReadResponse, clientReadResponseContinuation) = AsyncStream<Never>.makeStream()
+        // The client's request stream events, as NIOQUIC fires them and as they leave the HTTP/3 handlers.
+        let quicEvents = NIOLockedValueBox<[RecordedEvent]>([])
+        let applicationEvents = NIOLockedValueBox<[RecordedEvent]>([])
+        let streamClosedPromise = clientChannel.eventLoop.makePromise(of: Void.self)
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            // Server: sends the whole response, then stops reading the request.
+            group.addTask {
+                var inboundConnections = serverConnectionStream.makeAsyncIterator()
+                let (_, inboundConnection) = try #require(await inboundConnections.next())
+
+                var inboundStreams = inboundConnection.inbound.makeAsyncIterator()
+                let inboundStream = try #require(await inboundStreams.next())
+
+                try await inboundStream.executeThenClose { inboundParts, outbound in
+                    var inboundPartIterator = inboundParts.makeAsyncIterator()
+                    try await #expect(inboundPartIterator.next() == .head(testRequest))
+
+                    try await outbound.write(.head(testResponse))
+                    outbound.finish()
+                    for await _ in clientReadResponse {}
+                    inboundStream.channel.triggerUserOutboundEvent(
+                        QUICStopSendingEvent(code: stopSendingCode),
+                        promise: nil
+                    )
+                }
+            }
+
+            // Client: reads the whole response, and keeps the request open until the stream closes.
+            group.addTask {
+                defer {
+                    clientReadResponseContinuation.finish()
+                    streamClosedPromise.fail(NeverFulfilled())
+                }
+                let (_, clientConnection) = try await client.createConnection(
+                    serverName: serverName,
+                    remoteAddress: serverChannel.localAddress!,
+                    inboundPushStreamInitializer: { _ in
+                        fatalError("Push streams not supported")
+                    }
+                )
+
+                let requestStream = try await clientConnection.createRequestStream {
+                    let streamChannel = $0.channel
+                    return streamChannel.eventLoop.makeCompletedFuture {
+                        // The HTTP/3 handlers are already in the pipeline: record in front of them and behind them.
+                        try streamChannel.pipeline.syncOperations.addHandler(
+                            DebugInboundEventsHandler { event, _ in
+                                let event = RecordedEvent(event)
+                                quicEvents.withLockedValue { $0.append(event) }
+                                if event == .inactive {
+                                    streamClosedPromise.succeed()
+                                }
+                            },
+                            position: .first
+                        )
+                        try streamChannel.pipeline.syncOperations.addHandler(
+                            DebugInboundEventsHandler { event, _ in
+                                applicationEvents.withLockedValue { $0.append(RecordedEvent(event)) }
+                            }
+                        )
+                        return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
+                            wrappingChannelSynchronously: streamChannel,
+                            configuration: .init(isOutboundHalfClosureEnabled: true)
+                        )
+                    }
+                }
+
+                try await requestStream.executeThenClose { inboundParts, outbound in
+                    // The request stays open, so that the server's STOP_SENDING applies to it.
+                    try await outbound.write(.head(testRequest))
+                    var inboundPartIterator = inboundParts.makeAsyncIterator()
+                    try await #expect(inboundPartIterator.next() == .head(testResponse))
+                    try await #expect(inboundPartIterator.next() == .end(nil))
+                    try await #expect(inboundPartIterator.next() == nil)
+                    clientReadResponseContinuation.finish()
+
+                    try await streamClosedPromise.futureResult.get()
+                }
+            }
+
+            try await group.waitForAll()
+        }
+
+        // NIOQUIC delivers the end of the stream and a read complete. Only then does it pass on the STOP_SENDING,
+        // report it as an error, and close the stream.
+        let quicEventsFromEOF = Array(quicEvents.withLockedValue { $0 }.drop { $0 != .inputClosed })
+        #expect(
+            quicEventsFromEOF == [
+                .inputClosed,
+                .readComplete,
+                .stopSending(stopSendingCode),
+                .stopSendingError(stopSendingCode),
+                .inactive,
+                .unregistered,
+            ]
+        )
+        // The HTTP/3 handlers close the output, and report no error.
+        let applicationEventsFromEOF = Array(applicationEvents.withLockedValue { $0 }.drop { $0 != .inputClosed })
+        #expect(
+            applicationEventsFromEOF == [
+                .inputClosed,
+                .readComplete,
+                .outputClosed,
+                .stopSending(stopSendingCode),
+                .inactive,
+                .unregistered,
+            ]
+        )
+
+        // cleanup
+        try await clientChannel.close()
+        try await serverChannel.close()
+    }
+
     // MARK: - Helper Functions
 
     @available(anyAppleOS 27, *)
@@ -805,6 +960,48 @@ struct AsyncEndToEndTests {
                         return (channel, client)
                     }
                 }
+        }
+    }
+}
+
+/// A stream channel's inbound event, reduced to what the tests compare.
+private enum RecordedEvent: Equatable, Sendable {
+    case read
+    case readComplete
+    case inputClosed
+    case outputClosed
+    case stopSending(QUICApplicationErrorCode)
+    case stopSendingError(QUICApplicationErrorCode)
+    case error(String)
+    case inactive
+    case unregistered
+    case other(String)
+
+    init(_ event: DebugInboundEventsHandler.Event) {
+        switch event {
+        case .read:
+            self = .read
+        case .readComplete:
+            self = .readComplete
+        case .userInboundEventTriggered(let event as ChannelEvent):
+            switch event {
+            case .inputClosed:
+                self = .inputClosed
+            case .outputClosed:
+                self = .outputClosed
+            }
+        case .userInboundEventTriggered(let event as QUICStopSendingEvent):
+            self = .stopSending(event.code)
+        case .errorCaught(let error as QUICStopSendingError):
+            self = .stopSendingError(error.code)
+        case .errorCaught(let error):
+            self = .error(String(describing: error))
+        case .inactive:
+            self = .inactive
+        case .unregistered:
+            self = .unregistered
+        case .registered, .active, .writabilityChanged, .userInboundEventTriggered:
+            self = .other(String(describing: event))
         }
     }
 }

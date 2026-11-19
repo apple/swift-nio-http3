@@ -934,7 +934,7 @@ struct NIOHTTP3StreamHandlerTests {
         #expect(inboundEvents.withLockedValue { $0 }.count == 6)
     }
 
-    /// When a stream closes after the whole response has arrived, NIOQUIC reports the peer's STOP_SENDING as an error.
+    /// When a stream closes after the whole response has arrived, NIOQUIC reports the peer's STOP\_SENDING as an error.
     /// Nothing was lost, so nothing is reported.
     @available(anyAppleOS 27, *)
     @Test func stopSendingErrorAfterEOFIsNotReported() throws {
@@ -955,24 +955,25 @@ struct NIOHTTP3StreamHandlerTests {
         }
         let channel = EmbeddedChannel(handlers: [handler, inboundEventRecorder], loop: eventLoop)
 
-        // NIOQUIC's sequence: the event, the rest of the response, then the error and the close.
+        // NIOQUIC's sequence, as `stopSendingAfterCompleteResponseIsNotReported` in `AsyncEndToEndTests` checks: the
+        // response and its end in one read, then the event, the error, and the close.
         try channel.writeOutbound(HTTP3Frame.headers(self.testRequestHeaderFields))
-        channel.pipeline.fireUserInboundEventTriggered(QUICStopSendingEvent(code: QUICApplicationErrorCode(.noError)))
-        try channel.writeInbound(self.testResponsePartialHeaderBytes)
+        channel.pipeline.fireChannelRead(self.testResponsePartialHeaderBytes)
         channel.pipeline.fireUserInboundEventTriggered(ChannelEvent.inputClosed)
-        try handler.channelReadComplete(context: channel.pipeline.syncOperations.context(handler: handler))
+        channel.pipeline.fireChannelReadComplete()
+        channel.pipeline.fireUserInboundEventTriggered(QUICStopSendingEvent(code: QUICApplicationErrorCode(.noError)))
         channel.pipeline.fireErrorCaught(QUICStopSendingError(code: QUICApplicationErrorCode(.noError)))
         try channel.close().wait()
 
         let recordedEvents = inboundEvents.withLockedValue { $0 }
         try #require(recordedEvents.count == 8)
         #expect(recordedEvents[0].isChannelRegistered)
-        #expect(recordedEvents[1].isOutputClosedEvent)
-        #expect(recordedEvents[2].isStopSendingEvent != nil)
-        let readFrameAny = try #require(recordedEvents[3].readValue)
+        let readFrameAny = try #require(recordedEvents[1].readValue)
         #expect(handler.unwrapOutboundIn(readFrameAny) == .headers(self.testResponseHeaderFields))
-        #expect(recordedEvents[4].isChannelReadComplete)
-        #expect(recordedEvents[5].isInputClosedEvent)
+        #expect(recordedEvents[2].isInputClosedEvent)
+        #expect(recordedEvents[3].isChannelReadComplete)
+        #expect(recordedEvents[4].isOutputClosedEvent)
+        #expect(recordedEvents[5].isStopSendingEvent != nil)
         #expect(recordedEvents[6].isChannelInactive)
         #expect(recordedEvents[7].isChannelUnregistered)
     }
