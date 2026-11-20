@@ -533,6 +533,29 @@ struct QPACKCoderTests {
         }
     }
 
+    /// In a field line, a value which isn't permitted only fails the stream (see
+    /// `decodeStreamErrorOnlyFailsTheStream`). In an insert it fails the connection, as the peer's encoder has already
+    /// counted the entry.
+    @available(anyAppleOS 27, *)
+    @Test func incomingInsertWithInvalidValueIsAConnectionError() throws {
+        let connection = TestConnection()
+        let coder = Self.makeTestCoder(errorDelegate: connection)
+        try coder.receivedIncomingEncoderInstruction(.setDynamicTableCapacity(1024))
+        try coder.receivedIncomingEncoderInstruction(.insertWithLiteralName(name: "x-a", value: "a"))
+
+        let instructions: [QPACKEncoderInstruction] = [
+            .insertWithLiteralName(name: "x-b", value: "a\r\nx-c: evil"),
+            .insertWithNameReference(.staticTable, relativeIndex: 1, value: "/\0"),
+            .insertWithNameReference(.dynamicTable, relativeIndex: 0, value: "\n"),
+        ]
+        for instruction in instructions {
+            #expect(throws: QPACKError.invalidEncoderInstruction, "\(instruction)") {
+                try coder.receivedIncomingEncoderInstruction(instruction)
+            }
+        }
+        #expect(QPACKError.invalidEncoderInstruction.isConnectionError)
+    }
+
     @available(anyAppleOS 27, *)
     @Test func incomingDecoderInstructionIsForwardedToTheEncoder() throws {
         let connection = TestConnection()

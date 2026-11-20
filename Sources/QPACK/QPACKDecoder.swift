@@ -19,8 +19,7 @@ import struct NIOCore.ByteBuffer
 
 /// Why a field section could not be decoded.
 ///
-/// The cases fall into two groups, which call for different handling. ``isConnectionErrorInRequestStream`` tells
-/// them apart.
+/// The cases fall into two groups, which call for different handling.
 ///
 /// - ``invalidHeaderName`` and ``invalidHeaderValue``: the field section decoded fine, but the message it carries
 ///   is malformed (RFC 9114 § 4.1.2). Only the stream the section arrived on is at fault: reset it with
@@ -142,7 +141,8 @@ struct QPACKDecoder {
             guard let original = self.dynamicTable.get(relativeIndex: relativeIndex) else {
                 throw QPACKDecoderError.invalidReference
             }
-            return try self.addDynamicTableEntry(validatedName: original.name, unvalidatedValue: original.value)
+            // The value was checked when the original was inserted.
+            return try self.insertDynamicTableEntry(validatedName: original.name, validatedValue: original.value)
         }
     }
 
@@ -161,7 +161,16 @@ struct QPACKDecoder {
         guard HTTPField.isPermittedValue(unvalidatedValue) else {
             throw QPACKDecoderError.invalidHeaderValue
         }
-        try self.dynamicTable.addHeader(named: name, value: unvalidatedValue)
+        return try self.insertDynamicTableEntry(validatedName: name, validatedValue: unvalidatedValue)
+    }
+
+    /// Add an entry whose value is known to be permitted to the dynamic table and (maybe) return an
+    /// insertCountIncrement.
+    private mutating func insertDynamicTableEntry(
+        validatedName name: HTTPField.Name,
+        validatedValue value: String
+    ) throws -> QPACKDecoderInstruction? {
+        try self.dynamicTable.addHeader(named: name, value: value)
         let insertCount = self.dynamicTable.insertCount
         let shouldAck = self.stateSynchronizer.dynamicTableEntryAdded(insertCount: insertCount)
         if shouldAck {
