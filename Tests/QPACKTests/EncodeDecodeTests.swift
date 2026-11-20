@@ -15,8 +15,9 @@
 import HTTPTypes
 import NIOCore
 import NIOQUICHelpers
-@_spi(PackageInternal) import QPACK
 import Testing
+
+@_spi(PackageInternal) @testable import QPACK
 
 struct EncodeDecodeTests {
     /// Dynamic table is disabled, literal should be sent as a literal.

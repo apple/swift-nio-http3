@@ -456,7 +456,7 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
             }
 
         case .error(let decoderError):
-            return self.decodeErrorAction(decoderError, streamID: streamID, context: context)
+            return self.requestStreamDecodeErrorAction(decoderError, streamID: streamID, context: context)
         }
     }
 
@@ -476,7 +476,7 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
             // This implies a bug in `popIfDecodable` because we shouldn't get here if something isn't decodable yet
             fatalError("Tried to decode an entry which can't be decoded")
         case .error(let decoderError):
-            return self.decodeErrorAction(decoderError, streamID: entry.streamID, context: entry.context)
+            return self.requestStreamDecodeErrorAction(decoderError, streamID: entry.streamID, context: entry.context)
         case .success(let fields, let instruction):
             let writeAction = instruction.flatMap { self.outboundDecoderInstructionQueue.writeDecoderInstruction($0) }
             switch writeAction {
@@ -502,7 +502,7 @@ struct QPACKStateMachine<DecodeContext>: ~Copyable {
         }
     }
 
-    private func decodeErrorAction(
+    private func requestStreamDecodeErrorAction(
         _ decoderError: QPACKDecoderError,
         streamID: QUICStreamID,
         context: DecodeContext

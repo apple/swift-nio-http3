@@ -14,10 +14,12 @@
 
 public import NIOQUICHelpers
 
+/// The table an indexed field line or name reference points into.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public enum QPACKReferenceTable: Sendable, Hashable {
+    /// The fixed QPACK static table (RFC 9204, Appendix A).
     case staticTable
+    /// The connection's dynamic table, filled by encoder instructions.
     case dynamicTable
 
     /// QPACK often uses the `1` bit to refer to the static table and `0` to refer to dynamic.
@@ -31,7 +33,6 @@ public enum QPACKReferenceTable: Sendable, Hashable {
 
 /// Encoder instructions from RFC 9204 § 4.3.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public enum QPACKEncoderInstruction: Sendable, Hashable {
     /// 4.3.1. Set Dynamic Table Capacity.
     case setDynamicTableCapacity(Int)
@@ -45,7 +46,6 @@ public enum QPACKEncoderInstruction: Sendable, Hashable {
 
 /// Decoder instructions from RFC 9204 § 4.4.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public enum QPACKDecoderInstruction: Sendable, Hashable {
     /// 4.4.1. Section Acknowledgment.
     case sectionAcknowledgement(streamID: QUICStreamID)
