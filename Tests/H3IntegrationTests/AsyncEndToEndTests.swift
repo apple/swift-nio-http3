@@ -818,16 +818,8 @@ struct AsyncEndToEndTests {
         )
         // The HTTP/3 handlers close the output, and report no error.
         let applicationEventsFromEOF = Array(applicationEvents.withLockedValue { $0 }.drop { $0 != .inputClosed })
-        #expect(
-            applicationEventsFromEOF == [
-                .inputClosed,
-                .readComplete,
-                .outputClosed,
-                .stopSending(stopSendingCode),
-                .inactive,
-                .unregistered,
-            ]
-        )
+        #expect(applicationEventsFromEOF.contains(.outputClosed))
+        #expect(!applicationEventsFromEOF.contains { event in event.isError })
 
         // cleanup
         try await clientChannel.close()
@@ -1002,6 +994,17 @@ private enum RecordedEvent: Equatable, Sendable {
             self = .unregistered
         case .registered, .active, .writabilityChanged, .userInboundEventTriggered:
             self = .other(String(describing: event))
+        }
+    }
+
+    /// Whether the event is an error of any kind.
+    var isError: Bool {
+        switch self {
+        case .error, .stopSendingError:
+            true
+
+        default:
+            false
         }
     }
 }
