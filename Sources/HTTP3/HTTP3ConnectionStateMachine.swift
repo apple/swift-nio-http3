@@ -175,11 +175,6 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                 }
 
                 /// Whether the peer is allowed to send datagrams, as far as we know so far.
-                ///
-                /// - Returns:
-                ///   - If the peer's SETTINGS frame hasn't arrived yet, the value of the `SETTINGS_H3_DATAGRAM` we
-                ///     advertised is returned.
-                ///   - After the peer's SETTINGS frame has arrived, the negotiated value of the setting is returned.
                 var datagramsAllowed: Bool {
                     switch self {
                     case .awaiting(let awaiting):
