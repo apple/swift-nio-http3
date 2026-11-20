@@ -341,7 +341,16 @@ extension HTTPField {
     /// according to the grammar, but RFC 9114 § 10.3 only makes characters which aren't permitted malformed.
     @available(anyAppleOS 27, *)
     static func isPermittedValue(_ value: String) -> Bool {
-        let bytes = value.utf8.span
+        #if os(watchOS)
+        // `String.UTF8View.span` is unavailable on watchOS.
+        return value.withContiguousUTF8 { Self.isPermittedValue($0) }
+        #else
+        return Self.isPermittedValue(value.utf8.span)
+        #endif
+    }
+
+    @available(anyAppleOS 27, *)
+    private static func isPermittedValue(_ bytes: Span<UInt8>) -> Bool {
         // Index loop rather than `for byte in bytes`, which compiles to slower code (Swift 6.4).
         for index in bytes.indices {
             let byte = bytes[index]
