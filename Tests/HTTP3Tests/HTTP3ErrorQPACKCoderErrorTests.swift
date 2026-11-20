@@ -31,6 +31,7 @@ struct HTTP3ErrorQPACKCoderErrorTests {
             (.decodeError(.invalidReference), .qpackDecoderError, .qpackDecompressionFailed),
             (.tooManyBlockedStreams, .qpackDecoderError, .qpackDecompressionFailed),
             (.decodeError(.invalidHeaderName), .qpackDecoderError, .messageError),
+            (.decodeError(.invalidHeaderValue), .qpackDecoderError, .messageError),
         ]
     )
     @available(anyAppleOS 27, *)

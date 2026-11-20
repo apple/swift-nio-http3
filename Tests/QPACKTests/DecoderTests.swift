@@ -473,6 +473,84 @@ struct DecoderTests {
         }
     }
 
+    /// RFC 9114 § 10.3: a value with a CR, LF, NUL or DEL makes the message malformed, so it is rejected rather than
+    /// cleaned up. That holds for values after a name of either table, and after a literal name.
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLineWithInvalidValue() throws {
+        let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 100)
+        try tester.processInstruction(.setDynamicTableCapacity(100))
+        try tester.processInstruction(.insertWithLiteralName(name: "x-a", value: "a"))
+
+        let cases: [(FieldLine, FieldSectionPrefix)] = [
+            (
+                .literalWithNameReference(
+                    requireLiteralRepresentation: false,
+                    table: .staticTable,
+                    index: 1,
+                    value: "/\r\n"
+                ),
+                FieldSectionPrefix(requiredInsertCount: 0, base: 0)
+            ),
+            (
+                .literalWithNameReference(
+                    requireLiteralRepresentation: false,
+                    table: .dynamicTable,
+                    index: 0,
+                    value: "\0"
+                ),
+                FieldSectionPrefix(requiredInsertCount: 1, base: 1)
+            ),
+            (
+                .literalWithNameReferenceWithPostBase(requireLiteralRepresentation: false, index: 0, value: "a\nb"),
+                FieldSectionPrefix(requiredInsertCount: 1, base: 0)
+            ),
+            (
+                .literal(requireLiteralRepresentation: false, name: "x-b", value: "a\r\nx-c: d"),
+                FieldSectionPrefix(requiredInsertCount: 0, base: 0)
+            ),
+            (
+                .literal(requireLiteralRepresentation: false, name: "x-b", value: "a\u{7F}b"),
+                FieldSectionPrefix(requiredInsertCount: 0, base: 0)
+            ),
+        ]
+        for (line, prefix) in cases {
+            let lines = ByteBuffer(fieldLines: [line])
+            #expect(throws: QPACKDecoderError.invalidHeaderValue, "\(line)") {
+                try tester.decodeFieldSection(prefix, lines: lines).unwrap()
+            }
+        }
+    }
+
+    /// Leading and trailing whitespace isn't part of a field value, but it doesn't make the message malformed
+    /// either: it is trimmed, and the field decodes. HTAB is permitted within the value.
+    @available(anyAppleOS 27, *)
+    @Test func testDecodeLineWithSurroundingWhitespace() throws {
+        let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 1000)
+        try tester.processInstruction(.setDynamicTableCapacity(1000))
+        try tester.processInstruction(.insertWithLiteralName(name: "x-a", value: " a\tb "))
+
+        let lines: [FieldLine] = [
+            .literal(requireLiteralRepresentation: false, name: "x-b", value: " a\tb "),
+            .literalWithNameReference(
+                requireLiteralRepresentation: false,
+                table: .staticTable,
+                index: 1,
+                value: "\t/ "
+            ),
+            .indexed(.dynamicTable, index: 0),
+        ]
+        let prefix = FieldSectionPrefix(requiredInsertCount: 1, base: 1)
+        let fields = try tester.decodeFieldSection(prefix, lines: lines).unwrap()
+
+        #expect(
+            fields == [
+                HTTPField(name: HTTPField.Name("x-b")!, value: "a\tb"),
+                HTTPField(name: HTTPField.Name(parsed: ":path")!, value: "/"),
+                HTTPField(name: HTTPField.Name("x-a")!, value: "a\tb"),
+            ]
+        )
+    }
+
     // MARK: Test processing instructions
 
     @available(anyAppleOS 27, *)
@@ -494,6 +572,26 @@ struct DecoderTests {
         var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
         try decoder.assertSetDynamicTableCapacity(100)
         try decoder.assertInsertEntry(name: "test", value: "hello")
+    }
+
+    /// A value which isn't permitted is rejected when it is inserted, as an invalid name is. Otherwise the table would
+    /// carry a CR or LF which no field line could, cleaned up into a space.
+    @available(anyAppleOS 27, *)
+    @Test func testInsertInvalidValue() throws {
+        var decoder = QPACKDecoder(dynamicTableMaxCapacity: 1000)
+        try decoder.assertSetDynamicTableCapacity(100)
+        try decoder.assertInsertEntry(name: "test", value: "hello")
+        let instructions: [QPACKEncoderInstruction] = [
+            .insertWithLiteralName(name: "x-a", value: "a\r\nb"),
+            .insertWithNameReference(.staticTable, relativeIndex: 1, value: "/\0"),
+            .insertWithNameReference(.dynamicTable, relativeIndex: 0, value: "\n"),
+        ]
+        for instruction in instructions {
+            #expect(throws: QPACKDecoderError.invalidHeaderValue, "\(instruction)") {
+                try decoder.processInstruction(instruction)
+            }
+        }
+        #expect(decoder.insertCount == 1)
     }
 
     @available(anyAppleOS 27, *)
