@@ -49,7 +49,7 @@ public enum QPACKError: Error, Sendable, Hashable {
     public var isConnectionError: Bool {
         switch self {
         case .decodeError(let decoderError):
-            return decoderError.isConnectionError
+            return decoderError.isConnectionErrorInRequestStream
         case .duplicateSettings,
             .invalidEncoderInstruction,
             .decoderInstructionWithoutDynamicTable,

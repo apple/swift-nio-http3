@@ -14,9 +14,12 @@
 
 public import NIOQUICHelpers
 
+/// The table an indexed field line or name reference points into.
 @available(anyAppleOS 27, *)
 public enum QPACKReferenceTable: Sendable, Hashable {
+    /// The fixed QPACK static table (RFC 9204, Appendix A).
     case staticTable
+    /// The connection's dynamic table, filled by encoder instructions.
     case dynamicTable
 
     /// QPACK often uses the `1` bit to refer to the static table and `0` to refer to dynamic.

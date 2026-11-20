@@ -22,7 +22,6 @@ public import struct NIOCore.ByteBuffer
 /// This is the unidirectional QPACK encoder stream of RFC 9204 § 4.2.1. It only exists if the peer's settings
 /// permit the dynamic table. Create it in response to ``ConnectionDelegate/makeOutboundEncoderStream()``.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public protocol QPACKOutboundEncoderStream: ~Copyable {
     /// Write instructions to the stream, in the order given.
     mutating func sendInstructions(_ instructions: some Collection<QPACKEncoderInstruction>)
@@ -33,7 +32,6 @@ public protocol QPACKOutboundEncoderStream: ~Copyable {
 /// This is the unidirectional QPACK decoder stream of RFC 9204 § 4.2.2. Unlike the encoder stream it always
 /// exists, but the coder buffers instructions until ``QPACKCoder/outboundDecoderStreamReady(_:)`` is called.
 @available(anyAppleOS 27, *)
-@_spi(PackageInternal)
 public protocol QPACKOutboundDecoderStream: ~Copyable {
     /// Write an instruction to the stream.
     mutating func sendInstruction(_ instruction: QPACKDecoderInstruction)
