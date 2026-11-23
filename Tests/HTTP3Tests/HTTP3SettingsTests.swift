@@ -108,9 +108,9 @@ struct HTTP3SettingsTests {
             HTTP3Setting(identifier: .init(extensionSetting: 20)!, value: 4),
             HTTP3Setting(identifier: .init(extensionSetting: 30)!, value: 5),
         ])
-        #expect(HTTP3EncodedLength.settingsPayload(settings) == 14)
-        var buffer = ByteBuffer(initialCapacity: HTTP3EncodedLength.settingsFrame(settings)) {
-            $0.appendHTTP3SettingsFrame(settings)
+        #expect(HTTP3FrameEncoder.Length.settingsPayload(settings) == 14)
+        var buffer = ByteBuffer(initialCapacity: HTTP3FrameEncoder.Length.settingsFrame(settings)) {
+            HTTP3FrameEncoder.encodeSettingsFrame(settings, into: &$0)
         }
         #expect(
             [UInt8](buffer: buffer)
@@ -153,8 +153,8 @@ struct HTTP3SettingsTests {
     @available(anyAppleOS 27, *)
     @Test func settingsCodingIgnoresDefault() {
         let settings = HTTP3Settings(qpackBlockedStreams: 0, h3Datagram: false, enableConnectProtocol: false)
-        let buffer = ByteBuffer(initialCapacity: HTTP3EncodedLength.settingsFrame(settings)) {
-            $0.appendHTTP3SettingsFrame(settings)
+        let buffer = ByteBuffer(initialCapacity: HTTP3FrameEncoder.Length.settingsFrame(settings)) {
+            HTTP3FrameEncoder.encodeSettingsFrame(settings, into: &$0)
         }
         // Default values are left out, so the frame is empty.
         #expect([UInt8](buffer: buffer) == [4, 0])

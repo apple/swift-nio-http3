@@ -24,7 +24,7 @@ public enum HTTP3StreamType: Sendable {
 
     /// Unidirectional stream types (RFC 9114 § 6.2).
     ///
-    /// Write one at the start of a unidirectional stream with ``OutputRawSpan/appendHTTP3StreamType(_:)``.
+    /// Write one at the start of a unidirectional stream with ``HTTP3FrameEncoder/encodeStreamType(_:into:)``.
     public enum Unidirectional: Hashable, RawRepresentable, CustomStringConvertible, Sendable {
         /// Type 0x00. Carries HTTP3 frames such as settings, goaway, etc.
         case control
