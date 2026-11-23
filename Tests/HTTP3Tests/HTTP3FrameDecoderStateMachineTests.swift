@@ -52,7 +52,7 @@ struct HTTP3FrameDecoderStateMachineTests {
             .init(qpackMaximumTableCapacity: 1024, h3Datagram: false, enableConnectProtocol: false)
         )
         var encodedFrame = ByteBuffer()
-        encodedFrame.writeHTTP3PartialFrame(testFrame)
+        encodedFrame.writeTestFrame(testFrame)
         #expect(encodedFrame.readableBytes == 5)
         let bytes = [UInt8](buffer: encodedFrame)
         // drip in a frame, byte by byte, except for the last one
@@ -201,7 +201,7 @@ struct HTTP3FrameDecoderStateMachineTests {
 
         let largePayload = ByteBuffer(repeating: 1, count: 2048)
         var encoded = ByteBuffer()
-        encoded.writeHTTP3PartialFrame(.data(.init(payload: largePayload)))
+        encoded.writeTestFrame(.data(.init(payload: largePayload)))
 
         decoder.buffer(encoded)
         // When `buffer()` is called on an idle state machine, the provided ByteBuffer is used directly as the internal
@@ -262,12 +262,12 @@ struct HTTP3FrameDecoderStateMachineTests {
         // Encode the settings frame and split it. The first byte goes into the initial buffer, and the remainder will
         // be buffered later.
         var settingsEncoded = ByteBuffer()
-        settingsEncoded.writeHTTP3PartialFrame(settingsFrame)
+        settingsEncoded.writeTestFrame(settingsFrame)
         let settingsFirstByte = settingsEncoded.readSlice(length: 1)!
         let settingsRemainder = settingsEncoded
 
         var encoded = ByteBuffer()
-        encoded.writeHTTP3PartialFrame(.data(.init(payload: largePayload)))
+        encoded.writeTestFrame(.data(.init(payload: largePayload)))
         // Write only the first byte of the settings frame.
         encoded.writeImmutableBuffer(settingsFirstByte)
 

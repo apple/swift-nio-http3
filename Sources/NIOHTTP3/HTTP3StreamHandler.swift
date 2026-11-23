@@ -54,6 +54,9 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
     private let delegate: Delegate
     private let qpackCoder: NIOQPACKCoder<ConnectionDelegate, Delegate>
 
+    /// Whether to prefer Huffman encoding the strings in the field sections of the HEADERS frames this handler writes.
+    private let preferHuffmanEncoding: Bool
+
     /// The channel context. This handler can only be in one channel at a time.
     private var context: ChannelHandlerContext?
 
@@ -73,6 +76,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         streamID: QUICStreamID,
         streamType: HTTP3StreamType.Framed,
         qpackCoder: NIOQPACKCoder<ConnectionDelegate, Delegate>,
+        preferHuffmanEncoding: Bool,
         delegate: Delegate,
         logger: Logger
     ) {
@@ -80,6 +84,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         self.streamType = streamType
         self.stateMachine = stateMachine
         self.qpackCoder = qpackCoder
+        self.preferHuffmanEncoding = preferHuffmanEncoding
         self.delegate = delegate
         self.logger = logger
     }
@@ -239,11 +244,7 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         let frame = self.unwrapOutboundIn(data)
         self.logger.trace("HTTP3StreamHandler.write", metadata: [LoggingKeys.h3FrameType: "\(frame.type)"])
 
-        if self.pendingBytes == nil {
-            self.pendingBytes = context.channel.allocator.buffer(capacity: 256)
-        }
-
-        let action = self.stateMachine.writeFrame(frame: frame, into: &self.pendingBytes!)
+        let action = self.stateMachine.willWriteFrame(frame)
 
         switch action {
         case .previousError:
@@ -257,8 +258,8 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
                     location: .here()
                 )
             )
-        case .wroteBytes:
-            self.pendingPromise.setOrCascade(to: promise)
+        case .write:
+            self.writeFrame(frame, context: context, promise: promise)
         case .wouldBeStreamError(let error):
             context.fireErrorCaught(error)
             promise?.fail(error)
@@ -271,45 +272,40 @@ final class HTTP3StreamHandler<Delegate: HTTP3StreamDelegate, ConnectionDelegate
         case .outputClosed(let error):
             // Only fail the write: an error in the pipeline would also end the response for NIOAsyncChannel users.
             promise?.fail(error)
-        case .encodeHeaders(let fields):
-            var instructions: [QPACKEncoderInstruction] = []
-            let action = self.stateMachine.writeHeadersFrame(
-                maxPayloadLength: self.qpackCoder.maxEncodedLength(of: fields),
-                into: &self.pendingBytes!
-            ) { output, preferHuffmanEncoding in
+        }
+    }
+
+    /// Encode `frame`, which the state machine allowed to be written, into `pendingBytes`.
+    private func writeFrame(_ frame: HTTP3Frame, context: ChannelHandlerContext, promise: EventLoopPromise<Void>?) {
+        var bytes = self.pendingBytes.take() ?? context.channel.allocator.buffer(capacity: 256)
+        var instructions: [QPACKEncoderInstruction] = []
+
+        switch frame {
+        case .headers(let headers):
+            bytes.writeHeadersFrame(maxPayloadLength: self.qpackCoder.maxEncodedLength(of: headers.fields)) { output in
                 instructions = self.qpackCoder.encodeHeaders(
-                    fields,
+                    headers.fields,
                     streamID: self.streamID,
                     into: &output,
-                    preferHuffmanEncoding: preferHuffmanEncoding
+                    preferHuffmanEncoding: self.preferHuffmanEncoding
                 )
             }
-
-            switch action {
-            case .previousError(let previousError):
-                promise?.fail(
-                    HTTP3Error(
-                        code: .previousError,
-                        message: "A previous error is preventing further writes",
-                        cause: previousError,
-                        errorCode: nil,
-                        location: .here()
-                    )
-                )
-
-            case .wroteBytes:
-                self.pendingPromise.setOrCascade(to: promise)
-
-                // Sending flushes the encoder stream, so it waits until the frame and its promise are settled: anything
-                // the flush triggers may call back into this handler. The frame's bytes are only emitted on our own
-                // flush, so the instructions still reach the peer first.
-                self.qpackCoder.sendEncoderInstructions(instructions)
-
-            case .alreadyClosed:
-                promise?.fail(ChannelError.ioOnClosedChannel)
-            }
-
+        case .pushPromise:
+            // This can't be reached: the validator refuses to write PUSH_PROMISE frames. That's correct for clients.
+            // Servers can't push yet, because we don't expose push streams or MAX_PUSH_ID, so the validator refuses
+            // them for servers too.
+            fatalError("Tried to write a push promise, which is not supported")
+        case .data, .settings, .goaway, .maxPushID, .cancelPush:
+            bytes.writeHTTP3Frame(frame)
         }
+
+        self.pendingBytes = bytes
+        self.pendingPromise.setOrCascade(to: promise)
+
+        // Sending flushes the encoder stream, so it waits until the frame and its promise are settled: anything the
+        // flush triggers may call back into this handler. The frame's bytes are only emitted on our own flush, so the
+        // instructions still reach the peer first.
+        self.qpackCoder.sendEncoderInstructions(instructions)
     }
 
     func flush(context: ChannelHandlerContext) {

@@ -44,22 +44,12 @@ struct HTTP3FrameCodingTests {
     }
 
     @available(anyAppleOS 27, *)
-    @Test func encodeDataFrame() {
-        let dataFrameBuffer = ByteBuffer(string: "Test")
-        var buffer = ByteBuffer()
-
-        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer))
-
-        #expect(buffer == ByteBuffer([0x00, 0x04, 0x54, 0x65, 0x73, 0x74]))
-    }
-
-    @available(anyAppleOS 27, *)
     @Test func encodeDecodeDataFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let dataFrameBuffer = ByteBuffer(string: "Test")
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer))
+        buffer.writeTestFrame(.data(dataFrameBuffer))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.data(dataFrameBuffer)))
@@ -73,8 +63,8 @@ struct HTTP3FrameCodingTests {
         let dataFrameBuffer2 = ByteBuffer(string: "Test2")
         var out = ByteBuffer()
 
-        out.writeHTTP3PartialFrame(.data(dataFrameBuffer1))
-        out.writeHTTP3PartialFrame(.data(dataFrameBuffer2))
+        out.writeTestFrame(.data(dataFrameBuffer1))
+        out.writeTestFrame(.data(dataFrameBuffer2))
         let frame1 = try decoder.decode(buffer: &out)
         let frame2 = try decoder.decode(buffer: &out)
 
@@ -136,21 +126,12 @@ struct HTTP3FrameCodingTests {
     // MARK: CANCEL_PUSH frames
 
     @available(anyAppleOS 27, *)
-    @Test func encodeCancelPushFrame() {
-        var buffer = ByteBuffer()
-
-        buffer.writeHTTP3PartialFrame(.cancelPush(HTTP3PushID(rawValue: 151_288_809_941_952_652)))
-
-        #expect(buffer == ByteBuffer([0x03, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
-    }
-
-    @available(anyAppleOS 27, *)
     @Test func encodeDecodeCancelPushFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let pushID = HTTP3PushID(rawValue: 151_288_809_941_952_652)
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.cancelPush(pushID))
+        buffer.writeTestFrame(.cancelPush(pushID))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.cancelPush(pushID)))
@@ -158,26 +139,6 @@ struct HTTP3FrameCodingTests {
     }
 
     // MARK: SETTINGS frames
-
-    @available(anyAppleOS 27, *)
-    @Test func encodeSettingsFrame() {
-        let settings = HTTP3Settings(
-            qpackMaximumTableCapacity: 151_288_809_941_952_652,
-            qpackBlockedStreams: 1,
-            h3Datagram: false,
-            enableConnectProtocol: false
-        )
-        var buffer = ByteBuffer()
-
-        buffer.writeHTTP3PartialFrame(.settings(settings))
-
-        #expect(
-            buffer
-                // The frame type is 4
-                // The length is 11 (0x0b)
-                == ByteBuffer([0x04, 0x0b, 0x07, 0x01, 0x01, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c])
-        )
-    }
 
     @available(anyAppleOS 27, *)
     @Test func encodeDecodeSettingsFrame() throws {
@@ -188,7 +149,7 @@ struct HTTP3FrameCodingTests {
         )
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.settings(settings))
+        buffer.writeTestFrame(.settings(settings))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.settings(settings)))
@@ -201,7 +162,7 @@ struct HTTP3FrameCodingTests {
         let settings = HTTP3Settings()
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.settings(settings))
+        buffer.writeTestFrame(.settings(settings))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.settings(settings)))
@@ -211,21 +172,12 @@ struct HTTP3FrameCodingTests {
     // MARK: GOAWAY frames
 
     @available(anyAppleOS 27, *)
-    @Test func encodeGoawayFrame() {
-        var buffer = ByteBuffer()
-
-        buffer.writeHTTP3PartialFrame(.goaway(151_288_809_941_952_652))
-
-        #expect(buffer == ByteBuffer([0x07, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
-    }
-
-    @available(anyAppleOS 27, *)
     @Test func encodeGoawayPushFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let pushID: HTTP3GoawayID = 151_288_809_941_952_652
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.goaway(pushID))
+        buffer.writeTestFrame(.goaway(pushID))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.goaway(pushID)))
@@ -261,21 +213,12 @@ struct HTTP3FrameCodingTests {
     // MARK: MAX_PUSH_ID frames
 
     @available(anyAppleOS 27, *)
-    @Test func encodeMaxPushIDFrame() {
-        var buffer = ByteBuffer()
-
-        buffer.writeHTTP3PartialFrame(.maxPushID(HTTP3PushID(rawValue: 151_288_809_941_952_652)))
-
-        #expect(buffer == ByteBuffer([0x0d, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c]))
-    }
-
-    @available(anyAppleOS 27, *)
     @Test func encodeDecodeMaxPushIDFrame() throws {
         var decoder = HTTP3FrameDecoder()
         let pushID = HTTP3PushID(rawValue: 151_288_809_941_952_652)
         var buffer = ByteBuffer()
 
-        buffer.writeHTTP3PartialFrame(.maxPushID(pushID))
+        buffer.writeTestFrame(.maxPushID(pushID))
         let frame = try decoder.decode(buffer: &buffer)
 
         #expect(frame == .known(.maxPushID(pushID)))
@@ -300,7 +243,7 @@ struct HTTP3FrameCodingTests {
 
     // MARK: HEADER frames
 
-    /// The payload of ``writeHeadersFrame(maxPayloadLength:encodePayload:)`` in the tests below: 13 bytes.
+    /// A field section with one literal field line, used in the tests below: 13 bytes.
     private static let literalFieldSectionBytes: [UInt8] =
         [
             // required insert count, delta and base are 0
@@ -327,46 +270,6 @@ struct HTTP3FrameCodingTests {
     @available(anyAppleOS 27, *)
     private static func fieldSectionBytes(preferHuffmanEncoding: Bool) -> [UInt8] {
         preferHuffmanEncoding ? Self.huffmanLiteralFieldSectionBytes : Self.literalFieldSectionBytes
-    }
-
-    @available(anyAppleOS 27, *)
-    @Test func writeHeadersFrame() throws {
-        var buffer = ByteBuffer()
-        buffer.writeHeadersFrame(maxPayloadLength: Self.literalFieldSectionBytes.count) { output in
-            for byte in Self.literalFieldSectionBytes {
-                output.append(byte)
-            }
-        }
-
-        // frame type 1, then the length 13, which takes one byte
-        #expect(buffer == ByteBuffer([1, 13] + Self.literalFieldSectionBytes))
-
-        var decoder = HTTP3FrameDecoder()
-        let frame = try decoder.decode(buffer: &buffer)
-        let expected = ByteBuffer(bytes: Self.literalFieldSectionBytes)
-        #expect(frame == .known(.headers(.init(fieldSection: expected))))
-        #expect(buffer.readableBytes == 0)
-    }
-
-    @available(anyAppleOS 27, *)
-    @Test func writeHeadersFrameSizesTheLengthForTheLongestPayload() throws {
-        var buffer = ByteBuffer()
-        // The payload might have been up to 64 bytes long, which takes two bytes to encode as a QUIC integer.
-        buffer.writeHeadersFrame(maxPayloadLength: 64) { output in
-            for byte in Self.literalFieldSectionBytes {
-                output.append(byte)
-            }
-        }
-
-        // frame type 1, then the length 13, encoded across 2 bytes: 0x40 indicates the 2 byte encoding (RFC 9000)
-        #expect(buffer == ByteBuffer([1, 0x40, 13] + Self.literalFieldSectionBytes))
-
-        var decoder = HTTP3FrameDecoder()
-        guard case .known(.headers) = try decoder.decode(buffer: &buffer) else {
-            Issue.record("Expected a HEADERS frame")
-            return
-        }
-        #expect(buffer.readableBytes == 0)
     }
 
     @available(anyAppleOS 27, *)
@@ -468,7 +371,7 @@ struct HTTP3FrameCodingTests {
         var buffer = ByteBuffer()
         buffer.writeEncodedInteger(frameType, strategy: .quic)
         buffer.writeLengthPrefixedString(payload, strategy: .quic)
-        buffer.writeHTTP3PartialFrame(.data(dataFrameBuffer))
+        buffer.writeTestFrame(.data(dataFrameBuffer))
 
         let frame1 = try decoder.decode(buffer: &buffer)
         let frame2 = try decoder.decode(buffer: &buffer)

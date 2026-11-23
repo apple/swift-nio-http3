@@ -697,7 +697,7 @@ struct EndToEndTests {
             )
             let streamHandlerContext = try requestStreamChannel.pipeline.syncOperations.context(handler: streamHandler)
             var buffer = ByteBuffer()
-            buffer.writeHTTP3PartialFrame(.settings(HTTP3Settings()))
+            buffer.writeHTTP3Frame(.settings(HTTP3Settings()))
             streamHandlerContext.writeAndFlush(NIOAny(buffer), promise: nil)
         }
 
