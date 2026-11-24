@@ -27,30 +27,34 @@ extension ByteBuffer {
         case .data(let payload):
             let payloadLength = payload.payload.readableBytes
             self.writeWithOutputRawSpan(
-                minimumWritableBytes: HTTP3EncodedLength.dataFrameHeader(payloadLength: payloadLength)
+                minimumWritableBytes: HTTP3FrameEncoder.Length.dataFrameHeader(payloadLength: payloadLength)
             ) {
-                $0.appendHTTP3DataFrameHeader(payloadLength: payloadLength)
+                HTTP3FrameEncoder.encodeDataFrameHeader(payloadLength: payloadLength, into: &$0)
             }
             self.writeImmutableBuffer(payload.payload)
         case .headers:
             fatalError("HEADERS frames are written by the QPACKCoder")
         case .cancelPush(let payload):
-            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3EncodedLength.cancelPushFrame(payload.pushID)) {
-                $0.appendHTTP3CancelPushFrame(payload.pushID)
+            self.writeWithOutputRawSpan(
+                minimumWritableBytes: HTTP3FrameEncoder.Length.cancelPushFrame(payload.pushID)
+            ) {
+                HTTP3FrameEncoder.encodeCancelPushFrame(payload.pushID, into: &$0)
             }
         case .settings(let payload):
-            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3EncodedLength.settingsFrame(payload.settings)) {
-                $0.appendHTTP3SettingsFrame(payload.settings)
+            self.writeWithOutputRawSpan(
+                minimumWritableBytes: HTTP3FrameEncoder.Length.settingsFrame(payload.settings)
+            ) {
+                HTTP3FrameEncoder.encodeSettingsFrame(payload.settings, into: &$0)
             }
         case .pushPromise:
             fatalError("Writing PUSH_PROMISE frames is not supported")
         case .goaway(let payload):
-            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3EncodedLength.goawayFrame(payload.id)) {
-                $0.appendHTTP3GoawayFrame(payload.id)
+            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3FrameEncoder.Length.goawayFrame(payload.id)) {
+                HTTP3FrameEncoder.encodeGoawayFrame(payload.id, into: &$0)
             }
         case .maxPushID(let payload):
-            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3EncodedLength.maxPushIDFrame(payload.id)) {
-                $0.appendHTTP3MaxPushIDFrame(payload.id)
+            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3FrameEncoder.Length.maxPushIDFrame(payload.id)) {
+                HTTP3FrameEncoder.encodeMaxPushIDFrame(payload.id, into: &$0)
             }
         }
     }
@@ -67,9 +71,13 @@ extension ByteBuffer {
     @available(anyAppleOS 27, *)
     mutating func writeHeadersFrame(maxPayloadLength: Int, encodePayload: (inout OutputRawSpan) -> Void) {
         self.writeWithOutputRawSpan(
-            minimumWritableBytes: HTTP3EncodedLength.headersFrame(maxPayloadLength: maxPayloadLength)
+            minimumWritableBytes: HTTP3FrameEncoder.Length.headersFrame(maxPayloadLength: maxPayloadLength)
         ) { output in
-            output.appendHTTP3HeadersFrame(maxPayloadLength: maxPayloadLength, encodePayload: encodePayload)
+            HTTP3FrameEncoder.encodeHeadersFrame(
+                maxPayloadLength: maxPayloadLength,
+                into: &output,
+                encodePayload: encodePayload
+            )
         }
     }
 }

@@ -30,7 +30,7 @@ struct HTTP3FrameEncodingTests {
     @available(anyAppleOS 27, *)
     @Test(arguments: Self.varintValues)
     func varintIsMinimalAndMatchesNIO(value: UInt64) {
-        let length = HTTP3EncodedLength.quicVarint(value)
+        let length = HTTP3FrameEncoder.Length.quicVarint(value)
         let bytes = encodeWithExactRoom(length) { $0.appendQUICVarint(value) }
 
         var expected = ByteBuffer()
@@ -50,7 +50,7 @@ struct HTTP3FrameEncodingTests {
 
     @available(anyAppleOS 27, *)
     @Test func varintLengthBoundaries() {
-        #expect(Self.varintValues.map { HTTP3EncodedLength.quicVarint($0) } == [1, 1, 2, 2, 4, 4, 8, 8])
+        #expect(Self.varintValues.map { HTTP3FrameEncoder.Length.quicVarint($0) } == [1, 1, 2, 2, 4, 4, 8, 8])
     }
 
     // MARK: DATA frames
@@ -58,8 +58,8 @@ struct HTTP3FrameEncodingTests {
     @available(anyAppleOS 27, *)
     @Test(arguments: [4, 63, 64, 16384])
     func dataFrameHeader(payloadLength: Int) throws {
-        let header = encodeWithExactRoom(HTTP3EncodedLength.dataFrameHeader(payloadLength: payloadLength)) {
-            $0.appendHTTP3DataFrameHeader(payloadLength: payloadLength)
+        let header = encodeWithExactRoom(HTTP3FrameEncoder.Length.dataFrameHeader(payloadLength: payloadLength)) {
+            HTTP3FrameEncoder.encodeDataFrameHeader(payloadLength: payloadLength, into: &$0)
         }
         let payload = ByteBuffer(repeating: 0x2A, count: payloadLength)
 
@@ -69,8 +69,8 @@ struct HTTP3FrameEncodingTests {
 
     @available(anyAppleOS 27, *)
     @Test func dataFrameHeaderBytes() {
-        let header = encodeWithExactRoom(HTTP3EncodedLength.dataFrameHeader(payloadLength: 100)) {
-            $0.appendHTTP3DataFrameHeader(payloadLength: 100)
+        let header = encodeWithExactRoom(HTTP3FrameEncoder.Length.dataFrameHeader(payloadLength: 100)) {
+            HTTP3FrameEncoder.encodeDataFrameHeader(payloadLength: 100, into: &$0)
         }
         // Type 0, then the length 100 in two bytes.
         #expect(header == [0x00, 0x40, 100])
@@ -84,8 +84,8 @@ struct HTTP3FrameEncodingTests {
 
     @available(anyAppleOS 27, *)
     @Test func headersFrameLengthIsSizedForTheMaximumPayload() {
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.headersFrame(maxPayloadLength: 100)) { output in
-            output.appendHTTP3HeadersFrame(maxPayloadLength: 100) { payload in
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.headersFrame(maxPayloadLength: 100)) { output in
+            HTTP3FrameEncoder.encodeHeadersFrame(maxPayloadLength: 100, into: &output) { payload in
                 for byte in Self.fieldSection { payload.append(byte) }
             }
         }
@@ -96,9 +96,9 @@ struct HTTP3FrameEncodingTests {
     @available(anyAppleOS 27, *)
     @Test(arguments: [13, 63, 64, 16384])
     func headersFrameRoundTrips(maxPayloadLength: Int) throws {
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.headersFrame(maxPayloadLength: maxPayloadLength)) {
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.headersFrame(maxPayloadLength: maxPayloadLength)) {
             output in
-            output.appendHTTP3HeadersFrame(maxPayloadLength: maxPayloadLength) { payload in
+            HTTP3FrameEncoder.encodeHeadersFrame(maxPayloadLength: maxPayloadLength, into: &output) { payload in
                 for byte in Self.fieldSection { payload.append(byte) }
             }
         }
@@ -109,9 +109,11 @@ struct HTTP3FrameEncodingTests {
 
     @available(anyAppleOS 27, *)
     @Test func headersFrameWithAPayloadOfExactlyTheMaximum() {
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.headersFrame(maxPayloadLength: Self.fieldSection.count)) {
+        let bytes = encodeWithExactRoom(
+            HTTP3FrameEncoder.Length.headersFrame(maxPayloadLength: Self.fieldSection.count)
+        ) {
             output in
-            output.appendHTTP3HeadersFrame(maxPayloadLength: Self.fieldSection.count) { payload in
+            HTTP3FrameEncoder.encodeHeadersFrame(maxPayloadLength: Self.fieldSection.count, into: &output) { payload in
                 for byte in Self.fieldSection { payload.append(byte) }
             }
         }
@@ -120,11 +122,11 @@ struct HTTP3FrameEncodingTests {
 
     @available(anyAppleOS 27, *)
     @Test func headersFrameAppendsAfterWhatIsAlreadyThere() {
-        let frameLength = HTTP3EncodedLength.headersFrame(maxPayloadLength: 20)
+        let frameLength = HTTP3FrameEncoder.Length.headersFrame(maxPayloadLength: 20)
         let bytes = encodeWithExactRoom(2 + frameLength) { output in
             output.append(0xAA)
             output.append(0xBB)
-            output.appendHTTP3HeadersFrame(maxPayloadLength: 20) { payload in
+            HTTP3FrameEncoder.encodeHeadersFrame(maxPayloadLength: 20, into: &output) { payload in
                 for byte in Self.fieldSection { payload.append(byte) }
             }
         }
@@ -141,8 +143,8 @@ struct HTTP3FrameEncodingTests {
             h3Datagram: false,
             enableConnectProtocol: false
         )
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.settingsFrame(settings)) {
-            $0.appendHTTP3SettingsFrame(settings)
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.settingsFrame(settings)) {
+            HTTP3FrameEncoder.encodeSettingsFrame(settings, into: &$0)
         }
         // Type 4, length 11, then QPACK_BLOCKED_STREAMS (7) 1 and QPACK_MAX_TABLE_CAPACITY (1) in eight bytes.
         #expect(bytes == [0x04, 0x0b, 0x07, 0x01, 0x01, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c])
@@ -151,8 +153,8 @@ struct HTTP3FrameEncodingTests {
     @available(anyAppleOS 27, *)
     @Test func settingsFrameLeavesOutDefaults() {
         let settings = HTTP3Settings(qpackBlockedStreams: 0, h3Datagram: false, enableConnectProtocol: false)
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.settingsFrame(settings)) {
-            $0.appendHTTP3SettingsFrame(settings)
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.settingsFrame(settings)) {
+            HTTP3FrameEncoder.encodeSettingsFrame(settings, into: &$0)
         }
         #expect(bytes == [0x04, 0x00])
     }
@@ -167,8 +169,8 @@ struct HTTP3FrameEncodingTests {
             HTTP3Setting(identifier: .enableConnectProtocol, value: 1),
             HTTP3Setting(identifier: .init(extensionSetting: 0x21)!, value: 1_073_741_824),
         ])
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.settingsFrame(settings)) {
-            $0.appendHTTP3SettingsFrame(settings)
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.settingsFrame(settings)) {
+            HTTP3FrameEncoder.encodeSettingsFrame(settings, into: &$0)
         }
 
         let frame = try decodeFrame(bytes)
@@ -181,8 +183,8 @@ struct HTTP3FrameEncodingTests {
     @Test(arguments: Self.varintValues)
     func goawayFrame(id: UInt64) throws {
         let goawayID = HTTP3GoawayID(rawValue: id)
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.goawayFrame(goawayID)) {
-            $0.appendHTTP3GoawayFrame(goawayID)
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.goawayFrame(goawayID)) {
+            HTTP3FrameEncoder.encodeGoawayFrame(goawayID, into: &$0)
         }
         #expect(try decodeFrame(bytes) == .known(.goaway(goawayID)))
     }
@@ -191,8 +193,8 @@ struct HTTP3FrameEncodingTests {
     @Test(arguments: Self.varintValues)
     func maxPushIDFrame(id: UInt64) throws {
         let pushID = HTTP3PushID(rawValue: id)
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.maxPushIDFrame(pushID)) {
-            $0.appendHTTP3MaxPushIDFrame(pushID)
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.maxPushIDFrame(pushID)) {
+            HTTP3FrameEncoder.encodeMaxPushIDFrame(pushID, into: &$0)
         }
         #expect(try decodeFrame(bytes) == .known(.maxPushID(pushID)))
     }
@@ -201,8 +203,8 @@ struct HTTP3FrameEncodingTests {
     @Test(arguments: Self.varintValues)
     func cancelPushFrame(id: UInt64) throws {
         let pushID = HTTP3PushID(rawValue: id)
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.cancelPushFrame(pushID)) {
-            $0.appendHTTP3CancelPushFrame(pushID)
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.cancelPushFrame(pushID)) {
+            HTTP3FrameEncoder.encodeCancelPushFrame(pushID, into: &$0)
         }
         #expect(try decodeFrame(bytes) == .known(.cancelPush(pushID)))
     }
@@ -210,8 +212,8 @@ struct HTTP3FrameEncodingTests {
     @available(anyAppleOS 27, *)
     @Test func goawayFrameBytes() {
         let goawayID: HTTP3GoawayID = 151_288_809_941_952_652
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.goawayFrame(goawayID)) {
-            $0.appendHTTP3GoawayFrame(goawayID)
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.goawayFrame(goawayID)) {
+            HTTP3FrameEncoder.encodeGoawayFrame(goawayID, into: &$0)
         }
         // Type 7, length 8, then the id in eight bytes.
         #expect(bytes == [0x07, 0x08, 0xc2, 0x19, 0x7c, 0x5e, 0xff, 0x14, 0xe8, 0x8c])
@@ -224,7 +226,9 @@ struct HTTP3FrameEncodingTests {
         HTTP3StreamType.Unidirectional.control, .push, .qpackEncoder, .qpackDecoder, .unknown(raw: 0x21),
     ])
     func streamType(_ type: HTTP3StreamType.Unidirectional) {
-        let bytes = encodeWithExactRoom(HTTP3EncodedLength.streamType(type)) { $0.appendHTTP3StreamType(type) }
+        let bytes = encodeWithExactRoom(HTTP3FrameEncoder.Length.streamType(type)) {
+            HTTP3FrameEncoder.encodeStreamType(type, into: &$0)
+        }
 
         var buffer = ByteBuffer(bytes: bytes)
         #expect(buffer.readEncodedInteger(as: UInt64.self, strategy: .quic) == type.rawValue)

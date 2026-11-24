@@ -927,8 +927,8 @@ extension HTTP3ConnectionCoordinator: Sendable {}
 extension Channel {
     @available(anyAppleOS 27, *)
     fileprivate func writeStreamType(_ streamType: HTTP3StreamType.Unidirectional) {
-        let buffer = self.allocator.buffer(capacity: HTTP3EncodedLength.streamType(streamType)) {
-            $0.appendHTTP3StreamType(streamType)
+        let buffer = self.allocator.buffer(capacity: HTTP3FrameEncoder.Length.streamType(streamType)) {
+            HTTP3FrameEncoder.encodeStreamType(streamType, into: &$0)
         }
         self.writeAndFlush(buffer, promise: nil)
     }
