@@ -253,12 +253,16 @@ struct QPACKDecoder {
                 value = entry.value
             }
             return .init(name: name, value: value)
-        case .literal(_, let name, let value):
+        case .literal(let requireLiteralRepresentation, let name, let value):
             guard let fieldName = HTTPField.Name(parsed: name) else {
                 throw QPACKDecoderError.invalidHeaderName
             }
-            return try HTTPField.makeField(name: fieldName, validatingValue: value)
-        case .literalWithNameReference(_, let table, let index, let value):
+            return try HTTPField.makeField(
+                name: fieldName,
+                validatingValue: value,
+                requireLiteralRepresentation: requireLiteralRepresentation
+            )
+        case .literalWithNameReference(let requireLiteralRepresentation, let table, let index, let value):
             let name: HTTPField.Name
             switch table {
             case .staticTable:
@@ -273,7 +277,11 @@ struct QPACKDecoder {
                 let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
                 name = entry.name
             }
-            return try HTTPField.makeField(name: name, validatingValue: value)
+            return try HTTPField.makeField(
+                name: name,
+                validatingValue: value,
+                requireLiteralRepresentation: requireLiteralRepresentation
+            )
         case .indexedWithPostBase(let index):
             // Post-Base indices are used in field line representations for entries with absolute indices greater
             // than or equal to Base, starting at 0 for the entry with absolute index equal to Base and increasing
@@ -285,14 +293,18 @@ struct QPACKDecoder {
             }
             let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
             return .init(name: entry.name, value: entry.value)
-        case .literalWithNameReferenceWithPostBase(_, let index, let value):
+        case .literalWithNameReferenceWithPostBase(let requireLiteralRepresentation, let index, let value):
             // With a Required Insert Count of zero, Base is the peer's Delta Base, which can be `Int.max`.
             let (absoluteIndex, overflow) = prefix.base.addingReportingOverflow(index)
             guard !overflow else {
                 throw QPACKDecoderError.invalidReference
             }
             let entry = try self.dynamicTableEntry(absoluteIndex: absoluteIndex, prefix: prefix)
-            return try HTTPField.makeField(name: entry.name, validatingValue: value)
+            return try HTTPField.makeField(
+                name: entry.name,
+                validatingValue: value,
+                requireLiteralRepresentation: requireLiteralRepresentation
+            )
         }
     }
 
@@ -317,19 +329,24 @@ struct QPACKDecoder {
 }
 
 extension HTTPField {
-    /// A field whose value comes from the wire.
-    ///
-    /// `HTTPField(name:value:)` on its own would replace characters which aren't permitted with spaces. RFC 9114
-    /// § 10.3 requires a message with such a value to be treated as malformed instead, so it is rejected here.
-    /// Leading and trailing whitespace is permitted, just not part of the value: `HTTPField` trims it.
+    /// A field from a literal field line, whose value comes from the wire.
     @available(anyAppleOS 27, *)
-    static func makeField(name: HTTPField.Name, validatingValue value: String) throws(QPACKDecoderError) -> HTTPField {
-        let field = HTTPField(name: name, value: value)
-        // `HTTPField` already scans the value, and keeps it as it is if it is valid. Then this compares the string
-        // with itself, which takes no time. Only a value `HTTPField` changed needs the second, exact scan: it may
-        // just have trimmed whitespace, which is fine.
+    static func makeField(
+        name: HTTPField.Name,
+        validatingValue value: String,
+        requireLiteralRepresentation: Bool
+    ) throws(QPACKDecoderError) -> HTTPField {
+        var field = HTTPField(name: name, value: value)
+        // `HTTPField.init(name:value)` legalizes values – that means it values to only allowed characters.
+        // That is fine as long only white space is trimmed. If other mutations happen, we must reject the
+        // value (RFC 9114 § 10.3). We only want to run the the `isPermittedValue` check, if the value
+        // string was modified, which we detect with a simple equals check.
         if field.value != value && !Self.isPermittedValue(value) {
             throw QPACKDecoderError.invalidHeaderValue
+        }
+
+        if requireLiteralRepresentation {
+            field.indexingStrategy = .disallow
         }
         return field
     }

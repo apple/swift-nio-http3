@@ -33,6 +33,18 @@ struct DecoderTests {
     }
 
     @available(anyAppleOS 27, *)
+    @Test func testDecodeLiteralNeverIndexed() throws {
+        let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
+
+        let prefix = FieldSectionPrefix(requiredInsertCount: 0, base: 0)
+        let line = FieldLine.literal(requireLiteralRepresentation: true, name: "hello", value: "World")
+        let fields: [HTTPField]? = try tester.decodeFieldSection(prefix, lines: [line]).unwrap()
+        tester.assertNoMoreInstructions()
+
+        #expect(fields == [HTTPField(name: .init("Hello")!, value: "World").neverIndexed])
+    }
+
+    @available(anyAppleOS 27, *)
     @Test func testDecodeIndexedStatic() throws {
         let tester = QPACKDecoderTester(dynamicTableMaxCapacity: 0)
 
@@ -70,7 +82,7 @@ struct DecoderTests {
         let fields: [HTTPField]? = try tester.decodeFieldSection(prefix, lines: [line]).unwrap()
         tester.assertNoMoreInstructions()
 
-        #expect(fields == [HTTPField(name: .contentType, value: "image/png")])
+        #expect(fields == [HTTPField(name: .contentType, value: "image/png").neverIndexed])
     }
 
     @available(anyAppleOS 27, *)
@@ -262,7 +274,7 @@ struct DecoderTests {
         #expect(tester.popInstruction() == .sectionAcknowledgement(streamID: 1))
         tester.assertNoMoreInstructions()
 
-        #expect(fields == [HTTPField(name: .init("Hello")!, value: "NewValue")])
+        #expect(fields == [HTTPField(name: .init("Hello")!, value: "NewValue").neverIndexed])
     }
 
     @available(anyAppleOS 27, *)
@@ -347,7 +359,7 @@ struct DecoderTests {
         #expect(tester.popInstruction() == .sectionAcknowledgement(streamID: 1))
         tester.assertNoMoreInstructions()
 
-        #expect(fields == [HTTPField(name: .init("Hello7")!, value: "NewValue")])
+        #expect(fields == [HTTPField(name: .init("Hello7")!, value: "NewValue").neverIndexed])
     }
 
     @available(anyAppleOS 27, *)
@@ -813,5 +825,14 @@ extension QPACKDecodeResult {
         case .error(let error):
             throw error
         }
+    }
+}
+
+extension HTTPField {
+    /// The field as a literal line with the N bit set decodes: never to be indexed (RFC 9204 § 4.5.4).
+    fileprivate var neverIndexed: HTTPField {
+        var field = self
+        field.indexingStrategy = .disallow
+        return field
     }
 }
