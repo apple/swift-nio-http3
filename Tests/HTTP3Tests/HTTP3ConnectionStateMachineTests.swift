@@ -865,6 +865,10 @@ struct HTTP3ConnectionStateMachineTests {
 
         let streamID = idGenerator.inboundBidi()
         #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+        // Until the stream can receive datagrams, they must be buffered.
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isBuffer)
+        // Now mark the stream as ready. The datagrams should be delivered now.
+        #expect(stateMachine.requestStreamCanReceiveDatagrams(streamID: streamID) == .deliverBufferedDatagrams)
         #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
 
         _ = stateMachine.streamClosed(streamID: streamID, streamType: .request)
@@ -912,6 +916,7 @@ struct HTTP3ConnectionStateMachineTests {
 
         let streamID = idGenerator.outboundBidi()
         stateMachine.outboundRequestStreamReady(streamID: streamID)
+        #expect(stateMachine.requestStreamCanReceiveDatagrams(streamID: streamID) == .deliverBufferedDatagrams)
         #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
     }
 
@@ -943,6 +948,8 @@ struct HTTP3ConnectionStateMachineTests {
         case .client:
             stateMachine.outboundRequestStreamReady(streamID: streamID)
         }
+        // Mark the stream as ready. Since datagrams haven't been negotiated yet, they must stay buffered.
+        #expect(stateMachine.requestStreamCanReceiveDatagrams(streamID: streamID) == .none)
 
         // The stream is open but datagrams are buffered until we know whether they're supported.
         #expect(stateMachine.receivedDatagram(streamID: streamID).isBuffer)
@@ -957,6 +964,53 @@ struct HTTP3ConnectionStateMachineTests {
         #expect(onSettings.datagrams == .supported(streamIDsToNotify: [streamID]))
 
         #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test(arguments: [HTTP3ConnectionType.server, .client])
+    func receivedPeerSettingsBeforeRequestStreamCanReceiveDatagrams(type: HTTP3ConnectionType) {
+        var stateMachine = HTTP3ConnectionStateMachine(settings: HTTP3Settings(h3Datagram: true), type: type)
+        _ = stateMachine.initialize()
+
+        let streamID: QUICStreamID = 0
+        switch type {
+        case .server:
+            _ = stateMachine.inboundRequestStreamReceived(streamID: streamID)
+
+        case .client:
+            stateMachine.outboundRequestStreamReady(streamID: streamID)
+        }
+
+        let action = stateMachine.receivedControlFrame(.settings(HTTP3Settings(h3Datagram: true)))
+        guard case .onSettings(let onSettings) = action else {
+            Issue.record("Unexpected action \(String(describing: action))")
+            return
+        }
+        // The stream has not been marked as ready. Therefore, the stream shouldn't be notified just yet.
+        #expect(onSettings.datagrams == .supported(streamIDsToNotify: []))
+        // We need to buffer datagrams until the stream is marked as ready.
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isBuffer)
+
+        // Now mark the stream as ready. Datagrams should be delivered to it.
+        #expect(stateMachine.requestStreamCanReceiveDatagrams(streamID: streamID) == .deliverBufferedDatagrams)
+        #expect(stateMachine.receivedDatagram(streamID: streamID).isForward)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func requestStreamCannotReceiveDatagramsAfterStreamClosed() {
+        var idGenerator = IDGenerator(type: .server)
+        var stateMachine = HTTP3ConnectionStateMachine.makeInitialized(
+            type: .server,
+            idGenerator: &idGenerator,
+            localSettings: HTTP3Settings(h3Datagram: true),
+            remoteSettings: HTTP3Settings(h3Datagram: true)
+        )
+
+        let streamID = idGenerator.inboundBidi()
+        #expect(stateMachine.inboundRequestStreamReceived(streamID: streamID).isAddHandlers)
+        _ = stateMachine.streamClosed(streamID: streamID, streamType: .request)
+        // The stream's datagrams should be discarded when it closed. There should be nothing to deliver.
+        #expect(stateMachine.requestStreamCanReceiveDatagrams(streamID: streamID) == .none)
     }
 
     @available(anyAppleOS 27, *)
