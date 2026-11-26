@@ -43,8 +43,7 @@ extension HTTP3GoawayID: ExpressibleByIntegerLiteral {
 }
 
 extension ByteBuffer {
-    /// Write `frame`. `writeHTTP3PartialFrame(_:)` doesn't write HEADERS and PUSH_PROMISE frames, so this writes
-    /// their encoded field sections as they are.
+    /// Write `frame`. HEADERS and PUSH_PROMISE frames are written with their encoded field sections as they are.
     @available(anyAppleOS 27, *)
     mutating func writeTestFrame(_ frame: HTTP3PartialFrame) {
         switch frame {
@@ -59,8 +58,48 @@ extension ByteBuffer {
                 tempBuffer.writeEncodedInteger(payload.pushID.rawValue, strategy: .quic)
                     + tempBuffer.writeImmutableBuffer(payload.fieldSection)
             }
-        case .data, .cancelPush, .settings, .goaway, .maxPushID:
-            self.writeHTTP3PartialFrame(frame)
+        case .data(let payload):
+            let payloadLength = payload.payload.readableBytes
+            self.writeWithOutputRawSpan(
+                minimumWritableBytes: HTTP3FrameEncoder.Length.dataFrameHeader(payloadLength: payloadLength)
+            ) {
+                HTTP3FrameEncoder.encodeDataFrameHeader(payloadLength: payloadLength, into: &$0)
+            }
+            self.writeImmutableBuffer(payload.payload)
+        case .cancelPush(let payload):
+            self.writeWithOutputRawSpan(
+                minimumWritableBytes: HTTP3FrameEncoder.Length.cancelPushFrame(payload.pushID)
+            ) {
+                HTTP3FrameEncoder.encodeCancelPushFrame(payload.pushID, into: &$0)
+            }
+        case .settings(let payload):
+            self.writeWithOutputRawSpan(
+                minimumWritableBytes: HTTP3FrameEncoder.Length.settingsFrame(payload.settings)
+            ) {
+                HTTP3FrameEncoder.encodeSettingsFrame(payload.settings, into: &$0)
+            }
+        case .goaway(let payload):
+            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3FrameEncoder.Length.goawayFrame(payload.id)) {
+                HTTP3FrameEncoder.encodeGoawayFrame(payload.id, into: &$0)
+            }
+        case .maxPushID(let payload):
+            self.writeWithOutputRawSpan(minimumWritableBytes: HTTP3FrameEncoder.Length.maxPushIDFrame(payload.id)) {
+                HTTP3FrameEncoder.encodeMaxPushIDFrame(payload.id, into: &$0)
+            }
+        }
+    }
+
+    /// Write a HEADERS frame whose payload `encodePayload` appends, with its length sized for `maxPayloadLength`.
+    @available(anyAppleOS 27, *)
+    mutating func writeTestHeadersFrame(maxPayloadLength: Int, encodePayload: (inout OutputRawSpan) -> Void) {
+        self.writeWithOutputRawSpan(
+            minimumWritableBytes: HTTP3FrameEncoder.Length.headersFrame(maxPayloadLength: maxPayloadLength)
+        ) {
+            HTTP3FrameEncoder.encodeHeadersFrame(
+                maxPayloadLength: maxPayloadLength,
+                into: &$0,
+                encodePayload: encodePayload
+            )
         }
     }
 }

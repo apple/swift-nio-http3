@@ -715,14 +715,11 @@ final class HTTP3ConnectionCoordinator<
         logger[metadataKey: LoggingKeys.h3StreamType] = "\(streamType)"
         logger[metadataKey: LoggingKeys.quicStreamID] = "\(streamID)"
         let streamHandler = StreamHandler(
-            stateMachine: .init(
-                streamType: streamType,
-                incoming: incoming,
-                preferHuffmanEncoding: self.preferHuffmanEncoding
-            ),
+            stateMachine: .init(streamType: streamType, incoming: incoming),
             streamID: streamID,
             streamType: streamType,
             qpackCoder: self.forceUnwrapQPACKCoder(sourceLocation: .here()),
+            preferHuffmanEncoding: self.preferHuffmanEncoding,
             delegate: self,
             logger: logger
         )

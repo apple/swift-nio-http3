@@ -12,17 +12,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-import struct NIOCore.ByteBuffer
+import HTTP3
+import NIOCore
 
 extension ByteBuffer {
-    /// Write a single ``HTTP3PartialFrame`` into the ByteBuffer, and move the writer index to just after the frame.
+    /// Write a single `HTTP3Frame` into the ByteBuffer, and move the writer index to just after the frame.
     ///
-    /// The `QPACKCoder` writes HEADERS frames, through ``writeHeadersFrame(maxPayloadLength:encodePayload:)``, and
-    /// PUSH_PROMISE frames are never written. It is a fatal error to call this function with either.
-    /// See also: ``HTTP3FrameDecoder``.
+    /// HEADERS frames need QPACK encoding, so they are written through
+    /// ``writeHeadersFrame(maxPayloadLength:encodePayload:)`` instead, and PUSH_PROMISE frames are never written. It
+    /// is a fatal error to call this function with either.
     /// - Parameter frame: The frame to be written to the `ByteBuffer`.
     @available(anyAppleOS 27, *)
-    mutating func writeHTTP3PartialFrame(_ frame: HTTP3PartialFrame) {
+    mutating func writeHTTP3Frame(_ frame: HTTP3Frame) {
         switch frame {
         case .data(let payload):
             let payloadLength = payload.payload.readableBytes
@@ -33,7 +34,7 @@ extension ByteBuffer {
             }
             self.writeImmutableBuffer(payload.payload)
         case .headers:
-            fatalError("HEADERS frames are written by the QPACKCoder")
+            fatalError("HEADERS frames are written through writeHeadersFrame(maxPayloadLength:encodePayload:)")
         case .cancelPush(let payload):
             self.writeWithOutputRawSpan(
                 minimumWritableBytes: HTTP3FrameEncoder.Length.cancelPushFrame(payload.pushID)
@@ -58,9 +59,7 @@ extension ByteBuffer {
             }
         }
     }
-}
 
-extension ByteBuffer {
     /// Write a HEADERS frame, whose payload `encodePayload` appends.
     ///
     /// - Parameters:
