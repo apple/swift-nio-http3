@@ -401,9 +401,6 @@ public struct HTTP3StreamStateMachine: ~Copyable {
     }
 
     /// Tell the machine that `frame` is about to be written, and ask whether it may be.
-    ///
-    /// The machine doesn't encode the frame: on ``WriteFrameAction/write`` the caller does, in the same call, before
-    /// it tells the machine about anything else.
     @_spi(PackageInternal)
     public mutating func willWriteFrame(_ frame: HTTP3Frame) -> WriteFrameAction {
         switch self.state {
