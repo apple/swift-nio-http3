@@ -390,9 +390,7 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processInboundFrame(.dataFrame(length: 4))
 
-        withKnownIssue("Not verified yet") {
-            expectMalformedMessage(action.streamError)
-        }
+        expectMalformedMessage(action.streamError)
     }
 
     @available(anyAppleOS 27, *)
@@ -403,9 +401,7 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processInboundFrame(Self.validTrailers())
 
-        withKnownIssue("Not verified yet") {
-            expectMalformedMessage(action.streamError)
-        }
+        expectMalformedMessage(action.streamError)
     }
 
     @available(anyAppleOS 27, *)
@@ -416,13 +412,11 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processInboundClosed()
 
-        withKnownIssue("Not verified yet") {
-            guard case .resetStream(let error) = action else {
-                Issue.record("Unexpected action \(action)")
-                return
-            }
-            expectMalformedMessage(error)
+        guard case .resetStream(let error) = action else {
+            Issue.record("Unexpected action \(action)")
+            return
         }
+        expectMalformedMessage(error)
     }
 
     @available(anyAppleOS 27, *)
@@ -431,9 +425,7 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processInboundFrame(.requestHeaders(contentLength: "+5"))
 
-        withKnownIssue("Not verified yet") {
-            expectMalformedMessage(action.streamError)
-        }
+        expectMalformedMessage(action.streamError)
     }
 
     @available(anyAppleOS 27, *)
@@ -450,9 +442,7 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processInboundFrame(headers)
 
-        withKnownIssue("Not verified yet") {
-            expectMalformedMessage(action.streamError)
-        }
+        expectMalformedMessage(action.streamError)
     }
 
     @available(anyAppleOS 27, *)
@@ -461,9 +451,7 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processInboundFrame(.headers([HTTPField(name: .path, value: "/")]))
 
-        withKnownIssue("Not verified yet") {
-            expectMalformedMessage(action.streamError)
-        }
+        expectMalformedMessage(action.streamError)
     }
 
     @available(anyAppleOS 27, *)
@@ -475,13 +463,11 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processInboundClosed()
 
-        withKnownIssue("Not verified yet") {
-            guard case .resetStream(let error) = action else {
-                Issue.record("Unexpected action \(action)")
-                return
-            }
-            expectMalformedMessage(error)
+        guard case .resetStream(let error) = action else {
+            Issue.record("Unexpected action \(action)")
+            return
         }
+        expectMalformedMessage(error)
     }
 
     @available(anyAppleOS 27, *)
@@ -492,9 +478,7 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processOutboundFrame(.dataFrame(length: 4))
 
-        withKnownIssue("Not verified yet") {
-            expectMalformedMessage(action.streamError)
-        }
+        expectMalformedMessage(action.streamError)
     }
 
     @available(anyAppleOS 27, *)
@@ -541,9 +525,7 @@ struct HTTP3FrameValidatorTests {
 
         let action = validator.processInboundFrame(.dataFrame(length: 4))
 
-        withKnownIssue("Not verified yet") {
-            expectMalformedMessage(action.streamError)
-        }
+        expectMalformedMessage(action.streamError)
     }
 
     @available(anyAppleOS 27, *)
