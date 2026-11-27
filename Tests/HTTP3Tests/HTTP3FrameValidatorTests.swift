@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import HTTPTypes
+import NIOCore
 import Testing
 
 @_spi(PackageInternal) @testable import HTTP3
@@ -371,6 +373,171 @@ struct HTTP3FrameValidatorTests {
         validator.assertOutboundFramePassesThrough(.headers([.init(name: .cookie, value: "test")]))
     }
 
+    @available(anyAppleOS 27, *)
+    @Test func requestBodyMatchingContentLengthAcrossFrames() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        validator.assertInboundFramePassesThrough(.requestHeaders(contentLength: "5"))
+        validator.assertInboundFramePassesThrough(.dataFrame(length: 2))
+        validator.assertInboundFramePassesThrough(.dataFrame(length: 3))
+
+        validator.assertInboundClosedDoesNothing()
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func requestBodyExceedingContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        validator.assertInboundFramePassesThrough(.requestHeaders(contentLength: "3"))
+
+        let action = validator.processInboundFrame(.dataFrame(length: 4))
+
+        expectMalformedMessage(action.streamError)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func requestTrailersBeforeContentLengthReached() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        validator.assertInboundFramePassesThrough(.requestHeaders(contentLength: "5"))
+        validator.assertInboundFramePassesThrough(.dataFrame(length: 3))
+
+        let action = validator.processInboundFrame(Self.validTrailers())
+
+        expectMalformedMessage(action.streamError)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func requestClosedBeforeContentLengthReached() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        validator.assertInboundFramePassesThrough(.requestHeaders(contentLength: "5"))
+        validator.assertInboundFramePassesThrough(.dataFrame(length: 3))
+
+        let action = validator.processInboundClosed()
+
+        guard case .resetStream(let error) = action else {
+            Issue.record("Unexpected action \(action)")
+            return
+        }
+        expectMalformedMessage(error)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func requestWithInvalidContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+
+        let action = validator.processInboundFrame(.requestHeaders(contentLength: "+5"))
+
+        expectMalformedMessage(action.streamError)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func requestWithConflictingContentLengths() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        let headers = HTTP3Frame.headers([
+            HTTPField(name: .method, value: "POST"),
+            HTTPField(name: .path, value: "/"),
+            HTTPField(name: .scheme, value: "https"),
+            HTTPField(name: .authority, value: "example.com"),
+            HTTPField(name: .contentLength, value: "5"),
+            HTTPField(name: .contentLength, value: "6"),
+        ])
+
+        let action = validator.processInboundFrame(headers)
+
+        expectMalformedMessage(action.streamError)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func requestWithoutMethod() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+
+        let action = validator.processInboundFrame(.headers([HTTPField(name: .path, value: "/")]))
+
+        expectMalformedMessage(action.streamError)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func responseClosedBeforeContentLengthReached() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
+        validator.assertOutboundFramePassesThrough(Self.validRequestHeaders())
+        validator.assertInboundFramePassesThrough(.responseHeaders(contentLength: "5"))
+        validator.assertInboundFramePassesThrough(.dataFrame(length: 3))
+
+        let action = validator.processInboundClosed()
+
+        guard case .resetStream(let error) = action else {
+            Issue.record("Unexpected action \(action)")
+            return
+        }
+        expectMalformedMessage(error)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func outboundResponseBodyExceedingContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        validator.assertInboundFramePassesThrough(Self.validRequestHeaders())
+        validator.assertOutboundFramePassesThrough(.responseHeaders(contentLength: "3"))
+
+        let action = validator.processOutboundFrame(.dataFrame(length: 4))
+
+        expectMalformedMessage(action.streamError)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func headResponseWithoutBodyIgnoresContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
+        validator.assertOutboundFramePassesThrough(.requestHeaders(method: .head, contentLength: nil))
+        validator.assertInboundFramePassesThrough(.responseHeaders(contentLength: "10"))
+
+        validator.assertInboundClosedDoesNothing()
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func notModifiedResponseWithoutBodyIgnoresContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
+        validator.assertOutboundFramePassesThrough(Self.validRequestHeaders())
+        validator.assertInboundFramePassesThrough(.responseHeaders(status: .notModified, contentLength: "10"))
+
+        validator.assertInboundClosedDoesNothing()
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func noContentResponseWithoutBodyIgnoresContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
+        validator.assertOutboundFramePassesThrough(Self.validRequestHeaders())
+        validator.assertInboundFramePassesThrough(.responseHeaders(status: .noContent, contentLength: "10"))
+
+        validator.assertInboundClosedDoesNothing()
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func connectRequestIgnoresContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: true)
+        validator.assertInboundFramePassesThrough(.requestHeaders(method: .connect, contentLength: "0"))
+        validator.assertInboundFramePassesThrough(.dataFrame(length: 10))
+
+        validator.assertInboundClosedDoesNothing()
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func connectErrorResponseEnforcesContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
+        validator.assertOutboundFramePassesThrough(.requestHeaders(method: .connect, contentLength: nil))
+        validator.assertInboundFramePassesThrough(.responseHeaders(status: .notFound, contentLength: "3"))
+
+        let action = validator.processInboundFrame(.dataFrame(length: 4))
+
+        expectMalformedMessage(action.streamError)
+    }
+
+    @available(anyAppleOS 27, *)
+    @Test func connectResponseIgnoresContentLength() {
+        var validator = HTTP3FrameValidator(streamType: .request, incoming: false)
+        validator.assertOutboundFramePassesThrough(.requestHeaders(method: .connect, contentLength: nil))
+        validator.assertInboundFramePassesThrough(.responseHeaders(contentLength: "0"))
+        validator.assertInboundFramePassesThrough(.dataFrame(length: 10))
+
+        validator.assertInboundClosedDoesNothing()
+    }
+
     // MARK: Control stream
 
     /// Anything other than settings is invalid to be the first frame.
@@ -591,6 +758,49 @@ extension HTTP3FrameValidator {
         let action = self.processInboundFrame(frame)
         #expect(action == .forwardFrame(frame), sourceLocation: sourceLocation)
     }
+
+    fileprivate mutating func assertInboundClosedDoesNothing(sourceLocation: SourceLocation = #_sourceLocation) {
+        let action = self.processInboundClosed()
+        guard case .doNothing = action else {
+            Issue.record("Unexpected action \(action)", sourceLocation: sourceLocation)
+            return
+        }
+    }
+}
+
+@available(anyAppleOS 27, *)
+extension HTTP3Frame {
+    fileprivate static func requestHeaders(method: HTTPRequest.Method = .get, contentLength: String?) -> Self {
+        .headers(
+            [
+                HTTPField(name: .method, value: method.rawValue),
+                HTTPField(name: .path, value: "/"),
+                HTTPField(name: .scheme, value: "https"),
+                HTTPField(name: .authority, value: "example.com"),
+            ] + (contentLength.map { [HTTPField(name: .contentLength, value: $0)] } ?? [])
+        )
+    }
+
+    fileprivate static func responseHeaders(status: HTTPResponse.Status = .ok, contentLength: String) -> Self {
+        .headers([
+            HTTPField(name: .status, value: String(status.code)),
+            HTTPField(name: .contentLength, value: contentLength),
+        ])
+    }
+
+    fileprivate static func dataFrame(length: Int) -> Self {
+        .data(ByteBuffer(repeating: 0, count: length))
+    }
+}
+
+@available(anyAppleOS 27, *)
+private func expectMalformedMessage(_ error: HTTP3Error?, sourceLocation: SourceLocation = #_sourceLocation) {
+    expectH3ErrorEqual(
+        error: error,
+        expectedCode: .malformedMessage,
+        expectedH3ErrorCode: .messageError,
+        sourceLocation: sourceLocation
+    )
 }
 
 @available(anyAppleOS 27, *)

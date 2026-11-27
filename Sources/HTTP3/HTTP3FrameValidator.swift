@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import HTTPTypes
+
 /// Validates incoming and outgoing frames to be a valid sequence for a given stream type.
 @available(anyAppleOS 27, *)
 enum HTTP3FrameValidator: ~Copyable {
@@ -183,9 +185,9 @@ enum HTTP3FrameValidator: ~Copyable {
             /// Nothing has happened yet.
             case idle
             /// Headers have been processed. We may or may not have also received data.
-            case headersProcessed
+            case headersProcessed(ContentLengthVerifier, requestMethod: HTTPRequest.Method)
             /// Trailers have been processed. Nothing more should be received now.
-            case trailersProcessed
+            case trailersProcessed(requestMethod: HTTPRequest.Method)
             /// We previously hit an error so we're refusing to do anything now.
             case previousError
         }
@@ -223,7 +225,7 @@ enum HTTP3FrameValidator: ~Copyable {
                 // we previously hit an error, so we refuse to do anything now
                 self = .init(requestState: existingRequestState, responseState: existingResponseState)
                 return .previousError
-            case (.headersProcessed, .idle), (.trailersProcessed, .idle):
+            case (.headersProcessed(_, let requestMethod), .idle), (.trailersProcessed(let requestMethod), .idle):
                 // response side is idle, so we haven't received anything yet. Expect head
                 switch frame {
                 case .headers(let headers):
@@ -234,8 +236,17 @@ enum HTTP3FrameValidator: ~Copyable {
                         self = .init(requestState: existingRequestState, responseState: existingResponseState)
                         return .forwardFrame(frame)
                     } else {
-                        self = .init(requestState: existingRequestState, responseState: .headersProcessed)
-                        return .forwardFrame(frame)
+                        switch ContentLengthVerifier.verifyingResponse(headers, requestMethod: requestMethod) {
+                        case .valid(let verifier):
+                            self = .init(
+                                requestState: existingRequestState,
+                                responseState: .headersProcessed(verifier, requestMethod: requestMethod)
+                            )
+                            return .forwardFrame(frame)
+                        case .malformed(let error):
+                            self = .init(requestState: existingRequestState, responseState: .previousError)
+                            return .emitStreamError(HTTP3Error(error, location: .here()))
+                        }
                     }
                 case .data, .pushPromise, .maxPushID, .goaway, .settings, .cancelPush:
                     self = .init(requestState: existingRequestState, responseState: .previousError)
@@ -249,16 +260,35 @@ enum HTTP3FrameValidator: ~Copyable {
                         )
                     )
                 }
-            case (.headersProcessed, .headersProcessed), (.trailersProcessed, .headersProcessed):
+            case (.headersProcessed, .headersProcessed(let verifier, let requestMethod)),
+                (.trailersProcessed, .headersProcessed(let verifier, let requestMethod)):
                 // response side is headersProcessed. Expect data or trailers
                 switch frame {
                 case .headers:
                     // These are the trailers
-                    self = .init(requestState: existingRequestState, responseState: .trailersProcessed)
-                    return .forwardFrame(frame)
-                case .data:
-                    self = .init(requestState: existingRequestState, responseState: existingResponseState)
-                    return .forwardFrame(frame)
+                    switch verifier.endOfMessage() {
+                    case .valid:
+                        self = .init(
+                            requestState: existingRequestState,
+                            responseState: .trailersProcessed(requestMethod: requestMethod)
+                        )
+                        return .forwardFrame(frame)
+                    case .malformed(let error):
+                        self = .init(requestState: existingRequestState, responseState: .previousError)
+                        return .emitStreamError(HTTP3Error(error, location: .here()))
+                    }
+                case .data(let data):
+                    switch verifier.receivedData(length: data.payload.readableBytes) {
+                    case .valid(let verifier):
+                        self = .init(
+                            requestState: existingRequestState,
+                            responseState: .headersProcessed(verifier, requestMethod: requestMethod)
+                        )
+                        return .forwardFrame(frame)
+                    case .malformed(let error):
+                        self = .init(requestState: existingRequestState, responseState: .previousError)
+                        return .emitStreamError(HTTP3Error(error, location: .here()))
+                    }
                 case .pushPromise, .maxPushID, .goaway, .settings, .cancelPush:
                     self = .init(requestState: existingRequestState, responseState: .previousError)
                     return .emitConnectionError(
@@ -302,9 +332,33 @@ enum HTTP3FrameValidator: ~Copyable {
             case (.idle, _):
                 // This should be headers
                 switch frame {
-                case .headers:
-                    self = .init(requestState: .headersProcessed, responseState: existingResponseState)
-                    return .forwardFrame(frame)
+                case .headers(let headers):
+                    guard
+                        let requestMethod = headers.fields.first(where: { $0.name == .method })
+                            .flatMap({ HTTPRequest.Method($0.value) })
+                    else {
+                        self = .init(requestState: .previousError, responseState: existingResponseState)
+                        return .emitStreamError(
+                            HTTP3Error(
+                                code: .malformedMessage,
+                                message: "Request is missing a valid :method",
+                                cause: nil,
+                                errorCode: .messageError,
+                                location: .here()
+                            )
+                        )
+                    }
+                    switch ContentLengthVerifier.verifyingRequest(headers, requestMethod: requestMethod) {
+                    case .valid(let verifier):
+                        self = .init(
+                            requestState: .headersProcessed(verifier, requestMethod: requestMethod),
+                            responseState: existingResponseState
+                        )
+                        return .forwardFrame(frame)
+                    case .malformed(let error):
+                        self = .init(requestState: .previousError, responseState: existingResponseState)
+                        return .emitStreamError(HTTP3Error(error, location: .here()))
+                    }
                 case .cancelPush, .goaway, .maxPushID, .settings, .pushPromise, .data:
                     self = .init(requestState: .previousError, responseState: existingResponseState)
                     return .emitConnectionError(
@@ -317,17 +371,35 @@ enum HTTP3FrameValidator: ~Copyable {
                         )
                     )
                 }
-            case (.headersProcessed, _):
+            case (.headersProcessed(let verifier, let requestMethod), _):
                 // This should be data or trailers
                 switch frame {
                 case .headers:
                     // these are the trailers
-                    self = .init(requestState: .trailersProcessed, responseState: existingResponseState)
-                    return .forwardFrame(frame)
-                case .data:
-                    // This is the body. State stays as-is, we can have any number of data frames
-                    self = .init(requestState: existingRequestState, responseState: existingResponseState)
-                    return .forwardFrame(frame)
+                    switch verifier.endOfMessage() {
+                    case .valid:
+                        self = .init(
+                            requestState: .trailersProcessed(requestMethod: requestMethod),
+                            responseState: existingResponseState
+                        )
+                        return .forwardFrame(frame)
+                    case .malformed(let error):
+                        self = .init(requestState: .previousError, responseState: existingResponseState)
+                        return .emitStreamError(HTTP3Error(error, location: .here()))
+                    }
+                case .data(let data):
+                    // This is the body
+                    switch verifier.receivedData(length: data.payload.readableBytes) {
+                    case .valid(let verifier):
+                        self = .init(
+                            requestState: .headersProcessed(verifier, requestMethod: requestMethod),
+                            responseState: existingResponseState
+                        )
+                        return .forwardFrame(frame)
+                    case .malformed(let error):
+                        self = .init(requestState: .previousError, responseState: existingResponseState)
+                        return .emitStreamError(HTTP3Error(error, location: .here()))
+                    }
                 case .cancelPush, .goaway, .maxPushID, .settings, .pushPromise:
                     // Any other frame is an error
                     self = .init(requestState: .previousError, responseState: existingResponseState)
@@ -359,97 +431,84 @@ enum HTTP3FrameValidator: ~Copyable {
             }
         }
 
-        /// Whether the complete request has been received.
-        private var receivedCompleteRequest: Bool {
-            switch self.requestState {
+        /// Records that the inbound request stream has closed.
+        mutating func processInboundRequestStreamClosed() -> InboundClosedAction {
+            let requestState = self.requestState
+            switch requestState {
             case .idle:
-                // We haven't received the request head part yet, so the request is trivially incomplete.
-                return false
+                // The input closed before we saw a *complete* request. Per RFC 9114 § 4.1:
+                // "If a client-initiated stream terminates without enough of the HTTP message to provide a complete
+                //  response, the server SHOULD abort its response stream with the error code H3\_REQUEST\_INCOMPLETE".
+                //
+                // We therefore need to reset the stream.
+                self = .init(requestState: .previousError, responseState: .previousError)
+                return .resetStream(
+                    HTTP3Error(
+                        code: .peerTerminatedInboundStream,
+                        message: "Inbound request stream closed before a complete request was received",
+                        cause: nil,
+                        errorCode: .requestIncomplete,
+                        location: .here()
+                    )
+                )
 
-            case .headersProcessed:
-                // TODO: If a Content-Length header was specified, we need to check whether we have received all the
-                // specified bytes. If that is not the case, then the request is malformed per RFC 9114 § 4.1.2, and it
-                // must be treated as a stream error.
-                return true
+            case .headersProcessed(let verifier, _):
+                switch verifier.endOfMessage() {
+                case .valid:
+                    return .doNothing
+                case .malformed(let error):
+                    // Content-length mismatch: the request is malformed (RFC 9114 § 4.1.2).
+                    self = .init(requestState: .previousError, responseState: .previousError)
+                    return .resetStream(HTTP3Error(error, location: .here()))
+                }
 
             case .trailersProcessed:
                 // If we have processed trailers, we have seen the full request.
-                return true
+                return .doNothing
 
             case .previousError:
-                // There was already an error. That will result in the stream closing anyway, so just return `true`.
-                return true
-            }
-        }
-
-        /// Whether the complete response has been received.
-        private var receivedCompleteResponse: Bool {
-            switch self.responseState {
-            case .idle:
-                // We haven't received a final response head part yet, so the response is trivially incomplete.
-                return false
-
-            case .headersProcessed:
-                // TODO: If a Content-Length header was specified, we need to check whether we have received all the
-                // specified bytes. If that is not the case, then the request is malformed per RFC 9114 § 4.1.2, and it
-                // must be treated as a stream error.
-                return true
-
-            case .trailersProcessed:
-                // If we have processed trailers, we have seen the full response.
-                return true
-
-            case .previousError:
-                // There was already an error. That will result in the stream closing anyway, so just return `true`.
-                return true
-            }
-        }
-
-        /// Records that the inbound request stream has closed.
-        mutating func processInboundRequestStreamClosed() -> InboundClosedAction {
-            if self.receivedCompleteRequest {
+                // There was already an error. That will result in the stream closing anyway.
                 return .doNothing
             }
-
-            // The input closed before we saw a *complete* request. Per RFC 9114 § 4.1:
-            // "If a client-initiated stream terminates without enough of the HTTP message to provide a complete
-            //  response, the server SHOULD abort its response stream with the error code H3\_REQUEST\_INCOMPLETE".
-            //
-            // We therefore need to reset the stream.
-            self = .init(requestState: .previousError, responseState: .previousError)
-
-            return .resetStream(
-                HTTP3Error(
-                    code: .peerTerminatedInboundStream,
-                    message: "Inbound request stream closed before a complete request was received",
-                    cause: nil,
-                    errorCode: .requestIncomplete,
-                    location: .here()
-                )
-            )
         }
 
         /// Records that the inbound response stream has closed.
         func processInboundResponseStreamClosed() -> InboundClosedAction {
-            if self.receivedCompleteResponse {
+            switch self.responseState {
+            case .idle:
+                // The input closed before we saw a *complete* response. Per RFC 9114 § 4.1.1:
+                // "... if a stream is cancelled after receiving a partial response, the response SHOULD NOT be used".
+                //
+                // We therefore need to inform the downstream so they can decide what to do with the incomplete response.
+                //
+                // This is not a stream or connection error, so we don't modify the request or response state.
+                return .notifyDownstream(
+                    HTTP3Error(
+                        code: .peerTerminatedInboundStream,
+                        message: "Inbound response stream closed before a complete response was received",
+                        cause: nil,
+                        errorCode: nil,
+                        location: .here()
+                    )
+                )
+
+            case .headersProcessed(let verifier, _):
+                switch verifier.endOfMessage() {
+                case .valid:
+                    return .doNothing
+                case .malformed(let error):
+                    // Content-length mismatch: the response is malformed (RFC 9114 § 4.1.2).
+                    return .resetStream(HTTP3Error(error, location: .here()))
+                }
+
+            case .trailersProcessed:
+                // If we have processed trailers, we have seen the full response.
+                return .doNothing
+
+            case .previousError:
+                // There was already an error. That will result in the stream closing anyway.
                 return .doNothing
             }
-
-            // The input closed before we saw a *complete* response. Per RFC 9114 § 4.1.1:
-            // "... if a stream is cancelled after receiving a partial response, the response SHOULD NOT be used".
-            //
-            // We therefore need to inform the downstream so they can decide what to do with the incomplete response.
-            //
-            // This is not a stream or connection error, so we don't modify the request or response state.
-            return .notifyDownstream(
-                HTTP3Error(
-                    code: .peerTerminatedInboundStream,
-                    message: "Inbound response stream closed before a complete response was received",
-                    cause: nil,
-                    errorCode: nil,
-                    location: .here()
-                )
-            )
         }
     }
 
@@ -762,5 +821,18 @@ extension HTTP3Frame {
         case .maxPushID: return .maxPushID
         case .pushPromise: return .pushPromise
         }
+    }
+}
+
+@available(anyAppleOS 27, *)
+extension HTTP3Error {
+    fileprivate init(_ error: ContentLengthVerifier.Error, location: SourceLocation) {
+        self.init(
+            code: .malformedMessage,
+            message: error.description,
+            cause: error,
+            errorCode: .messageError,
+            location: location
+        )
     }
 }
