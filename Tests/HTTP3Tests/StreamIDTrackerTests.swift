@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOQUICHelpers
 import Testing
 
 @testable import HTTP3
@@ -139,5 +140,24 @@ struct StreamIDTrackerTests {
         tracker.streamClosed(id: .init(rawValue: 4))
         tracker.streamClosed(id: .init(rawValue: 0))
         #expect(tracker.nextExpectedClientInitiatedBidirectionalStreamID() == .init(rawValue: 8))
+    }
+
+    @Test
+    @available(anyAppleOS 27, *)
+    func streamInitialized() {
+        var tracker = StreamIDTracker()
+        let id = QUICStreamID(rawValue: 0)
+        tracker.streamOpened(id: id)
+        #expect(tracker.opennessOfStream(withID: id) == .initializing)
+        #expect(tracker.getInitializedStreamIDs { _ in true } == [])
+
+        #expect(tracker.streamInitialized(id: id) == true)
+        #expect(tracker.opennessOfStream(withID: id) == .open)
+        #expect(tracker.getOpenStreamIDs { _ in true } == [id])
+        #expect(tracker.getInitializedStreamIDs { _ in true } == [id])
+
+        #expect(tracker.streamClosed(id: id) == true)
+        #expect(tracker.opennessOfStream(withID: id) == .closed)
+        #expect(tracker.streamInitialized(id: id) == false)
     }
 }

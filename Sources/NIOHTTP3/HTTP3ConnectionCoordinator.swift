@@ -158,6 +158,33 @@ final class HTTP3ConnectionCoordinator<
         }
     }
 
+    /// Runs the request stream initializer, informs the state machine of its completion, and delivers any buffered
+    /// datagrams for that stream if the state machine instructs us to.
+    ///
+    /// - Parameters:
+    ///   - streamID: The ID of the request stream.
+    ///   - initializer: The stream initializer.
+    /// - Returns: The result of `initializer`.
+    private func runRequestStreamInitializer<Output: Sendable>(
+        streamID: QUICStreamID,
+        _ initializer: () -> EventLoopFuture<Output>
+    ) -> EventLoopFuture<Output> {
+        initializer().assumeIsolated().map { output in
+            // The stream initializer has completed. Inform the state machine that the stream is now in a state where it
+            // can receive datagrams.
+            switch self.connectionStateMachine.requestStreamCanReceiveDatagrams(streamID: streamID) {
+            case .deliverBufferedDatagrams:
+                // Deliver any datagrams buffered for this stream.
+                self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
+
+            case .none:
+                ()
+            }
+
+            return output
+        }.nonisolated()
+    }
+
     // MARK: Outbound streams
 
     /// Create an outbound stream, write the stream type, add the handlers and hand the stream to the QPACK coder.
@@ -307,15 +334,17 @@ final class HTTP3ConnectionCoordinator<
                             )
                         )
                     }
-                    // Until both peers have advertised support, datagrams stay buffered.
-                    self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
                     return (HTTP3StreamInitializerParameters(params), halfClosureFuture)
                 }.assumeIsolated().flatMap { (params, halfClosureFuture) in
-                    // The future is only set if syncOptions are not available.
-                    if let halfClosureFuture {
-                        return halfClosureFuture.assumeIsolated().flatMap { streamInitializer(params) }.nonisolated()
+                    self.runRequestStreamInitializer(streamID: streamID) {
+                        // The future is only set if syncOptions are not available.
+                        if let halfClosureFuture {
+                            return halfClosureFuture.assumeIsolated().flatMap {
+                                streamInitializer(params)
+                            }.nonisolated()
+                        }
+                        return streamInitializer(params)
                     }
-                    return streamInitializer(params)
                 }.nonisolated()
             }
         case .failedToCreateStream(let error):
@@ -377,15 +406,14 @@ final class HTTP3ConnectionCoordinator<
                         )
                     )
                 }
-                // State machine now considers the stream to be open. If both endpoints have advertised support, deliver
-                // the datagrams now.
-                self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
-                if let halfClosureFuture {
-                    return halfClosureFuture.assumeIsolated().flatMap {
-                        userInboundStreamInitializer.initialize(parameters)
-                    }.nonisolated()
+                return self.runRequestStreamInitializer(streamID: streamID) {
+                    if let halfClosureFuture {
+                        return halfClosureFuture.assumeIsolated().flatMap {
+                            userInboundStreamInitializer.initialize(parameters)
+                        }.nonisolated()
+                    }
+                    return userInboundStreamInitializer.initialize(parameters)
                 }
-                return userInboundStreamInitializer.initialize(parameters)
             } catch {
                 self.datagramBuffer.discardDatagrams(forStream: streamID)
                 return streamChannel.eventLoop.makeFailedFuture(error)

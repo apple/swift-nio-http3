@@ -17,8 +17,32 @@ import NIOQUICHelpers
 /// Keeps track of what streams are open.
 @available(anyAppleOS 27, *)
 struct StreamIDTracker {
+    /// An open stream, and whether it has been initialized.
+    ///
+    /// - Note: Equality and hashing only consider the stream ID, not the `isInitialized` property.
+    struct OpenStream: Hashable, CustomStringConvertible {
+        let id: QUICStreamID
+        var isInitialized = false
+
+        var description: String {
+            self.id.description
+        }
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.id == rhs.id
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(self.id)
+        }
+
+        func _rawHashValue(seed: Int) -> Int {
+            self.id._rawHashValue(seed: seed)
+        }
+    }
+
     /// All currently open streams
-    private(set) var openStreams = Set<QUICStreamID>()
+    private(set) var openStreams = Set<OpenStream>()
 
     /// The number of currently open bidirectional ("request") streams, regardless of initiator.
     /// Maintained incrementally so ``hasOpenRequestStreams()`` is O(1) instead of scanning ``openStreams``.
@@ -33,8 +57,8 @@ struct StreamIDTracker {
 
     /// Call this whenever a new stream (of any type) opens.
     mutating func streamOpened(id: QUICStreamID) {
-        assert(!self.openStreams.contains(id))
-        self.openStreams.insert(id)
+        assert(!self.openStreams.contains(OpenStream(id: id)))
+        self.openStreams.insert(OpenStream(id: id))
 
         if id.isBidirectional {
             self.openBidirectionalStreamCount += 1
@@ -48,10 +72,24 @@ struct StreamIDTracker {
         }
     }
 
+    /// Call this once an open stream has been initialized.
+    ///
+    /// - Returns: `true` if the stream is still open.
+    mutating func streamInitialized(id: QUICStreamID) -> Bool {
+        guard let index = self.openStreams.firstIndex(of: OpenStream(id: id)) else {
+            return false
+        }
+
+        assert(!self.openStreams[index].isInitialized, "Stream \(id) was initialized twice")
+
+        self.openStreams.update(with: OpenStream(id: id, isInitialized: true))
+        return true
+    }
+
     /// Call this when a stream is closed. Returns true if that stream actually existed.
     @discardableResult
     mutating func streamClosed(id: QUICStreamID) -> Bool {
-        if self.openStreams.remove(id) == nil {
+        if self.openStreams.remove(OpenStream(id: id)) == nil {
             return false
         }
         if id.isBidirectional {
@@ -66,7 +104,26 @@ struct StreamIDTracker {
     }
 
     func getOpenStreamIDs(where predicate: (QUICStreamID) -> Bool) -> [QUICStreamID] {
-        self.openStreams.filter(predicate)
+        self.openStreams.compactMap { stream in
+            if predicate(stream.id) {
+                return stream.id
+            }
+            return nil
+        }
+    }
+
+    /// Like ``getOpenStreamIDs(where:)``, but skips the streams which are still initializing.
+    func getInitializedStreamIDs(where predicate: (QUICStreamID) -> Bool) -> [QUICStreamID] {
+        self.openStreams.compactMap { stream in
+            guard stream.isInitialized else {
+                return nil
+            }
+
+            if predicate(stream.id) {
+                return stream.id
+            }
+            return nil
+        }
     }
 
     /// Returns the next expected client-initiated bidirectional stream ID, i.e. the stream ID that *would* be used by
@@ -104,6 +161,8 @@ struct StreamIDTracker {
     enum Openness {
         /// The stream hasn't been opened yet.
         case notYetOpen
+        /// The stream is open, but is initializing; i.e. hasn't been surfaced to the application layer yet.
+        case initializing
         /// The stream is open.
         case open
         /// The stream is closed.
@@ -111,8 +170,11 @@ struct StreamIDTracker {
     }
 
     func opennessOfStream(withID streamID: QUICStreamID) -> Openness {
-        if self.openStreams.contains(streamID) {
-            return .open
+        if let index = self.openStreams.firstIndex(of: OpenStream(id: streamID)) {
+            if self.openStreams[index].isInitialized {
+                return .open
+            }
+            return .initializing
         }
 
         if let highest = self.highestIDSeenByType[streamID.typeBits] {

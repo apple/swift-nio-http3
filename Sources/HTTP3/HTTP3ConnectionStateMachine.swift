@@ -393,7 +393,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             self = .init(state: .initialized(initialized))
 
             switch openness {
-            case .notYetOpen:
+            case .notYetOpen, .initializing:
                 return .buffer
             case .open:
                 if datagramsNegotiated {
@@ -461,7 +461,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             }
 
             switch initialized.streamIDTracker.opennessOfStream(withID: streamID) {
-            case .open:
+            case .open, .initializing:
                 return .send
             case .notYetOpen:
                 return .drop(
@@ -496,7 +496,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             isOpen = false
         case .initialized(let state):
             switch state.streamIDTracker.opennessOfStream(withID: id) {
-            case .open:
+            case .open, .initializing:
                 isOpen = true
             case .notYetOpen, .closed:
                 isOpen = false
@@ -517,6 +517,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         case emitConnectionError(HTTP3Error)
     }
 
+    /// Call this when a new inbound request stream is received.
+    ///
+    /// - Note: If the stream is accepted, datagrams received for this stream are buffered until
+    /// ``requestStreamCanReceiveDatagrams(streamID:)`` is called.
     @_spi(PackageInternal)
     public mutating func inboundRequestStreamReceived(streamID: QUICStreamID) -> InboundRequestStreamReceivedAction {
         precondition(streamID.isBidirectional, "Stream ID \(streamID) was expected to be bidirectional")
@@ -823,6 +827,10 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
         }
     }
 
+    /// Call this when a request stream that we asked for has been created.
+    ///
+    /// - Note: Datagrams received for this stream are buffered until ``requestStreamCanReceiveDatagrams(streamID:)`` is
+    ///   called.
     @_spi(PackageInternal)
     public mutating func outboundRequestStreamReady(streamID: QUICStreamID) {
         precondition(streamID.isBidirectional)
@@ -839,6 +847,46 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
             }
         case .finished:
             self = .init(state: .finished)
+        }
+    }
+
+    @_spi(PackageInternal)
+    public enum RequestStreamCanReceiveDatagramsAction {
+        /// Deliver the datagrams buffered for the stream.
+        case deliverBufferedDatagrams
+
+        /// Nothing to do. The stream has closed, or the datagrams for this stream stay buffered until the peer's
+        /// SETTINGS arrive.
+        case none
+    }
+
+    /// Call this once datagrams received for the request stream can be processed. Until then, they're buffered.
+    @_spi(PackageInternal)
+    public mutating func requestStreamCanReceiveDatagrams(
+        streamID: QUICStreamID
+    ) -> RequestStreamCanReceiveDatagramsAction {
+        switch consume self.state {
+        case .notStarted:
+            fatalError("requestStreamCanReceiveDatagrams(streamID:) called before state machine started")
+
+        case .initialized(var initializedState):
+            // Check that the stream initializer completed successfully.
+            let isStillOpen = initializedState.streamIDTracker.streamInitialized(id: streamID)
+
+            // Now check if datagrams are supported
+            let datagramsNegotiated = initializedState.settingsState.datagramsNegotiated
+
+            self = .init(state: .initialized(initializedState))
+
+            if isStillOpen && datagramsNegotiated {
+                return .deliverBufferedDatagrams
+            }
+
+            return .none
+
+        case .finished:
+            self = .init(state: .finished)
+            return .none
         }
     }
 
@@ -887,9 +935,9 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
 
                 /// Both peers advertised support for HTTP datagrams.
                 ///
-                /// `streamIDsToNotify` contains the request streams that were opened before the peer's SETTINGS
-                /// arrived. Datagrams received for these streams in the meantime were buffered, and must now be
-                /// delivered.
+                /// `streamIDsToNotify` contains the request streams that were opened and initialized before the peer's
+                /// SETTINGS arrived. Datagrams received for these streams in the meantime were buffered, and must now
+                /// be delivered.
                 case supported(streamIDsToNotify: [QUICStreamID])
 
                 /// Whether both peers advertised support for HTTP datagrams.
@@ -944,7 +992,7 @@ public struct HTTP3ConnectionStateMachine: ~Copyable {
                         // Datagrams received for open request streams were buffered until the peer's SETTINGS
                         // arrived. Now that both peers have advertised support, the buffered datagrams for these
                         // streams must be delivered.
-                        let streamIDsToNotify = initializedState.streamIDTracker.getOpenStreamIDs { streamID in
+                        let streamIDsToNotify = initializedState.streamIDTracker.getInitializedStreamIDs { streamID in
                             streamID.type == .clientInitiatedBidirectional
                         }
                         datagramsSupport = .supported(streamIDsToNotify: streamIDsToNotify)
