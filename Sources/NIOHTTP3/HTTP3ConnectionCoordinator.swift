@@ -174,7 +174,7 @@ final class HTTP3ConnectionCoordinator<
             // can receive datagrams.
             switch self.connectionStateMachine.requestStreamCanReceiveDatagrams(streamID: streamID) {
             case .deliverBufferedDatagrams:
-                // There were some datagrams buffered for this stream. Deliver them.
+                // Deliver any datagrams buffered for this stream.
                 self.emitBufferedDatagramsIfNegotiated(forStream: streamID)
 
             case .none:
