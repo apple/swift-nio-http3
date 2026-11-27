@@ -195,11 +195,11 @@ struct NIOHTTP3StreamHandlerTests {
         return buffer
     }
 
-    /// The single field carried by ``testBlockedRequestPartialHeaderBytes``.
+    /// The fields carried by ``testBlockedRequestPartialHeaderBytes``.
     ///
-    /// It is the entry inserted by ``testUnblockingEncoderInstruction``.
+    /// The cookie is the entry inserted by ``testUnblockingEncoderInstruction``.
     private var testBlockedRequestHeaderFields: [HTTPField] {
-        [.init(name: .cookie, value: "test")]
+        [.init(name: .method, value: "GET"), .init(name: .cookie, value: "test")]
     }
 
     /// A field section which the QPACK decoder cannot decode yet.
@@ -215,6 +215,8 @@ struct NIOHTTP3StreamHandlerTests {
             // RFC 9204 § 4.5.1.2: Base 0 is less than the Required Insert Count, so the sign bit is set, and the
             // Delta Base is Required Insert Count - Base - 1 = 0.
             0x80,
+            // RFC 9204 § 4.5.2: an indexed field line for static entry 17, `:method: GET`.
+            0xD1,
             // RFC 9204 § 4.5.3: an indexed field line with post-base index 0.
             0x10,
         ])
